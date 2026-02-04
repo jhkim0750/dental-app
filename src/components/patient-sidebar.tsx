@@ -139,7 +139,7 @@ export function PatientSidebar({ onClose }: PatientSidebarProps) {
                   <span className="font-bold text-sm truncate">{patient.name}</span>
                   <div className="flex items-center gap-1 text-xs text-slate-500">
                     <span>#{patient.case_number}</span>
-                    {patient.clinic_name && ( // ✨ 치과 이름 표시
+                    {(patient as any).clinic_name && (
                       <>
                         <span>•</span>
                         <span className="text-blue-600 flex items-center gap-0.5">
