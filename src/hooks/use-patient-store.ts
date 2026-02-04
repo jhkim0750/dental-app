@@ -38,7 +38,9 @@ interface PatientState {
 
   // Actions
   fetchPatients: () => Promise<void>;
-  addPatient: (name: string, caseNumber: string, totalSteps: number) => Promise<void>;
+  addPatient: (name: string, caseNumber: string, totalSteps: number, clinicName?: string) => Promise<void>;
+  
+  updatePatient?: (id: string, name: string, caseNumber: string, totalSteps: number, clinicName?: string) => Promise<void>; // 수정 기능도 추가
   selectPatient: (id: string | null) => void;
   deletePatient: (id: string) => Promise<void>;
   addRule: (patientId: string, rule: Omit<Rule, "id">) => Promise<void>;
@@ -46,7 +48,6 @@ interface PatientState {
   toggleChecklistItem: (patientId: string, step: number, ruleId: string) => Promise<void>;
   checkAllInStep: (patientId: string, step: number) => Promise<void>;
 }
-
 export const usePatientStore = create<PatientState>((set, get) => ({
   patients: [],
   selectedPatientId: null,
@@ -68,32 +69,50 @@ export const usePatientStore = create<PatientState>((set, get) => ({
     set({ isLoading: false });
   },
 
-  // 2. 환자 추가
-  addPatient: async (name, caseNumber, totalSteps) => {
-    const { data, error } = await supabase
-      .from("patients")
-      .insert([
-        {
-          name,
-          case_number: caseNumber,
-          total_steps: totalSteps,
-          rules: [],
-          checklist_status: [],
-        },
-      ])
-      .select();
+  // 2. 환자 추가 
+ addPatient: async (name, caseNumber, totalSteps, clinicName) => {
+  const { data, error } = await supabase
+    .from('patients')
+    .insert([{
+      name,
+      caseNumber,
+      totalSteps,
+      clinic_name: clinicName, // 👈 여기가 핵심! (DB이름: 받아온이름)
+      rules: [],
+      checkedItems: {}
+    }])
+    .select();
 
-    if (error) {
-      console.error("Error adding patient:", error);
-      alert("Error adding patient");
-    } else if (data) {
-      set((state) => ({
-        patients: [data[0] as Patient, ...state.patients],
-        selectedPatientId: data[0].id,
-      }));
-    }
-  },
+  if (error) {
+    console.error("Error adding patient:", error);
+    alert("Error adding patient");
+  } else if (data) {
+    set((state) => ({
+      patients: [data[0] as Patient, ...state.patients],
+      selectedPatientId: data[0].id,
+    }));
+  }
+},
 
+// 3. 환자 정보 수정 (제자리에 쏙!)
+updatePatient: async (id, name, caseNumber, totalSteps, clinicName) => {
+  const { data, error } = await supabase
+    .from('patients')
+    .update({
+      name,
+      caseNumber,
+      totalSteps,
+      clinic_name: clinicName
+    })
+    .eq('id', id)
+    .select();
+
+  if (data) {
+    set((state) => ({
+      patients: state.patients.map((p) => (p.id === id ? (data[0] as Patient) : p)),
+    }));
+  }
+},
   selectPatient: (id) => set({ selectedPatientId: id }),
 
   // 3. 환자 삭제

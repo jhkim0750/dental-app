@@ -5,6 +5,7 @@ import { usePatientStoreHydrated, Rule, Patient, ToothNumber } from "@/hooks/use
 import { Maximize2, Minimize2, CheckCheck, ChevronLeft, ChevronRight, Plus, Trash2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ToothGrid } from "@/components/tooth-grid"; // ✨ 십자가 선택판 불러오기
 
 interface ChecklistPanelProps {
   patient: Patient;
@@ -14,38 +15,40 @@ const PRESET_TYPES = ["BOS", "Attachment", "Vertical Ridge", "Power Ridge", "Bit
 
 export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const store = usePatientStoreHydrated();
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(0); // ✨ Step 0부터 시작
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [pageStartStep, setPageStartStep] = useState(1);
+  const [pageStartStep, setPageStartStep] = useState(0); // ✨ 페이지 시작도 0부터
 
   // --- 입력 상태 ---
   const [selectedType, setSelectedType] = useState("BOS");
   const [customType, setCustomType] = useState("");
-  const [selectedTeeth, setSelectedTeeth] = useState<ToothNumber[]>([]);
+  const [selectedTeeth, setSelectedTeeth] = useState<string[]>([]); // ✨ ToothGrid는 string[]을 씀
   const [startStep, setStartStep] = useState(1);
   const [endStep, setEndStep] = useState(10);
   const [note, setNote] = useState("");
   const [jumpStepInput, setJumpStepInput] = useState("");
 
   if (!store) return null;
-  // DB 이름에 맞춰 total_steps로 변경
   const totalSteps = patient.total_steps || 20;
 
   // --- 로직 ---
-  const toggleTooth = (t: ToothNumber) => {
+  const toggleTooth = (t: string) => {
     setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   };
 
   const handleAddRules = async () => {
     const finalType = selectedType === "기타" ? customType : selectedType;
     if (!finalType) return alert("Please enter a type name.");
-    const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth;
     
-    // 비동기 처리 위해 for loop 사용 혹은 Promise.all 추천 (여기선 단순 반복)
+    // ✨ 치아 선택 안 했으면 [0] (Gen), 했으면 숫자로 변환
+    const teethToSave: number[] = selectedTeeth.length === 0 
+      ? [0] 
+      : selectedTeeth.map(t => parseInt(t));
+    
     for (const tooth of teethToSave) {
       await store.addRule(patient.id, {
         type: finalType,
-        tooth,
+        tooth, // 0이면 Gen
         startStep,
         endStep,
         note
@@ -65,8 +68,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   const handleJumpStep = () => {
     const step = Number(jumpStepInput);
-    if (!step || step < 1 || step > totalSteps) {
-      alert(`Please enter a step between 1 and ${totalSteps}`);
+    if (step < 0 || step > totalSteps) { // ✨ 0부터 허용
+      alert(`Please enter a step between 0 and ${totalSteps}`);
       return;
     }
     setCurrentStep(step);
@@ -113,6 +116,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       >
         <div className="flex justify-between items-start">
           <span className={cn("font-bold text-slate-800", isTiny ? "text-[11px]" : "text-lg")}>
+            {/* ✨ Gen 숨기기 로직: 치아번호가 0일 때만 'Gen' 표시, 아니면 #번호 */}
             {rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}
           </span>
           <div className="flex gap-1 items-center">
@@ -122,8 +126,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                "rounded flex items-center justify-center transition-colors", 
                isTiny ? "w-3 h-3 border" : "w-5 h-5 border", 
                checked ? "bg-slate-500 border-slate-500" : "bg-white border-slate-300"
-              )}>
-                {checked && <CheckCheck className="text-white w-full h-full p-[1px]" />}
+             )}>
+               {checked && <CheckCheck className="text-white w-full h-full p-[1px]" />}
              </div>
           </div>
         </div>
@@ -135,6 +139,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   // --- 전체 화면 ---
   const renderFullScreenContent = () => {
+    // ✨ 0부터 보여주기 위해 수정
     const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i);
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col">
@@ -143,7 +148,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           <div className="flex items-center gap-4">
              <h2 className="text-2xl font-bold text-slate-800">Steps {pageStartStep} - {Math.min(pageStartStep + 9, totalSteps)}</h2>
              <div className="flex gap-2">
-               <Button variant="outline" disabled={pageStartStep <= 1} onClick={() => setPageStartStep(Math.max(1, pageStartStep - 10))}><ChevronLeft className="w-4 h-4 mr-1"/> Prev 10</Button>
+               <Button variant="outline" disabled={pageStartStep <= 0} onClick={() => setPageStartStep(Math.max(0, pageStartStep - 10))}><ChevronLeft className="w-4 h-4 mr-1"/> Prev 10</Button>
                <Button variant="outline" disabled={pageStartStep + 10 > totalSteps} onClick={() => setPageStartStep(Math.min(totalSteps, pageStartStep + 10))}>Next 10 <ChevronRight className="w-4 h-4 ml-1"/></Button>
              </div>
           </div>
@@ -164,21 +169,21 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         "rounded-lg min-h-[300px] flex flex-col border shadow-sm transition-colors",
                         step > totalSteps ? "bg-slate-100 opacity-30 border-dashed" : (index % 2 === 0 ? "bg-white border-slate-200" : "bg-blue-50/30 border-blue-100")
                       )}>
-                       {/* 스텝 헤더 */}
-                       <div className={cn(
-                         "p-2 border-b flex justify-between items-center font-bold text-xs sticky top-0 rounded-t-lg z-10",
-                         step > totalSteps ? "bg-transparent" : (index % 2 === 0 ? "bg-white" : "bg-blue-50/50")
-                        )}>
-                          <span className="text-slate-600 uppercase tracking-wider">Step {step}</span>
+                        {/* 스텝 헤더 */}
+                        <div className={cn(
+                          "p-2 border-b flex justify-between items-center font-bold text-xs sticky top-0 rounded-t-lg z-10",
+                          step > totalSteps ? "bg-transparent" : (index % 2 === 0 ? "bg-white" : "bg-blue-50/50")
+                         )}>
+                          <span className="text-slate-600 uppercase tracking-wider">{step === 0 ? "PRE" : `Step ${step}`}</span>
                           {step <= totalSteps && (
                              <button onClick={() => store.checkAllInStep(patient.id, step)} className={cn("hover:bg-slate-200 p-1 rounded", isStepFullyChecked(step) ? "text-green-600 bg-green-50" : "text-slate-300")} title="Check All">
                                <CheckCheck className="w-3.5 h-3.5" />
                              </button>
-                          )}
-                       </div>
-                       <div className="p-2 space-y-1">
-                          {step <= totalSteps && getRulesForStep(step).filter(r => r.type !== "Attachment").map(rule => renderCard(rule, step, true))}
-                       </div>
+                           )}
+                        </div>
+                        <div className="p-2 space-y-1">
+                           {step <= totalSteps && getRulesForStep(step).filter(r => r.type !== "Attachment").map(rule => renderCard(rule, step, true))}
+                        </div>
                     </div>
                  ))}
               </div>
@@ -196,9 +201,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         "rounded-lg min-h-[200px] flex flex-col border shadow-sm",
                         step > totalSteps ? "bg-slate-100 opacity-30 border-dashed" : (index % 2 === 0 ? "bg-white border-slate-200" : "bg-purple-50/30 border-purple-100")
                       )}>
-                       <div className="p-2 space-y-1 flex-1">
-                          {step <= totalSteps && getRulesForStep(step).filter(r => r.type === "Attachment").map(rule => renderCard(rule, step, true))}
-                       </div>
+                        <div className="p-2 space-y-1 flex-1">
+                           {step <= totalSteps && getRulesForStep(step).filter(r => r.type === "Attachment").map(rule => renderCard(rule, step, true))}
+                        </div>
                     </div>
                  ))}
               </div>
@@ -228,18 +233,27 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               </div>
               <div className="space-y-1">
                  <label className="text-xs font-bold text-slate-500">Select Teeth (Optional)</label>
-                 <div className="grid grid-cols-8 gap-1">
-                    {[18,17,16,15,14,13,12,11, 21,22,23,24,25,26,27,28, 48,47,46,45,44,43,42,41, 31,32,33,34,35,36,37,38].map((t) => (
-                       <button key={t} onClick={() => toggleTooth(t)} className={cn("text-[10px] p-1 border rounded hover:bg-blue-50", selectedTeeth.includes(t) ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-700")}>
-                          {t}
-                       </button>
-                    ))}
-                 </div>
+                 {/* ✨ 십자가 선택판 적용 */}
+                 <ToothGrid selectedTeeth={selectedTeeth} onToggle={toggleTooth} />
                  <p className="text-[10px] text-slate-400 mt-1">* 선택하지 않으면 '전체(General)'로 저장됩니다.</p>
               </div>
               <div className="flex gap-2">
                  <div className="flex-1"><label className="text-xs font-bold text-slate-500">Start</label><input type="number" className="w-full border p-2 rounded" value={startStep} onChange={(e) => setStartStep(Number(e.target.value))} /></div>
-                 <div className="flex-1"><label className="text-xs font-bold text-slate-500">End</label><input type="number" className="w-full border p-2 rounded" value={endStep} onChange={(e) => setEndStep(Number(e.target.value))} /></div>
+                 <div className="flex-1">
+                    <label className="text-xs font-bold text-slate-500">End</label>
+                    <div className="flex gap-1">
+                        <input type="number" className="w-full border p-2 rounded" value={endStep} onChange={(e) => setEndStep(Number(e.target.value))} />
+                        {/* ✨ End 버튼 추가 */}
+                        <Button 
+                            variant="outline" 
+                            className="px-2 text-xs" 
+                            onClick={() => setEndStep(totalSteps)}
+                            title="Set to Last Step"
+                        >
+                            End
+                        </Button>
+                    </div>
+                 </div>
               </div>
               <div className="space-y-1">
                  <label className="text-xs font-bold text-slate-500">Note</label>
@@ -272,9 +286,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            </div>
            
            <div className="flex items-center justify-between p-3 border-b bg-white shrink-0">
-             <Button variant="ghost" size="sm" onClick={() => setCurrentStep(p => Math.max(1, p - 1))} disabled={currentStep === 1}><ChevronLeft className="w-4 h-4" /></Button>
+             {/* ✨ 0부터 이동 가능하도록 disabled 조건 수정 */}
+             <Button variant="ghost" size="sm" onClick={() => setCurrentStep(p => Math.max(0, p - 1))} disabled={currentStep === 0}><ChevronLeft className="w-4 h-4" /></Button>
              <div className="flex flex-col items-center gap-1">
-                <div className="text-lg font-bold text-slate-900">Step {currentStep}</div>
+                <div className="text-lg font-bold text-slate-900">{currentStep === 0 ? "PRE (준비)" : `Step ${currentStep}`}</div>
                 <div className="flex items-center gap-1">
                    <input type="number" placeholder="Go to..." className="w-16 h-6 text-xs text-center border rounded focus:border-blue-500 outline-none" value={jumpStepInput} onChange={(e) => setJumpStepInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleJumpStep()} />
                    <button onClick={handleJumpStep} className="h-6 w-6 flex items-center justify-center bg-slate-100 rounded hover:bg-slate-200"><ArrowRight className="w-3 h-3 text-slate-600"/></button>

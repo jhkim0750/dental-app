@@ -27,9 +27,10 @@ export type ChecklistItem = {
 export type Patient = {
   id: string;
   name: string;
-  caseNumber: string;
+  caseNumber: string; // 선생님 코드는 caseNumber
   totalSteps: number;
+  clinic_name?: string; // 👈 [이 한 줄을 꼭 추가하세요!]
   rules: Rule[];
-  checkedItems: Record<string, boolean>; // ruleId-step -> checked
+  checkedItems: Record<string, boolean>;
 };
 
