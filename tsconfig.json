@@ -25,7 +25,6 @@
     },
     "types": [
       "next",
-      "next/image-types",
       "next/navigation"
     ],
     "plugins": [
