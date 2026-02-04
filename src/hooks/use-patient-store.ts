@@ -76,12 +76,12 @@ export const usePatientStore = create<PatientState>((set, get) => ({
     .from('patients')
     .insert([{
       name,
-      case_number: caseNumber, // ✅ DB이름(case_number) : 내변수(caseNumber)
-        total_steps: totalSteps, // ✅ DB이름(total_steps) : 내변수(totalSteps)
-        clinic_name: clinicName,
-      rules: [],
-      checkedItems: {}
-    }])
+      case_number: caseNumber,   // ✅ (수정) DB이름: 내변수
+        total_steps: totalSteps,   // ✅ (수정) DB이름: 내변수
+        clinic_name: clinicName,   // (이건 맞음)
+        rules: [],
+        checklist_status: []       // ✅ (수정) checkedItems: {} 가 아니라 checklist_status: [] 입니다!
+      }])
     .select();
 
   if (error) {
@@ -101,8 +101,8 @@ updatePatient: async (id, name, caseNumber, totalSteps, clinicName) => {
     .from('patients')
     .update({
       name,
-      case_number: caseNumber, // ✅ 여기도 짝꿍 맞춰주기
-      total_steps: totalSteps, // ✅ 여기도 짝꿍 맞춰주기
+      case_number: caseNumber,   // ✅ (수정)
+      total_steps: totalSteps,   // ✅ (수정)
       clinic_name: clinicName
     })
     .eq('id', id)
