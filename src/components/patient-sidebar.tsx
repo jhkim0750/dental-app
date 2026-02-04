@@ -143,7 +143,7 @@ export function PatientSidebar({ onClose }: PatientSidebarProps) {
                       <>
                         <span>•</span>
                         <span className="text-blue-600 flex items-center gap-0.5">
-                           <Hospital size={10} /> {patient.clinic_name}
+                           <Hospital size={10} /> {(patient as any).clinic_name}
                         </span>
                       </>
                     )}
