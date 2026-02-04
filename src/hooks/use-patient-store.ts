@@ -25,10 +25,11 @@ export interface Patient {
   id: string;
   created_at: string;
   name: string;
-  case_number: string; // Supabase 컬럼명(snake_case)에 맞춤
+  case_number: string; 
   total_steps: number;
-  rules: Rule[]; // JSONB로 저장됨
-  checklist_status: ChecklistItemStatus[]; // JSONB로 저장됨
+  clinic_name?: string; // 👈 [이 줄을 꼭 추가해주세요!]
+  rules: Rule[];
+  checklist_status: ChecklistItemStatus[];
 }
 
 interface PatientState {
@@ -75,9 +76,9 @@ export const usePatientStore = create<PatientState>((set, get) => ({
     .from('patients')
     .insert([{
       name,
-      caseNumber,
-      totalSteps,
-      clinic_name: clinicName, // 👈 여기가 핵심! (DB이름: 받아온이름)
+      case_number: caseNumber, // ✅ DB이름(case_number) : 내변수(caseNumber)
+        total_steps: totalSteps, // ✅ DB이름(total_steps) : 내변수(totalSteps)
+        clinic_name: clinicName,
       rules: [],
       checkedItems: {}
     }])
@@ -100,8 +101,8 @@ updatePatient: async (id, name, caseNumber, totalSteps, clinicName) => {
     .from('patients')
     .update({
       name,
-      caseNumber,
-      totalSteps,
+      case_number: caseNumber, // ✅ 여기도 짝꿍 맞춰주기
+      total_steps: totalSteps, // ✅ 여기도 짝꿍 맞춰주기
       clinic_name: clinicName
     })
     .eq('id', id)
@@ -113,6 +114,7 @@ updatePatient: async (id, name, caseNumber, totalSteps, clinicName) => {
     }));
   }
 },
+
   selectPatient: (id) => set({ selectedPatientId: id }),
 
   // 3. 환자 삭제
