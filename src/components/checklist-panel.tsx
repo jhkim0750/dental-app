@@ -346,10 +346,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   
   const getRulesForStep = (step: number) => patient.rules.filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
   
-  // ✨ 룰 분류 로직 (TypeScript 에러 해결 완료)
+  // 룰 분류 로직
   const getGroupedRules = (step: number) => {
     const allRules = getRulesForStep(step);
-    // (r: Rule) 타입을 명시해서 에러 해결!
     const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment");
 
     // General (0번 치아, 어태치먼트 제외)
@@ -367,7 +366,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const getStatus = (rule: Rule, step: number) => { if (step === rule.startStep) return "NEW"; if (step === rule.endStep) return "REMOVE"; return "CHECK"; };
   const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
 
-  // ✨ 그룹별 완료 여부 확인
+  // 그룹별 완료 여부 확인
   const areRulesCompleted = (rules: Rule[], step: number) => {
       if (rules.length === 0) return false;
       return rules.every(r => isChecked(r.id, step));
@@ -394,6 +393,27 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   const renderFullScreenGrid = () => {
     const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i);
+    
+    // ✨ [핵심] 현재 페이지(10개 스텝) 내에서 각 섹션별 최대 아이템 개수 계산
+    let maxGenCount = 0;
+    let maxUpperCount = 0;
+    let maxLowerCount = 0;
+
+    stepsToShow.forEach(step => {
+        const { genRules, upperRules, lowerRules } = getGroupedRules(step);
+        maxGenCount = Math.max(maxGenCount, genRules.length);
+        maxUpperCount = Math.max(maxUpperCount, upperRules.length);
+        maxLowerCount = Math.max(maxLowerCount, lowerRules.length);
+    });
+
+    // 높이 계산 헬퍼 (헤더 + 아이템 개수 * 대략적 높이)
+    // 아이템 하나당 약 80px (메모 줄바꿈 고려) + 헤더 및 패딩
+    const getMinHeightStyle = (count: number) => {
+        if (count === 0) return {};
+        // 30px(헤더) + count * 85px(아이템)
+        return { minHeight: `${30 + (count * 85)}px` };
+    };
+
     return (
       <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in duration-200">
         <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0">
@@ -407,7 +427,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
             </div>
         </div>
         <div className="flex-1 p-6 overflow-auto">
-             {/* 1. Main Rules (카드 분리) */}
+             {/* 1. Main Rules (카드 분리 + 높이 정렬) */}
              <div className="mb-8">
                  <h3 className="text-xl font-bold text-blue-800 mb-3 border-l-4 border-blue-600 pl-3 flex items-center gap-2"><Layout className="w-5 h-5"/> Main Rules</h3>
                  <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
@@ -415,17 +435,17 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         const { genRules, upperRules, lowerRules, attRules } = getGroupedRules(step);
                         const allRulesInStep = [...genRules, ...upperRules, ...lowerRules, ...attRules];
                         
-                        // 전체 스텝 완료 여부 (헤더 색상용)
+                        // 전체 스텝 완료 여부
                         const isStepAllDone = areRulesCompleted(allRulesInStep, step);
 
-                        // 개별 카드 완료 여부 (초록 테두리용)
+                        // 개별 카드 완료 여부
                         const isGenDone = areRulesCompleted(genRules, step);
                         const isUpperDone = areRulesCompleted(upperRules, step);
                         const isLowerDone = areRulesCompleted(lowerRules, step);
                         
                         return (
                             <div key={`main-${step}`} className="flex flex-col gap-2 min-h-[250px]">
-                                {/* ✨ 헤더: 전체 완료 시 진한 파란색 */}
+                                {/* 헤더 */}
                                 <div className={cn(
                                     "p-2 font-bold text-xs text-center sticky top-0 z-10 flex justify-between items-center rounded shadow-sm border", 
                                     step===0 ? "bg-yellow-50 border-yellow-200" : (isStepAllDone ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-700 border-slate-200")
@@ -439,25 +459,34 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                 </div>
 
                                 <div className="space-y-2 flex-1">
-                                    {/* ✨ 1. General Card */}
-                                    {genRules.length > 0 && (
-                                        <div className={cn("bg-white rounded p-1 border shadow-sm transition-all", isGenDone ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}>
+                                    {/* ✨ 1. General Card (높이 고정) */}
+                                    {maxGenCount > 0 && (
+                                        <div 
+                                            className={cn("bg-white rounded p-1 border shadow-sm transition-all flex flex-col", (genRules.length > 0 && isGenDone) ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}
+                                            style={getMinHeightStyle(maxGenCount)}
+                                        >
                                             <div className="text-[9px] font-bold text-slate-400 uppercase px-1 mb-1">General</div>
                                             {genRules.map((rule: Rule) => renderCard(rule, step, true))}
                                         </div>
                                     )}
 
-                                    {/* ✨ 2. Upper (Maxilla) Card */}
-                                    {upperRules.length > 0 && (
-                                        <div className={cn("bg-white rounded p-1 border shadow-sm transition-all", isUpperDone ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}>
+                                    {/* ✨ 2. Upper (Maxilla) Card (높이 고정) */}
+                                    {maxUpperCount > 0 && (
+                                        <div 
+                                            className={cn("bg-white rounded p-1 border shadow-sm transition-all flex flex-col", (upperRules.length > 0 && isUpperDone) ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}
+                                            style={getMinHeightStyle(maxUpperCount)}
+                                        >
                                             <div className="text-[9px] font-bold text-slate-400 uppercase px-1 mb-1">Maxilla (상악)</div>
                                             {upperRules.map((rule: Rule) => renderCard(rule, step, true))}
                                         </div>
                                     )}
 
-                                    {/* ✨ 3. Lower (Mandible) Card */}
-                                    {lowerRules.length > 0 && (
-                                        <div className={cn("bg-white rounded p-1 border shadow-sm transition-all", isLowerDone ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}>
+                                    {/* ✨ 3. Lower (Mandible) Card (높이 고정) */}
+                                    {maxLowerCount > 0 && (
+                                        <div 
+                                            className={cn("bg-white rounded p-1 border shadow-sm transition-all flex flex-col", (lowerRules.length > 0 && isLowerDone) ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}
+                                            style={getMinHeightStyle(maxLowerCount)}
+                                        >
                                             <div className="text-[9px] font-bold text-slate-400 uppercase px-1 mb-1">Mandible (하악)</div>
                                             {lowerRules.map((rule: Rule) => renderCard(rule, step, true))}
                                         </div>
@@ -469,7 +498,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                  </div>
              </div>
              
-             {/* 2. Attachments Only (기존 위치 유지!) */}
+             {/* 2. Attachments Only (기존 위치 유지) */}
              <div className="mb-10 pt-4 border-t-2 border-dashed border-slate-300">
                  <h3 className="text-xl font-bold text-green-800 mb-3 border-l-4 border-green-600 pl-3 flex items-center gap-2 mt-4"><Paperclip className="w-5 h-5"/> Attachments Only</h3>
                  <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
@@ -489,7 +518,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                         </div>
                                     </div>
                                 ) : (
-                                    // 빈 칸일 때 흐릿하게 표시
                                     <div className="rounded-lg h-24 border border-dashed border-slate-200 bg-slate-50/30 flex items-center justify-center">
                                         <span className="text-[10px] text-slate-300">No Att</span>
                                     </div>
