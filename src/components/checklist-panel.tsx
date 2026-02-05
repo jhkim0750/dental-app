@@ -5,7 +5,7 @@ import { usePatientStoreHydrated, Rule } from "@/hooks/use-patient-store";
 import { 
   CheckCheck, ChevronLeft, ChevronRight, 
   Plus, Trash2, Pencil, Save, Layout, FileImage, 
-  Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, MousePointer2 
+  Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -51,33 +51,78 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [fontSize, setFontSize] = useState<"sm" | "base" | "lg">("base");
   const [fontColor, setFontColor] = useState("#334155");
   
-  // ✨ 고급 캔버스 상태
+  // 캔버스 상태
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   
-  // 도구: 펜(draw), 직선(line), 지우개(eraser), 텍스트(text)
   const [currentTool, setCurrentTool] = useState<"draw" | "line" | "eraser" | "text">("draw");
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState<{x: number, y: number} | null>(null);
-  const [snapshot, setSnapshot] = useState<ImageData | null>(null); // 직선 그리기용 스냅샷
-
-  // 텍스트 입력 오버레이 상태
+  const [snapshot, setSnapshot] = useState<ImageData | null>(null);
   const [textInput, setTextInput] = useState<{x: number, y: number, value: string} | null>(null);
 
   if (!store) return null;
   const totalSteps = patient.total_steps || 20;
 
-  // --- 캔버스 사이즈 조절 로직 (이미지 크기에 맞춤) ---
+  // ✨ 처음 로딩 시 DB에서 데이터 가져오기
+  useEffect(() => {
+    if (patient.summary) {
+      if (patient.summary.memo) setMemoText(patient.summary.memo);
+      if (patient.summary.image) {
+        setUploadedImage(patient.summary.image);
+      }
+    }
+  }, [patient.summary]);
+
+  // ✨ 저장하기 버튼 기능 (에러 수정됨!)
+  const handleSaveSummary = async () => {
+    let finalImage = uploadedImage;
+    
+    // 캔버스 내용(그림)이 있으면 이미지로 변환해서 저장
+    if (containerRef.current && uploadedImage && canvasRef.current) {
+        const canvas = canvasRef.current;
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const ctx = tempCanvas.getContext('2d');
+        
+        if (ctx) {
+            // 1. 배경 이미지 그리기
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.src = uploadedImage;
+            await new Promise((resolve) => {
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                    resolve(null);
+                };
+            });
+            // 2. 캔버스 그림 합치기
+            ctx.drawImage(canvas, 0, 0);
+            // 3. 변환
+            finalImage = tempCanvas.toDataURL("image/png");
+        }
+    }
+
+    // 👇 [여기가 수정되었습니다] null을 undefined로 바꿔서 에러 해결!
+    await store.saveSummary(patient.id, {
+      image: finalImage ?? undefined, 
+      memo: memoText
+    });
+    alert("Summary Saved! (저장되었습니다)");
+  };
+
+
+  // --- 캔버스 사이즈 조절 ---
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (canvas && container) {
-       // 컨테이너 크기에 맞춰 캔버스 해상도 조절
        canvas.width = container.offsetWidth;
        canvas.height = container.offsetHeight;
     }
-  }, [uploadedImage, isGridOpen]); // 이미지가 바뀌거나 탭이 열릴 때 리사이징
+  }, [uploadedImage, isGridOpen]);
 
   // --- 그리기 핸들러 ---
   const getCanvasPoint = (e: React.MouseEvent) => {
@@ -97,17 +142,15 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     const ctx = canvas?.getContext("2d");
     if (!ctx || !canvas) return;
 
-    // 텍스트 도구일 경우
     if (currentTool === 'text') {
       e.preventDefault();
-      setTextInput({ x, y, value: "" }); // 입력창 띄우기
+      setTextInput({ x, y, value: "" }); 
       return;
     }
 
     setIsDrawing(true);
     setStartPos({ x, y });
     
-    // 직선 도구일 경우 현재 상태 저장 (미리보기 위해)
     if (currentTool === 'line') {
       setSnapshot(ctx.getImageData(0, 0, canvas.width, canvas.height));
     }
@@ -115,15 +158,14 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     ctx.beginPath();
     ctx.moveTo(x, y);
     
-    // 펜/지우개 설정
     ctx.lineWidth = currentTool === 'eraser' ? 20 : 3;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     
     if (currentTool === 'eraser') {
-      ctx.globalCompositeOperation = 'destination-out'; // 지우개 모드 (투명하게 만듦)
+      ctx.globalCompositeOperation = 'destination-out';
     } else {
-      ctx.globalCompositeOperation = 'source-over'; // 그리기 모드
+      ctx.globalCompositeOperation = 'source-over';
       ctx.strokeStyle = fontColor;
     }
   };
@@ -136,14 +178,12 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     if (!ctx || !canvas) return;
 
     if (currentTool === 'line' && snapshot) {
-      // 직선: 저장해둔 화면을 불러오고 -> 새 선을 그림 (잔상 제거 효과)
       ctx.putImageData(snapshot, 0, 0);
       ctx.beginPath();
       ctx.moveTo(startPos.x, startPos.y);
       ctx.lineTo(x, y);
       ctx.stroke();
     } else if (currentTool === 'draw' || currentTool === 'eraser') {
-      // 자유 곡선
       ctx.lineTo(x, y);
       ctx.stroke();
     }
@@ -153,12 +193,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     setIsDrawing(false);
     setStartPos(null);
     setSnapshot(null);
-    // 컨텍스트 초기화 (지우개 모드 해제 등)
     const ctx = canvasRef.current?.getContext("2d");
     if (ctx) ctx.globalCompositeOperation = 'source-over';
   };
 
-  // 텍스트 입력 완료 핸들러
   const handleTextComplete = () => {
     if (!textInput || !textInput.value) {
       setTextInput(null);
@@ -169,110 +207,49 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     if (ctx) {
       ctx.font = "bold 16px sans-serif";
       ctx.fillStyle = fontColor;
-      ctx.fillText(textInput.value, textInput.x, textInput.y + 12); // y보정
+      ctx.fillText(textInput.value, textInput.x, textInput.y + 12);
     }
     setTextInput(null);
   };
 
-  // --- 기존 로직들 ---
-  const toggleTooth = (t: string) => {
-    setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
-  };
-
+  // --- 기존 로직들 (축약) ---
+  const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  
   const handleSaveRules = async () => {
     const finalType = selectedType === "기타" ? customType : selectedType;
     if (!finalType) return alert("Please enter a type name.");
-    
-    const teethToSave: number[] = selectedTeeth.length === 0 
-      ? [0] 
-      : selectedTeeth.map(t => parseInt(t));
-    
+    const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t));
     if (editingRuleId) {
-      const tooth = teethToSave[0];
-      await store.updateRule(patient.id, {
-        id: editingRuleId,
-        type: finalType,
-        tooth,
-        startStep,
-        endStep,
-        note
-      });
+      await store.updateRule(patient.id, { id: editingRuleId, type: finalType, tooth: teethToSave[0], startStep, endStep, note });
       setEditingRuleId(null);
     } else {
       for (const tooth of teethToSave) {
-        await store.addRule(patient.id, {
-          type: finalType,
-          tooth,
-          startStep,
-          endStep,
-          note
-        });
+        await store.addRule(patient.id, { type: finalType, tooth, startStep, endStep, note });
       }
     }
-    setSelectedTeeth([]);
-    setNote("");
-    if (selectedType === "기타") setCustomType("");
+    setSelectedTeeth([]); setNote(""); if (selectedType === "기타") setCustomType("");
   };
 
   const handleEditClick = (rule: Rule) => {
     setEditingRuleId(rule.id);
-    if (PRESET_TYPES.includes(rule.type)) {
-      setSelectedType(rule.type);
-      setCustomType("");
-    } else {
-      setSelectedType("기타");
-      setCustomType(rule.type);
-    }
+    if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } 
+    else { setSelectedType("기타"); setCustomType(rule.type); }
     setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]);
-    setStartStep(rule.startStep);
-    setEndStep(rule.endStep);
-    setNote(rule.note || "");
+    setStartStep(rule.startStep); setEndStep(rule.endStep); setNote(rule.note || "");
   };
 
-  const cancelEdit = () => {
-    setEditingRuleId(null);
-    setSelectedTeeth([]);
-    setNote("");
-    setStartStep(1);
-    setEndStep(10);
-  };
+  const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
+  const handleDeleteRule = async (ruleId: string) => { if (confirm("Delete this rule?")) { await store.deleteRule(patient.id, ruleId); if (editingRuleId === ruleId) cancelEdit(); }};
+  const getRulesForStep = (step: number) => patient.rules.filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
+  const getAttachmentRulesForStep = (step: number) => getRulesForStep(step).filter((r: Rule) => r.type.toLowerCase().includes("attachment"));
+  const getStatus = (rule: Rule, step: number) => { if (step === rule.startStep) return "NEW"; if (step === rule.endStep) return "REMOVE"; return "CHECK"; };
+  const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
 
-  const handleDeleteRule = async (ruleId: string) => {
-    if (confirm("Delete this rule?")) {
-      await store.deleteRule(patient.id, ruleId);
-      if (editingRuleId === ruleId) cancelEdit();
-    }
-  };
-
-  const getRulesForStep = (step: number) => {
-    return patient.rules.filter((r: Rule) => step >= r.startStep && step <= r.endStep)
-      .sort((a: Rule, b: Rule) => a.tooth - b.tooth);
-  };
-
-  const getAttachmentRulesForStep = (step: number) => {
-    return getRulesForStep(step).filter((r: Rule) => 
-      r.type.toLowerCase().includes("attachment")
-    );
-  };
-
-  const getStatus = (rule: Rule, step: number) => {
-    if (step === rule.startStep) return "NEW";
-    if (step === rule.endStep) return "REMOVE";
-    return "CHECK";
-  };
-
-  const isChecked = (ruleId: string, step: number) => {
-    return patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
-  };
-
-  // 이미지 업로드
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setUploadedImage(reader.result as string);
-      };
+      reader.onloadend = () => setUploadedImage(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
@@ -280,13 +257,11 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleRemoveImage = () => {
     setUploadedImage(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
-    // 캔버스 초기화
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
   };
 
-  // 전체 지우기 (그림만 지우기)
   const clearCanvas = () => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -294,41 +269,19 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   };
 
   const renderCard = (rule: Rule, step: number, isTiny = false) => {
-    const status = getStatus(rule, step);
-    const checked = isChecked(rule.id, step);
-    const typeColorClass = getTypeColor(rule.type);
-
+    const status = getStatus(rule, step); const checked = isChecked(rule.id, step); const typeColorClass = getTypeColor(rule.type);
     return (
-      <div
-        key={rule.id}
-        onClick={() => store.toggleChecklistItem(patient.id, step, rule.id)}
-        className={cn(
-          "rounded cursor-pointer transition-all flex flex-col relative group select-none",
-          isTiny ? "p-1.5 mb-1.5 shadow-sm" : "p-3 mb-2 border",
-          checked ? "bg-slate-100 text-slate-400 grayscale" : "bg-white hover:ring-2 hover:ring-blue-200",
-          status === "NEW" && !checked && "border-l-4 border-l-green-500 shadow-md",
-          status === "REMOVE" && !checked && "border-l-4 border-l-red-500 shadow-md"
-        )}
-      >
+      <div key={rule.id} onClick={() => store.toggleChecklistItem(patient.id, step, rule.id)}
+        className={cn("rounded cursor-pointer transition-all flex flex-col relative group select-none", isTiny ? "p-1.5 mb-1.5 shadow-sm" : "p-3 mb-2 border", checked ? "bg-slate-100 text-slate-400 grayscale" : "bg-white hover:ring-2 hover:ring-blue-200", status === "NEW" && !checked && "border-l-4 border-l-green-500 shadow-md", status === "REMOVE" && !checked && "border-l-4 border-l-red-500 shadow-md")}>
         <div className="flex justify-between items-start">
-          <span className={cn("font-bold text-slate-800", isTiny ? "text-[11px]" : "text-lg")}>
-            {rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}
-          </span>
+          <span className={cn("font-bold text-slate-800", isTiny ? "text-[11px]" : "text-lg")}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}</span>
           <div className="flex gap-1 items-center">
             {status === "NEW" && <span className="bg-green-100 text-green-700 px-1 rounded-[3px] font-bold text-[9px]">NEW</span>}
             {status === "REMOVE" && <span className="bg-red-100 text-red-700 px-1 rounded-[3px] font-bold text-[9px]">REM</span>}
-             <div className={cn(
-               "rounded flex items-center justify-center transition-colors", 
-               isTiny ? "w-3 h-3 border" : "w-5 h-5 border", 
-               checked ? "bg-slate-500 border-slate-500" : "bg-white border-slate-300"
-             )}>
-               {checked && <CheckCheck className="text-white w-full h-full p-[1px]" />}
-             </div>
+             <div className={cn("rounded flex items-center justify-center transition-colors", isTiny ? "w-3 h-3 border" : "w-5 h-5 border", checked ? "bg-slate-500 border-slate-500" : "bg-white border-slate-300")}>{checked && <CheckCheck className="text-white w-full h-full p-[1px]" />}</div>
           </div>
         </div>
-        <div className={cn("font-bold truncate mt-0.5", typeColorClass, isTiny && "text-[10px]")}>
-            {rule.type}
-        </div>
+        <div className={cn("font-bold truncate mt-0.5", typeColorClass, isTiny && "text-[10px]")}>{rule.type}</div>
         {rule.note && <div className={cn("text-slate-400 truncate", isTiny ? "text-[9px]" : "mt-1")}>{rule.note}</div>}
       </div>
     );
@@ -339,58 +292,34 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     return (
       <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in duration-200">
         <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0">
-            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                <Layout className="w-6 h-6 text-blue-600"/> Full Checklist Grid
-            </h2>
+            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Layout className="w-6 h-6 text-blue-600"/> Full Checklist Grid</h2>
             <div className="flex gap-4 items-center">
                 <div className="flex gap-2">
                     <Button variant="outline" disabled={pageStartStep <= 0} onClick={() => setPageStartStep(Math.max(0, pageStartStep - 10))}><ChevronLeft className="w-4 h-4 mr-1"/> Prev 10</Button>
                     <Button variant="outline" disabled={pageStartStep + 10 > totalSteps} onClick={() => setPageStartStep(Math.min(totalSteps, pageStartStep + 10))}>Next 10 <ChevronRight className="w-4 h-4 ml-1"/></Button>
                 </div>
-                <Button variant="destructive" onClick={() => setIsGridOpen(false)}>
-                    <X className="w-5 h-5 mr-1"/> Close
-                </Button>
+                <Button variant="destructive" onClick={() => setIsGridOpen(false)}><X className="w-5 h-5 mr-1"/> Close</Button>
             </div>
         </div>
-
         <div className="flex-1 p-6 overflow-auto">
              <div className="mb-8">
-                 <h3 className="text-xl font-bold text-blue-800 mb-3 border-l-4 border-blue-600 pl-3 flex items-center gap-2">
-                    <Layout className="w-5 h-5"/> Main Rules
-                 </h3>
+                 <h3 className="text-xl font-bold text-blue-800 mb-3 border-l-4 border-blue-600 pl-3 flex items-center gap-2"><Layout className="w-5 h-5"/> Main Rules</h3>
                  <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
                      {stepsToShow.map((step) => (
-                        <div key={`main-${step}`} className={cn(
-                            "rounded-lg min-h-[250px] flex flex-col border shadow-sm transition-colors",
-                            step > totalSteps ? "bg-slate-100 opacity-30 border-dashed" : "bg-white"
-                          )}>
-                            <div className={cn("p-2 border-b font-bold text-xs text-center sticky top-0 z-10", step===0?"bg-yellow-50":"bg-slate-50")}>
-                              {step === 0 ? "PRE (준비)" : `STEP ${step}`}
-                            </div>
-                            <div className="p-1 space-y-1 flex-1 overflow-y-auto">
-                               {step <= totalSteps && getRulesForStep(step).map((rule: Rule) => renderCard(rule, step, true))}
-                            </div>
+                        <div key={`main-${step}`} className={cn("rounded-lg min-h-[250px] flex flex-col border shadow-sm transition-colors", step > totalSteps ? "bg-slate-100 opacity-30 border-dashed" : "bg-white")}>
+                            <div className={cn("p-2 border-b font-bold text-xs text-center sticky top-0 z-10", step===0?"bg-yellow-50":"bg-slate-50")}>{step === 0 ? "PRE (준비)" : `STEP ${step}`}</div>
+                            <div className="p-1 space-y-1 flex-1 overflow-y-auto">{step <= totalSteps && getRulesForStep(step).map((rule: Rule) => renderCard(rule, step, true))}</div>
                         </div>
                      ))}
                  </div>
              </div>
-
              <div className="mb-10 pt-4 border-t-2 border-dashed border-slate-300">
-                 <h3 className="text-xl font-bold text-green-800 mb-3 border-l-4 border-green-600 pl-3 flex items-center gap-2 mt-4">
-                    <Paperclip className="w-5 h-5"/> Attachments Only
-                 </h3>
+                 <h3 className="text-xl font-bold text-green-800 mb-3 border-l-4 border-green-600 pl-3 flex items-center gap-2 mt-4"><Paperclip className="w-5 h-5"/> Attachments Only</h3>
                  <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
                      {stepsToShow.map((step) => (
-                        <div key={`att-${step}`} className={cn(
-                            "rounded-lg min-h-[150px] flex flex-col border shadow-sm transition-colors",
-                            step > totalSteps ? "bg-slate-100 opacity-30 border-dashed" : "bg-slate-50/50"
-                          )}>
-                             <div className="p-1.5 border-b text-[10px] font-bold text-slate-400 text-center">
-                                {step === 0 ? "PRE" : `STEP ${step}`}
-                             </div>
-                            <div className="p-1 space-y-1 flex-1 overflow-y-auto">
-                               {step <= totalSteps && getAttachmentRulesForStep(step).map((rule: Rule) => renderCard(rule, step, true))}
-                            </div>
+                        <div key={`att-${step}`} className={cn("rounded-lg min-h-[150px] flex flex-col border shadow-sm transition-colors", step > totalSteps ? "bg-slate-100 opacity-30 border-dashed" : "bg-slate-50/50")}>
+                             <div className="p-1.5 border-b text-[10px] font-bold text-slate-400 text-center">{step === 0 ? "PRE" : `STEP ${step}`}</div>
+                            <div className="p-1 space-y-1 flex-1 overflow-y-auto">{step <= totalSteps && getAttachmentRulesForStep(step).map((rule: Rule) => renderCard(rule, step, true))}</div>
                         </div>
                      ))}
                  </div>
@@ -403,64 +332,36 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   return (
     <>
       <div className="flex h-full">
-        {/* 왼쪽 패널 */}
+        {/* 왼쪽 패널 (생략: 기존과 동일) */}
         <div className="w-[340px] border-r bg-white flex flex-col h-full overflow-hidden shrink-0">
            <div className="p-4 border-b bg-slate-50 shrink-0"><h2 className="font-bold">Rule Definition</h2></div>
            <div className="p-4 space-y-4 overflow-y-auto flex-1">
-              {/* 왼쪽 패널 내용은 기존과 동일 */}
               <div className="space-y-1">
                  <Label className="text-xs font-bold text-slate-500">Item Type</Label>
                  <select className="w-full border p-2 rounded" value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
                     {PRESET_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                  </select>
-                 {selectedType === "기타" && (
-                    <input className="w-full border p-2 rounded mt-1 text-sm bg-yellow-50" placeholder="직접 입력하세요..." value={customType} onChange={(e) => setCustomType(e.target.value)} />
-                 )}
+                 {selectedType === "기타" && <input className="w-full border p-2 rounded mt-1 text-sm bg-yellow-50" placeholder="직접 입력하세요..." value={customType} onChange={(e) => setCustomType(e.target.value)} />}
               </div>
-              <div className="space-y-1">
-                 <Label className="text-xs font-bold text-slate-500">Select Teeth</Label>
-                 <ToothGrid selectedTeeth={selectedTeeth} onToggle={toggleTooth} />
-              </div>
+              <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Select Teeth</Label><ToothGrid selectedTeeth={selectedTeeth} onToggle={toggleTooth} /></div>
               <div className="flex gap-2">
                  <div className="flex-1"><Label className="text-xs font-bold text-slate-500">Start</Label><input type="number" className="w-full border p-2 rounded" value={startStep} onChange={(e) => setStartStep(Number(e.target.value))} /></div>
-                 <div className="flex-1">
-                    <Label className="text-xs font-bold text-slate-500">End</Label>
-                    <div className="flex gap-1">
-                        <input type="number" className="w-full border p-2 rounded" value={endStep} onChange={(e) => setEndStep(Number(e.target.value))} />
-                        <Button variant="outline" className="px-2 text-xs" onClick={() => setEndStep(totalSteps)}>End</Button>
-                    </div>
-                 </div>
+                 <div className="flex-1"><Label className="text-xs font-bold text-slate-500">End</Label><div className="flex gap-1"><input type="number" className="w-full border p-2 rounded" value={endStep} onChange={(e) => setEndStep(Number(e.target.value))} /><Button variant="outline" className="px-2 text-xs" onClick={() => setEndStep(totalSteps)}>End</Button></div></div>
               </div>
-              <div className="space-y-1">
-                 <Label className="text-xs font-bold text-slate-500">Note</Label>
-                 <input className="w-full border p-2 rounded" placeholder="e.g. Mesial" value={note} onChange={(e) => setNote(e.target.value)} />
-              </div>
-              
+              <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Note</Label><input className="w-full border p-2 rounded" placeholder="e.g. Mesial" value={note} onChange={(e) => setNote(e.target.value)} /></div>
               <div className="flex gap-2">
-                {editingRuleId && (
-                  <Button variant="outline" onClick={cancelEdit} className="flex-1">Cancel</Button>
-                )}
-                <Button onClick={handleSaveRules} className={cn("flex-1 gap-2", editingRuleId ? "bg-orange-500 hover:bg-orange-600" : "")}>
-                  {editingRuleId ? <><Save className="w-4 h-4"/> Update</> : <><Plus className="w-4 h-4"/> Add Rule</>}
-                </Button>
+                {editingRuleId && <Button variant="outline" onClick={cancelEdit} className="flex-1">Cancel</Button>}
+                <Button onClick={handleSaveRules} className={cn("flex-1 gap-2", editingRuleId ? "bg-orange-500 hover:bg-orange-600" : "")}>{editingRuleId ? <><Save className="w-4 h-4"/> Update</> : <><Plus className="w-4 h-4"/> Add Rule</>}</Button>
               </div>
-
               <hr className="my-4"/>
               <div className="space-y-2 pb-10">
                  <h3 className="text-xs font-bold text-slate-500 uppercase">Existing Rules ({patient.rules.length})</h3>
                  {patient.rules.map((rule: Rule) => (
                     <div key={rule.id} className={cn("text-xs border p-2 rounded flex justify-between items-center group transition-colors", editingRuleId === rule.id ? "bg-orange-50 border-orange-200" : "bg-slate-50")}>
-                       <div>
-                          <span className={cn("font-bold mr-1", getTypeColor(rule.type))}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`} {rule.type}</span>
-                          <span className="text-slate-500">({rule.startStep}-{rule.endStep})</span>
-                       </div>
+                       <div><span className={cn("font-bold mr-1", getTypeColor(rule.type))}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`} {rule.type}</span><span className="text-slate-500">({rule.startStep}-{rule.endStep})</span></div>
                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => handleEditClick(rule)} className="text-slate-400 hover:text-blue-500 p-1">
-                             <Pencil className="w-3 h-3"/>
-                          </button>
-                          <button onClick={() => handleDeleteRule(rule.id)} className="text-slate-400 hover:text-red-500 p-1">
-                             <Trash2 className="w-3 h-3"/>
-                          </button>
+                          <button onClick={() => handleEditClick(rule)} className="text-slate-400 hover:text-blue-500 p-1"><Pencil className="w-3 h-3"/></button>
+                          <button onClick={() => handleDeleteRule(rule.id)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 className="w-3 h-3"/></button>
                        </div>
                     </div>
                  ))}
@@ -471,118 +372,60 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         {/* 오른쪽 패널 (Summary Default) */}
         <div className="flex-1 flex flex-col bg-slate-50/50 h-full overflow-hidden">
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
-             <div className="flex items-center gap-2">
-                <FileImage className="w-5 h-5 text-blue-600"/>
-                <h3 className="text-lg font-bold text-slate-800">Work Summary</h3>
+             <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
+             {/* ✨ 저장 버튼 추가됨 */}
+             <div className="flex gap-2">
+                <Button onClick={handleSaveSummary} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
+                <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-slate-800 hover:bg-slate-700"><Layout className="w-4 h-4"/> Checklist View</Button>
              </div>
-             
-             <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-slate-800 hover:bg-slate-700">
-                <Layout className="w-4 h-4"/> Checklist View
-             </Button>
            </div>
            
            <div className="flex-1 p-6 flex flex-col bg-slate-100 overflow-auto">
               <div className="bg-white p-6 rounded-lg shadow-sm flex flex-col h-full">
                  <div className="flex justify-between items-center mb-4">
-                    {/* 툴바 */}
                     <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-lg border">
-                        <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('draw')} title="Pen">
-                           <PenTool className="w-4 h-4"/>
-                        </Button>
-                        <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('line')} title="Straight Line">
-                           <Minus className="w-4 h-4 -rotate-45"/>
-                        </Button>
-                        <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('text')} title="Insert Text">
-                           <Type className="w-4 h-4"/>
-                        </Button>
-                        <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('eraser')} title="Eraser">
-                           <Eraser className="w-4 h-4"/>
-                        </Button>
+                        <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('draw')} title="Pen"><PenTool className="w-4 h-4"/></Button>
+                        <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('line')} title="Straight Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
+                        <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('text')} title="Insert Text"><Type className="w-4 h-4"/></Button>
+                        <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('eraser')} title="Eraser"><Eraser className="w-4 h-4"/></Button>
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
                         <input type="color" value={fontColor} onChange={(e) => setFontColor(e.target.value)} className="w-6 h-6 p-0 border-0 rounded cursor-pointer" title="Color" />
                     </div>
-
                     <div className="flex gap-2">
                        <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
-                       <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-                          <Upload className="w-4 h-4 mr-1"/> Upload
-                       </Button>
-                       
-                       {uploadedImage && (
-                         <Button variant="ghost" size="sm" onClick={clearCanvas} className="text-slate-500 hover:bg-slate-100">
-                           <Eraser className="w-4 h-4 mr-1"/> Clear All Draw
-                         </Button>
-                       )}
-
-                       {uploadedImage && (
-                          <Button variant="ghost" size="sm" onClick={handleRemoveImage} className="text-red-500 hover:text-red-600 hover:bg-red-50">
-                             <Trash2 className="w-4 h-4 mr-1"/> Remove Image
-                          </Button>
-                       )}
+                       <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="w-4 h-4 mr-1"/> Upload</Button>
+                       {uploadedImage && <Button variant="ghost" size="sm" onClick={clearCanvas} className="text-slate-500 hover:bg-slate-100"><Eraser className="w-4 h-4 mr-1"/> Clear Draw</Button>}
+                       {uploadedImage && <Button variant="ghost" size="sm" onClick={handleRemoveImage} className="text-red-500 hover:text-red-600 hover:bg-red-50"><Trash2 className="w-4 h-4 mr-1"/> Remove All</Button>}
                     </div>
                  </div>
 
-                 {/* ✨ 캔버스 영역 (레이어 분리: 이미지(div bg) + 캔버스(transparent)) */}
                  <div className="flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative mb-4 min-h-[400px]" ref={containerRef}>
                     {uploadedImage ? (
                        <>
-                         {/* 1. 배경 이미지 레이어 */}
-                         <img 
-                           src={uploadedImage} 
-                           alt="Background" 
-                           className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
-                         />
-                         
-                         {/* 2. 그리기 캔버스 레이어 */}
-                         <canvas 
-                            ref={canvasRef}
-                            className={cn("absolute inset-0 w-full h-full cursor-crosshair touch-none", currentTool === 'text' && "cursor-text", currentTool === 'eraser' && "cursor-cell")}
-                            onMouseDown={startAction}
-                            onMouseMove={moveAction}
-                            onMouseUp={endAction}
-                            onMouseLeave={endAction}
-                         />
-                         
-                         {/* 3. 텍스트 입력 오버레이 */}
+                         <img src={uploadedImage} alt="Background" className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"/>
+                         <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full cursor-crosshair touch-none", currentTool === 'text' && "cursor-text", currentTool === 'eraser' && "cursor-cell")}
+                            onMouseDown={startAction} onMouseMove={moveAction} onMouseUp={endAction} onMouseLeave={endAction}/>
                          {textInput && (
-                           <input
-                             autoFocus
-                             className="absolute border border-blue-500 bg-white/90 px-1 py-0.5 text-sm shadow-md outline-none"
-                             style={{ left: textInput.x, top: textInput.y, color: fontColor }}
-                             value={textInput.value}
-                             onChange={(e) => setTextInput({ ...textInput, value: e.target.value })}
-                             onKeyDown={(e) => e.key === 'Enter' && handleTextComplete()}
-                             onBlur={handleTextComplete}
-                           />
+                           <input autoFocus className="absolute z-50 border-2 border-blue-500 bg-white px-2 py-1 text-base shadow-lg outline-none min-w-[150px] rounded"
+                             style={{ left: textInput.x, top: textInput.y, color: fontColor, fontFamily: "sans-serif", fontWeight: "bold" }}
+                             value={textInput.value} onChange={(e) => setTextInput({ ...textInput, value: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && handleTextComplete()} onBlur={handleTextComplete}/>
                          )}
                        </>
                     ) : (
-                       <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
-                          <FileImage className="w-12 h-12 mb-2 opacity-50"/>
-                          <p>Upload a graph image to start drawing</p>
-                       </div>
+                       <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400"><FileImage className="w-12 h-12 mb-2 opacity-50"/><p>Upload a graph image to start drawing</p></div>
                     )}
                  </div>
 
                  <div className="space-y-2">
                     <Label className="font-bold text-slate-700">Memo</Label>
-                    <textarea
-                       placeholder="Write additional notes here..."
-                       value={memoText}
-                       onChange={(e) => setMemoText(e.target.value)}
-                       className={cn("w-full p-3 border rounded-lg resize-none h-32 focus:outline-blue-500 shadow-sm",
-                          fontSize === "sm" && "text-sm",
-                          fontSize === "base" && "text-base",
-                          fontSize === "lg" && "text-lg"
-                       )}
-                       style={{ color: fontColor, backgroundColor: "#fffbeb", borderColor: "#fde68a" }}
-                    />
+                    <textarea placeholder="Write additional notes here..." value={memoText} onChange={(e) => setMemoText(e.target.value)}
+                       className={cn("w-full p-3 border rounded-lg resize-none h-32 focus:outline-blue-500 shadow-sm", fontSize === "sm" && "text-sm", fontSize === "base" && "text-base", fontSize === "lg" && "text-lg")}
+                       style={{ color: fontColor, backgroundColor: "#fffbeb", borderColor: "#fde68a" }}/>
                  </div>
               </div>
            </div>
         </div>
       </div>
-
       {isGridOpen && renderFullScreenGrid()}
     </>
   );
