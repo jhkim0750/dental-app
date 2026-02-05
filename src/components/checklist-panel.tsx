@@ -394,7 +394,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const renderFullScreenGrid = () => {
     const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i);
     
-    // ✨ [핵심] 현재 페이지(10개 스텝) 내에서 각 섹션별 최대 아이템 개수 계산
+    // 1. 현재 페이지(10개 스텝) 내에서 각 섹션별 최대 아이템 개수 계산
     let maxGenCount = 0;
     let maxUpperCount = 0;
     let maxLowerCount = 0;
@@ -406,12 +406,11 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         maxLowerCount = Math.max(maxLowerCount, lowerRules.length);
     });
 
-    // 높이 계산 헬퍼 (헤더 + 아이템 개수 * 대략적 높이)
-    // 아이템 하나당 약 80px (메모 줄바꿈 고려) + 헤더 및 패딩
+    // 높이 계산 헬퍼 (52px = 아이템 높이)
     const getMinHeightStyle = (count: number) => {
         if (count === 0) return {};
-        // 30px(헤더) + count * 85px(아이템)
-        return { minHeight: `${30 + (count * 85)}px` };
+        // 헤더(28px) + 내용(count * 52px) + 여백(8px)
+        return { minHeight: `${28 + (count * 52) + 8}px` };
     };
 
     return (
@@ -426,11 +425,11 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                 <Button variant="destructive" onClick={() => setIsGridOpen(false)}><X className="w-5 h-5 mr-1"/> Close</Button>
             </div>
         </div>
-        <div className="flex-1 p-6 overflow-auto">
-             {/* 1. Main Rules (카드 분리 + 높이 정렬) */}
+        <div className="flex-1 p-6 overflow-auto bg-slate-50">
+             {/* 1. Main Rules */}
              <div className="mb-8">
                  <h3 className="text-xl font-bold text-blue-800 mb-3 border-l-4 border-blue-600 pl-3 flex items-center gap-2"><Layout className="w-5 h-5"/> Main Rules</h3>
-                 <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
+                 <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
                      {stepsToShow.map((step) => {
                         const { genRules, upperRules, lowerRules, attRules } = getGroupedRules(step);
                         const allRulesInStep = [...genRules, ...upperRules, ...lowerRules, ...attRules];
@@ -444,50 +443,59 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         const isLowerDone = areRulesCompleted(lowerRules, step);
                         
                         return (
-                            <div key={`main-${step}`} className="flex flex-col gap-2 min-h-[250px]">
-                                {/* 헤더 */}
+                            <div key={`main-${step}`} className="flex flex-col gap-3">
+                                {/* ✨ STEP 헤더 (독립적인 파란색 뱃지 느낌) */}
                                 <div className={cn(
-                                    "p-2 font-bold text-xs text-center sticky top-0 z-10 flex justify-between items-center rounded shadow-sm border", 
-                                    step===0 ? "bg-yellow-50 border-yellow-200" : (isStepAllDone ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-700 border-slate-200")
+                                    "p-2 font-bold text-xs text-center rounded-lg shadow-sm flex justify-between items-center transition-colors border", 
+                                    step===0 ? "bg-yellow-100 border-yellow-200 text-yellow-800" : (isStepAllDone ? "bg-blue-600 text-white border-blue-600 shadow-md" : "bg-white text-slate-600 border-slate-200")
                                 )}>
                                   <span className="flex-1 text-center pl-4">{step === 0 ? "PRE" : `STEP ${step}`}</span>
                                   {step <= totalSteps && allRulesInStep.length > 0 && (
-                                      <button onClick={() => store.checkAllInStep(patient.id, step)} className="hover:bg-white/20 p-1 rounded transition-colors" title="Check All">
+                                      <button onClick={() => store.checkAllInStep(patient.id, step)} className={cn("p-1 rounded transition-colors", isStepAllDone ? "text-blue-200 hover:text-white hover:bg-blue-500" : "text-slate-300 hover:text-slate-500 hover:bg-slate-100")} title="Check All">
                                           <CheckSquare className="w-3.5 h-3.5"/>
                                       </button>
                                   )}
                                 </div>
 
-                                <div className="space-y-2 flex-1">
-                                    {/* ✨ 1. General Card (높이 고정) */}
+                                <div className="space-y-3 flex-1">
+                                    {/* ✨ 1. General Card */}
                                     {maxGenCount > 0 && (
                                         <div 
-                                            className={cn("bg-white rounded p-1 border shadow-sm transition-all flex flex-col", (genRules.length > 0 && isGenDone) ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}
+                                            className={cn("bg-white rounded-lg p-1 border shadow-sm transition-all flex flex-col overflow-hidden", (genRules.length > 0 && isGenDone) ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border-slate-200")}
                                             style={getMinHeightStyle(maxGenCount)}
                                         >
-                                            <div className="text-[9px] font-bold text-slate-400 uppercase px-1 mb-1">General</div>
+                                            <div className="text-[9px] font-bold text-slate-500 uppercase px-2 py-1 bg-slate-50 mb-1 rounded-sm border-b border-slate-100 flex items-center justify-between">
+                                                <span>General</span>
+                                                {genRules.length > 0 && isGenDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}
+                                            </div>
                                             {genRules.map((rule: Rule) => renderCard(rule, step, true))}
                                         </div>
                                     )}
 
-                                    {/* ✨ 2. Upper (Maxilla) Card (높이 고정) */}
+                                    {/* ✨ 2. Upper (Maxilla) Card */}
                                     {maxUpperCount > 0 && (
                                         <div 
-                                            className={cn("bg-white rounded p-1 border shadow-sm transition-all flex flex-col", (upperRules.length > 0 && isUpperDone) ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}
+                                            className={cn("bg-white rounded-lg p-1 border shadow-sm transition-all flex flex-col overflow-hidden", (upperRules.length > 0 && isUpperDone) ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border-slate-200")}
                                             style={getMinHeightStyle(maxUpperCount)}
                                         >
-                                            <div className="text-[9px] font-bold text-slate-400 uppercase px-1 mb-1">Maxilla (상악)</div>
+                                            <div className="text-[9px] font-bold text-blue-600 uppercase px-2 py-1 bg-blue-50/50 mb-1 rounded-sm border-b border-blue-100 flex items-center justify-between">
+                                                <span>Maxilla</span>
+                                                {upperRules.length > 0 && isUpperDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}
+                                            </div>
                                             {upperRules.map((rule: Rule) => renderCard(rule, step, true))}
                                         </div>
                                     )}
 
-                                    {/* ✨ 3. Lower (Mandible) Card (높이 고정) */}
+                                    {/* ✨ 3. Lower (Mandible) Card */}
                                     {maxLowerCount > 0 && (
                                         <div 
-                                            className={cn("bg-white rounded p-1 border shadow-sm transition-all flex flex-col", (lowerRules.length > 0 && isLowerDone) ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}
+                                            className={cn("bg-white rounded-lg p-1 border shadow-sm transition-all flex flex-col overflow-hidden", (lowerRules.length > 0 && isLowerDone) ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border-slate-200")}
                                             style={getMinHeightStyle(maxLowerCount)}
                                         >
-                                            <div className="text-[9px] font-bold text-slate-400 uppercase px-1 mb-1">Mandible (하악)</div>
+                                            <div className="text-[9px] font-bold text-orange-600 uppercase px-2 py-1 bg-orange-50/50 mb-1 rounded-sm border-b border-orange-100 flex items-center justify-between">
+                                                <span>Mandible</span>
+                                                {lowerRules.length > 0 && isLowerDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}
+                                            </div>
                                             {lowerRules.map((rule: Rule) => renderCard(rule, step, true))}
                                         </div>
                                     )}
@@ -498,10 +506,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                  </div>
              </div>
              
-             {/* 2. Attachments Only (기존 위치 유지) */}
+             {/* 2. Attachments Only (기존 유지) */}
              <div className="mb-10 pt-4 border-t-2 border-dashed border-slate-300">
                  <h3 className="text-xl font-bold text-green-800 mb-3 border-l-4 border-green-600 pl-3 flex items-center gap-2 mt-4"><Paperclip className="w-5 h-5"/> Attachments Only</h3>
-                 <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
+                 <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
                      {stepsToShow.map((step) => {
                         const { attRules } = getGroupedRules(step);
                         const isAttDone = areRulesCompleted(attRules, step);
@@ -509,9 +517,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         return (
                             <div key={`att-${step}`} className="flex flex-col">
                                 {attRules.length > 0 ? (
-                                    <div className={cn("rounded-lg flex flex-col shadow-sm transition-all bg-white relative overflow-hidden", isAttDone ? "ring-2 ring-green-500 ring-inset border-transparent" : "border border-slate-200")}>
-                                         <div className="p-1.5 border-b text-[10px] font-bold text-slate-400 text-center bg-slate-50/50">
-                                            {step === 0 ? "PRE" : `STEP ${step}`}
+                                    <div className={cn("rounded-lg flex flex-col shadow-sm transition-all bg-white relative overflow-hidden", isAttDone ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border border-slate-200")}>
+                                         <div className="p-1.5 border-b text-[10px] font-bold text-slate-400 text-center bg-slate-50/50 flex justify-between items-center px-3">
+                                            <span>{step === 0 ? "PRE" : `STEP ${step}`}</span>
+                                            {isAttDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}
                                          </div>
                                         <div className="p-1 space-y-1 flex-1 overflow-y-auto">
                                             {attRules.map((rule: Rule) => renderCard(rule, step, true))}
