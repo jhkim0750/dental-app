@@ -30,6 +30,10 @@ export interface Patient {
   clinic_name?: string; // 👈 [이 줄을 꼭 추가해주세요!]
   rules: Rule[];
   checklist_status: ChecklistItemStatus[];
+  summary?: {
+    image?: string;
+    memo?: string;
+  };
 }
 
 interface PatientState {
@@ -47,6 +51,8 @@ interface PatientState {
   addRule: (patientId: string, rule: Omit<Rule, "id">) => Promise<void>;
   updateRule: (patientId: string, rule: Rule) => Promise<void>;
   deleteRule: (patientId: string, ruleId: string) => Promise<void>;
+ // 👇 [수정됨] 물음표(?)를 넣어서 에러를 방지했습니다!
+ saveSummary: (patientId: string, data: { image?: string, memo?: string }) => Promise<void>;
   toggleChecklistItem: (patientId: string, step: number, ruleId: string) => Promise<void>;
   checkAllInStep: (patientId: string, step: number) => Promise<void>;
 }
@@ -202,6 +208,27 @@ updateRule: async (patientId, updatedRule) => {
           p.id === patientId ? { ...p, rules: updatedRules, checklist_status: updatedStatus } : p
         ),
       }));
+    }
+  }, // 👈 deleteRule 여기서 끝남 (콤마 필수!)
+
+  // 👇 3. 요약 저장 기능 (에러 완벽 수정판)
+  saveSummary: async (patientId: string, data: { image?: string; memo?: string }) => {
+    // 1. Supabase (DB)에 저장
+    const { error } = await supabase
+      .from('patients')
+      .update({ summary: data } as any) // 👈 'as any'를 넣어서 강제로 저장시킴 (타입 에러 무시)
+      .eq('id', patientId);
+
+    // 2. 내 화면(로컬)에도 바로 반영
+    if (!error) {
+      set((state) => ({
+        patients: state.patients.map((p) =>
+          p.id === patientId ? { ...p, summary: data } : p
+        ),
+      }));
+    } else {
+      console.error("Error saving summary:", error);
+      alert("저장 중 오류가 발생했습니다.");
     }
   },
 
