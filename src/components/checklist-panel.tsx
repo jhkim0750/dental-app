@@ -5,7 +5,7 @@ import { usePatientStoreHydrated, Rule } from "@/hooks/use-patient-store";
 import { 
   CheckCheck, ChevronLeft, ChevronRight, 
   Plus, Trash2, Pencil, Save, Layout, FileImage, 
-  Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo 
+  Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo, CheckSquare 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -71,7 +71,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   // 1. 환자가 바뀌면 초기화 및 데이터 로드
   useEffect(() => {
-    // 초기화
     setMemoText("");
     setUploadedImage(null);
     setHistory([]);
@@ -82,7 +81,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 
-    // 데이터 로드
     if (patient.summary) {
       if (patient.summary.memo) setMemoText(patient.summary.memo);
       if (patient.summary.image) {
@@ -121,7 +119,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   };
 
-  // Undo/Redo 로직
+  // Undo/Redo
   const handleUndo = useCallback(() => {
       if (historyStep > 0) {
           const prevStep = historyStep - 1;
@@ -244,7 +242,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     setTextInput(null);
   };
 
-  // 저장하기 버튼 로직
   const handleSaveSummary = async () => {
     let finalImage = uploadedImage;
     if (containerRef.current && uploadedImage && canvasRef.current) {
@@ -321,7 +318,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     }
   };
 
-  // --- 기존 Rule 관련 함수들 ---
+  // --- Rule & Status Logic ---
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const handleSaveRules = async () => {
     const finalType = selectedType === "기타" ? customType : selectedType;
@@ -347,19 +344,20 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
   const handleDeleteRule = async (ruleId: string) => { if (confirm("Delete this rule?")) { await store.deleteRule(patient.id, ruleId); if (editingRuleId === ruleId) cancelEdit(); }};
   
-  // 모든 룰 가져오기 (기존)
   const getRulesForStep = (step: number) => patient.rules.filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
-  
-  // ✨ [Main Rules용] 어태치먼트 제외한 룰만 가져오기 (NEW)
-  const getMainRulesForStep = (step: number) => {
-      return getRulesForStep(step).filter((r: Rule) => !r.type.toLowerCase().includes("attachment"));
-  };
-
-  // [Attachments Only용] 어태치먼트만 가져오기
+  // 어태치먼트 제외한 Main Rules
+  const getMainRulesForStep = (step: number) => getRulesForStep(step).filter((r: Rule) => !r.type.toLowerCase().includes("attachment"));
+  // 어태치먼트만
   const getAttachmentRulesForStep = (step: number) => getRulesForStep(step).filter((r: Rule) => r.type.toLowerCase().includes("attachment"));
   
   const getStatus = (rule: Rule, step: number) => { if (step === rule.startStep) return "NEW"; if (step === rule.endStep) return "REMOVE"; return "CHECK"; };
   const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
+
+  // ✨ 스텝 완료 여부 확인 함수 (여기서 전체 완료 여부 판단)
+  const isStepCompleted = (step: number, rules: Rule[]) => {
+      if (rules.length === 0) return false;
+      return rules.every(r => isChecked(r.id, step));
+  };
 
   const renderCard = (rule: Rule, step: number, isTiny = false) => {
     const status = getStatus(rule, step); const checked = isChecked(rule.id, step); const typeColorClass = getTypeColor(rule.type);
@@ -395,17 +393,33 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
             </div>
         </div>
         <div className="flex-1 p-6 overflow-auto">
-             {/* 1. Main Rules (어태치먼트 제외) */}
+             {/* 1. Main Rules */}
              <div className="mb-8">
                  <h3 className="text-xl font-bold text-blue-800 mb-3 border-l-4 border-blue-600 pl-3 flex items-center gap-2"><Layout className="w-5 h-5"/> Main Rules</h3>
                  <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
-                     {stepsToShow.map((step) => (
-                        <div key={`main-${step}`} className={cn("rounded-lg min-h-[250px] flex flex-col border shadow-sm transition-colors", step > totalSteps ? "bg-slate-100 opacity-30 border-dashed" : "bg-white")}>
-                            <div className={cn("p-2 border-b font-bold text-xs text-center sticky top-0 z-10", step===0?"bg-yellow-50":"bg-slate-50")}>{step === 0 ? "PRE (준비)" : `STEP ${step}`}</div>
-                            {/* ✨ 여기서 getMainRulesForStep을 사용하여 Attachment 제외 */}
-                            <div className="p-1 space-y-1 flex-1 overflow-y-auto">{step <= totalSteps && getMainRulesForStep(step).map((rule: Rule) => renderCard(rule, step, true))}</div>
-                        </div>
-                     ))}
+                     {stepsToShow.map((step) => {
+                        const rules = getMainRulesForStep(step);
+                        // ✨ 스텝의 모든 룰(어태치먼트 포함)을 가져와서 완료 여부 체크
+                        const isCompleted = isStepCompleted(step, getRulesForStep(step));
+                        
+                        return (
+                            <div key={`main-${step}`} className={cn("rounded-lg min-h-[250px] flex flex-col border shadow-sm transition-colors", step > totalSteps ? "bg-slate-100 opacity-30 border-dashed" : "bg-white")}>
+                                {/* ✨ 헤더: 완료 시 색상 변경(bg-blue-600) + 전체 선택 버튼 추가 */}
+                                <div className={cn(
+                                    "p-2 border-b font-bold text-xs text-center sticky top-0 z-10 flex justify-between items-center", 
+                                    step===0 ? "bg-yellow-50" : (isCompleted ? "bg-blue-600 text-white" : "bg-slate-50 text-slate-700")
+                                )}>
+                                  <span className="flex-1 text-center pl-4">{step === 0 ? "PRE" : `STEP ${step}`}</span>
+                                  {step <= totalSteps && getRulesForStep(step).length > 0 && (
+                                      <button onClick={() => store.checkAllInStep(patient.id, step)} className="hover:bg-white/20 p-1 rounded transition-colors" title="Check All">
+                                          <CheckSquare className="w-3.5 h-3.5"/>
+                                      </button>
+                                  )}
+                                </div>
+                                <div className="p-1 space-y-1 flex-1 overflow-y-auto">{step <= totalSteps && rules.map((rule: Rule) => renderCard(rule, step, true))}</div>
+                            </div>
+                        );
+                     })}
                  </div>
              </div>
              {/* 2. Attachments Only */}
@@ -428,7 +442,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   return (
     <>
       <div className="flex h-full">
-        {/* 왼쪽 패널 (생략: 기존과 동일) */}
+        {/* 왼쪽 패널 (기존 동일) */}
         <div className="w-[340px] border-r bg-white flex flex-col h-full overflow-hidden shrink-0">
            <div className="p-4 border-b bg-slate-50 shrink-0"><h2 className="font-bold">Rule Definition</h2></div>
            <div className="p-4 space-y-4 overflow-y-auto flex-1">
@@ -465,7 +479,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            </div>
         </div>
 
-        {/* 오른쪽 패널 (Summary Default) */}
+        {/* 오른쪽 패널 (기존 동일) */}
         <div className="flex-1 flex flex-col bg-slate-50/50 h-full overflow-hidden">
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>

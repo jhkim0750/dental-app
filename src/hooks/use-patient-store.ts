@@ -54,7 +54,7 @@ interface PatientState {
  // 👇 [수정됨] 물음표(?)를 넣어서 에러를 방지했습니다!
  saveSummary: (patientId: string, data: { image?: string, memo?: string }) => Promise<void>;
   toggleChecklistItem: (patientId: string, step: number, ruleId: string) => Promise<void>;
-  checkAllInStep: (patientId: string, step: number) => Promise<void>;
+    checkAllInStep: (patientId: string, step: number) => Promise<void>;
 }
 export const usePatientStore = create<PatientState>((set, get) => ({
   patients: [],
@@ -263,42 +263,49 @@ updateRule: async (patientId, updatedRule) => {
     await supabase.from("patients").update({ checklist_status: newStatus }).eq("id", patientId);
   },
 
-  // 7. 전체 체크
-  checkAllInStep: async (patientId, step) => {
-    const state = get();
-    const patient = state.patients.find((p) => p.id === patientId);
-    if (!patient) return;
+// 👇 [교체] 전체 체크/해제 기능 (중복 제거 및 괄호 정리 완료)
+checkAllInStep: async (patientId, step) => {
+  const state = get();
+  const patient = state.patients.find((p) => p.id === patientId);
+  if (!patient) return;
 
-    const activeRules = patient.rules.filter(r => step >= r.startStep && step <= r.endStep);
-    if (activeRules.length === 0) return;
+  // 1. 현재 스텝에 해당하는 룰 찾기
+  const rulesInStep = patient.rules.filter((r) => step >= r.startStep && step <= r.endStep);
+  if (rulesInStep.length === 0) return;
 
-    const checkedItemsInStep = patient.checklist_status.filter(
-      s => s.step === step && s.checked && activeRules.some(r => r.id === s.ruleId)
-    );
+  // 2. 현재 상태 확인 (전부 체크되어 있는지?)
+  const currentStepStatus = patient.checklist_status.filter((s) => s.step === step);
+  const allChecked = rulesInStep.every((r) => 
+    currentStepStatus.some((s) => s.ruleId === r.id && s.checked)
+  );
 
-    const isAllChecked = checkedItemsInStep.length === activeRules.length;
-    let newStatus = [...patient.checklist_status];
+  let newStatus;
+  if (allChecked) {
+     // [해제 모드] 이미 다 체크됨 -> 싹 지우기 (Uncheck All)
+     newStatus = patient.checklist_status.filter((s) => s.step !== step);
+  } else {
+     // [선택 모드] 하나라도 빈 게 있음 -> 싹 채우기 (Check All)
+     const otherSteps = patient.checklist_status.filter((s) => s.step !== step);
+     const newStepStatus = rulesInStep.map((r) => ({
+        step,
+        ruleId: r.id,
+        checked: true
+     }));
+     newStatus = [...otherSteps, ...newStepStatus];
+  }
 
-    activeRules.forEach(rule => {
-      const idx = newStatus.findIndex(s => s.step === step && s.ruleId === rule.id);
-      if (idx >= 0) {
-        newStatus[idx] = { ...newStatus[idx], checked: !isAllChecked };
-      } else {
-        newStatus.push({ step, ruleId: rule.id, checked: !isAllChecked });
-      }
-    });
+  // 3. DB 및 로컬 업데이트
+  await supabase.from("patients").update({ checklist_status: newStatus }).eq("id", patientId);
 
-    set((state) => ({
-      patients: state.patients.map((p) =>
-        p.id === patientId ? { ...p, checklist_status: newStatus } : p
-      ),
-    }));
-
-    await supabase.from("patients").update({ checklist_status: newStatus }).eq("id", patientId);
-  },
-}));
+  set((state) => ({
+    patients: state.patients.map((p) =>
+      p.id === patientId ? { ...p, checklist_status: newStatus } : p
+    ),
+  }));
+},
+})); // 👈 여기가 중요합니다! (Store 닫기 괄호)
 
 // Hydration 헬퍼 (이제 단순한 wrapper)
 export const usePatientStoreHydrated = () => {
-  return usePatientStore();
+return usePatientStore();
 };
