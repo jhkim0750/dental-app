@@ -244,7 +244,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     setTextInput(null);
   };
 
-  // ✨ [수정됨] 저장하기 버튼 로직 (연속 수정 가능하게 변경!)
+  // 저장하기 버튼 로직
   const handleSaveSummary = async () => {
     let finalImage = uploadedImage;
     if (containerRef.current && uploadedImage && canvasRef.current) {
@@ -255,7 +255,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         const ctx = tempCanvas.getContext('2d');
         
         if (ctx) {
-            // 1. 기존 배경 그리기
             const img = new Image();
             img.crossOrigin = "anonymous";
             img.src = uploadedImage;
@@ -265,39 +264,29 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                     resolve(null);
                 };
             });
-            // 2. 현재 캔버스(새 그림) 합치기
             ctx.drawImage(canvas, 0, 0);
-            
-            // 3. 최종 이미지 생성
             finalImage = tempCanvas.toDataURL("image/png");
         }
     }
 
-    // 4. DB에 저장
     await store.saveSummary(patient.id, {
       image: finalImage ?? undefined, 
       memo: memoText
     });
 
-    // ✨ [핵심] 저장 후 화면 상태 갱신 (그래야 계속 이어서 그릴 수 있음)
     if (finalImage) {
-        setUploadedImage(finalImage); // 1. 합쳐진 이미지를 배경으로 설정
-        
-        // 2. 캔버스는 비움 (이미 배경에 합쳐졌으니까)
+        setUploadedImage(finalImage); 
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext("2d");
         if (canvas && ctx) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // 히스토리 리셋 (새로운 배경에서 다시 시작)
             setHistory([ctx.getImageData(0, 0, canvas.width, canvas.height)]);
             setHistoryStep(0);
         }
     }
-
     alert("Summary Saved! (저장 완료)");
   };
 
-  // --- 기타 기능 ---
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -332,7 +321,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     }
   };
 
-  // --- 기존 Rule 관련 함수들 (축약) ---
+  // --- 기존 Rule 관련 함수들 ---
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const handleSaveRules = async () => {
     const finalType = selectedType === "기타" ? customType : selectedType;
@@ -357,8 +346,18 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   };
   const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
   const handleDeleteRule = async (ruleId: string) => { if (confirm("Delete this rule?")) { await store.deleteRule(patient.id, ruleId); if (editingRuleId === ruleId) cancelEdit(); }};
+  
+  // 모든 룰 가져오기 (기존)
   const getRulesForStep = (step: number) => patient.rules.filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
+  
+  // ✨ [Main Rules용] 어태치먼트 제외한 룰만 가져오기 (NEW)
+  const getMainRulesForStep = (step: number) => {
+      return getRulesForStep(step).filter((r: Rule) => !r.type.toLowerCase().includes("attachment"));
+  };
+
+  // [Attachments Only용] 어태치먼트만 가져오기
   const getAttachmentRulesForStep = (step: number) => getRulesForStep(step).filter((r: Rule) => r.type.toLowerCase().includes("attachment"));
+  
   const getStatus = (rule: Rule, step: number) => { if (step === rule.startStep) return "NEW"; if (step === rule.endStep) return "REMOVE"; return "CHECK"; };
   const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
 
@@ -396,17 +395,20 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
             </div>
         </div>
         <div className="flex-1 p-6 overflow-auto">
+             {/* 1. Main Rules (어태치먼트 제외) */}
              <div className="mb-8">
                  <h3 className="text-xl font-bold text-blue-800 mb-3 border-l-4 border-blue-600 pl-3 flex items-center gap-2"><Layout className="w-5 h-5"/> Main Rules</h3>
                  <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
                      {stepsToShow.map((step) => (
                         <div key={`main-${step}`} className={cn("rounded-lg min-h-[250px] flex flex-col border shadow-sm transition-colors", step > totalSteps ? "bg-slate-100 opacity-30 border-dashed" : "bg-white")}>
                             <div className={cn("p-2 border-b font-bold text-xs text-center sticky top-0 z-10", step===0?"bg-yellow-50":"bg-slate-50")}>{step === 0 ? "PRE (준비)" : `STEP ${step}`}</div>
-                            <div className="p-1 space-y-1 flex-1 overflow-y-auto">{step <= totalSteps && getRulesForStep(step).map((rule: Rule) => renderCard(rule, step, true))}</div>
+                            {/* ✨ 여기서 getMainRulesForStep을 사용하여 Attachment 제외 */}
+                            <div className="p-1 space-y-1 flex-1 overflow-y-auto">{step <= totalSteps && getMainRulesForStep(step).map((rule: Rule) => renderCard(rule, step, true))}</div>
                         </div>
                      ))}
                  </div>
              </div>
+             {/* 2. Attachments Only */}
              <div className="mb-10 pt-4 border-t-2 border-dashed border-slate-300">
                  <h3 className="text-xl font-bold text-green-800 mb-3 border-l-4 border-green-600 pl-3 flex items-center gap-2 mt-4"><Paperclip className="w-5 h-5"/> Attachments Only</h3>
                  <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
@@ -467,7 +469,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         <div className="flex-1 flex flex-col bg-slate-50/50 h-full overflow-hidden">
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
-             {/* ✨ 저장 버튼 */}
              <div className="flex gap-2">
                 <Button onClick={handleSaveSummary} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
                 <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-slate-800 hover:bg-slate-700"><Layout className="w-4 h-4"/> Checklist View</Button>
