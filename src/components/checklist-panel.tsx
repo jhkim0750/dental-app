@@ -62,37 +62,36 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [snapshot, setSnapshot] = useState<ImageData | null>(null);
   const [textInput, setTextInput] = useState<{x: number, y: number, value: string} | null>(null);
 
-  // ✨ Undo/Redo (히스토리) 상태
-  // ImageData 배열을 저장해서 과거 상태로 되돌립니다.
+  // Undo/Redo 상태
   const [history, setHistory] = useState<ImageData[]>([]);
   const [historyStep, setHistoryStep] = useState<number>(-1);
 
   if (!store) return null;
   const totalSteps = patient.total_steps || 20;
 
-  // ✨ [중요] 환자가 바뀌면 상태 초기화 + 데이터 불러오기
+  // 1. 환자가 바뀌면 초기화 및 데이터 로드
   useEffect(() => {
-    // 1. 일단 싹 비웁니다 (다른 환자 데이터 잔상 제거)
+    // 초기화
     setMemoText("");
     setUploadedImage(null);
     setHistory([]);
     setHistoryStep(-1);
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (canvas && ctx) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (canvas) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 
-    // 2. 그 다음 현재 환자 데이터가 있으면 채워넣습니다.
+    // 데이터 로드
     if (patient.summary) {
       if (patient.summary.memo) setMemoText(patient.summary.memo);
       if (patient.summary.image) {
         setUploadedImage(patient.summary.image);
       }
     }
-  }, [patient.id, patient.summary]); // patient.id가 바뀌면 무조건 실행
+  }, [patient.id, patient.summary]);
 
-  // --- 캔버스 사이즈 조절 및 초기 히스토리 저장 ---
+  // 2. 캔버스 사이즈 및 초기 히스토리
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -100,7 +99,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
        canvas.width = container.offsetWidth;
        canvas.height = container.offsetHeight;
        
-       // 캔버스 초기화 시 첫 상태(빈 화면) 저장
        const ctx = canvas.getContext("2d");
        if (ctx && history.length === 0) {
            const initialData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -110,13 +108,12 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     }
   }, [uploadedImage, isGridOpen]);
 
-  // ✨ 히스토리 저장 함수
+  // 히스토리 저장
   const saveHistory = () => {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
       if (canvas && ctx) {
           const newData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          // 현재 step 이후의 기록은 날려버림 (중간에서 수정하면 미래는 사라짐)
           const newHistory = history.slice(0, historyStep + 1);
           newHistory.push(newData);
           setHistory(newHistory);
@@ -124,7 +121,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   };
 
-  // ✨ Undo (Ctrl+Z)
+  // Undo/Redo 로직
   const handleUndo = useCallback(() => {
       if (historyStep > 0) {
           const prevStep = historyStep - 1;
@@ -137,7 +134,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   }, [history, historyStep]);
 
-  // ✨ Redo (Ctrl+Shift+Z)
   const handleRedo = useCallback(() => {
       if (historyStep < history.length - 1) {
           const nextStep = historyStep + 1;
@@ -150,16 +146,12 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   }, [history, historyStep]);
 
-  // ✨ 키보드 이벤트 리스너 (Ctrl+Z)
+  // 단축키
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
               e.preventDefault();
-              if (e.shiftKey) {
-                  handleRedo();
-              } else {
-                  handleUndo();
-              }
+              if (e.shiftKey) handleRedo(); else handleUndo();
           }
       };
       window.addEventListener('keydown', handleKeyDown);
@@ -172,10 +164,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
   const startAction = (e: React.MouseEvent) => {
@@ -194,20 +183,16 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     setIsDrawing(true);
     setStartPos({ x, y });
     
-    if (currentTool === 'line') {
-      setSnapshot(ctx.getImageData(0, 0, canvas.width, canvas.height));
-    }
+    if (currentTool === 'line') setSnapshot(ctx.getImageData(0, 0, canvas.width, canvas.height));
 
     ctx.beginPath();
     ctx.moveTo(x, y);
-    
     ctx.lineWidth = currentTool === 'eraser' ? 20 : 3;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     
-    if (currentTool === 'eraser') {
-      ctx.globalCompositeOperation = 'destination-out';
-    } else {
+    if (currentTool === 'eraser') ctx.globalCompositeOperation = 'destination-out';
+    else {
       ctx.globalCompositeOperation = 'source-over';
       ctx.strokeStyle = fontColor;
     }
@@ -239,8 +224,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         setSnapshot(null);
         const ctx = canvasRef.current?.getContext("2d");
         if (ctx) ctx.globalCompositeOperation = 'source-over';
-        
-        // ✨ 그리기 동작이 끝나면 히스토리 저장
         saveHistory();
     }
   };
@@ -256,14 +239,12 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       ctx.font = "bold 16px sans-serif";
       ctx.fillStyle = fontColor;
       ctx.fillText(textInput.value, textInput.x, textInput.y + 12);
-      
-      // ✨ 텍스트 입력도 히스토리 저장
       saveHistory();
     }
     setTextInput(null);
   };
 
-  // --- 저장하기 버튼 기능 ---
+  // ✨ [수정됨] 저장하기 버튼 로직 (연속 수정 가능하게 변경!)
   const handleSaveSummary = async () => {
     let finalImage = uploadedImage;
     if (containerRef.current && uploadedImage && canvasRef.current) {
@@ -272,7 +253,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
         const ctx = tempCanvas.getContext('2d');
+        
         if (ctx) {
+            // 1. 기존 배경 그리기
             const img = new Image();
             img.crossOrigin = "anonymous";
             img.src = uploadedImage;
@@ -282,15 +265,36 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                     resolve(null);
                 };
             });
+            // 2. 현재 캔버스(새 그림) 합치기
             ctx.drawImage(canvas, 0, 0);
+            
+            // 3. 최종 이미지 생성
             finalImage = tempCanvas.toDataURL("image/png");
         }
     }
+
+    // 4. DB에 저장
     await store.saveSummary(patient.id, {
       image: finalImage ?? undefined, 
       memo: memoText
     });
-    alert("Summary Saved! (저장되었습니다)");
+
+    // ✨ [핵심] 저장 후 화면 상태 갱신 (그래야 계속 이어서 그릴 수 있음)
+    if (finalImage) {
+        setUploadedImage(finalImage); // 1. 합쳐진 이미지를 배경으로 설정
+        
+        // 2. 캔버스는 비움 (이미 배경에 합쳐졌으니까)
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext("2d");
+        if (canvas && ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // 히스토리 리셋 (새로운 배경에서 다시 시작)
+            setHistory([ctx.getImageData(0, 0, canvas.width, canvas.height)]);
+            setHistoryStep(0);
+        }
+    }
+
+    alert("Summary Saved! (저장 완료)");
   };
 
   // --- 기타 기능 ---
@@ -300,9 +304,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       const reader = new FileReader();
       reader.onloadend = () => {
           setUploadedImage(reader.result as string);
-          // 이미지 바뀌면 히스토리도 초기화
-          setHistory([]); 
-          setHistoryStep(-1);
+          setHistory([]); setHistoryStep(-1);
       };
       reader.readAsDataURL(file);
     }
@@ -312,25 +314,25 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     setUploadedImage(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (ctx && canvas) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // 히스토리 초기화
-        setHistory([]);
-        setHistoryStep(-1);
+    if (canvas) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        setHistory([]); setHistoryStep(-1);
     }
   };
 
   const clearCanvas = () => {
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (ctx && canvas) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        saveHistory(); // 지운 것도 기록
+    if (canvas) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            saveHistory();
+        }
     }
   };
 
-  // --- 기존 Rule 관련 함수들 ---
+  // --- 기존 Rule 관련 함수들 (축약) ---
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const handleSaveRules = async () => {
     const finalType = selectedType === "기타" ? customType : selectedType;
@@ -424,7 +426,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   return (
     <>
       <div className="flex h-full">
-        {/* 왼쪽 패널 (Rule Definition) */}
+        {/* 왼쪽 패널 (생략: 기존과 동일) */}
         <div className="w-[340px] border-r bg-white flex flex-col h-full overflow-hidden shrink-0">
            <div className="p-4 border-b bg-slate-50 shrink-0"><h2 className="font-bold">Rule Definition</h2></div>
            <div className="p-4 space-y-4 overflow-y-auto flex-1">
@@ -461,10 +463,11 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            </div>
         </div>
 
-        {/* 오른쪽 패널 (Work Summary) */}
+        {/* 오른쪽 패널 (Summary Default) */}
         <div className="flex-1 flex flex-col bg-slate-50/50 h-full overflow-hidden">
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
+             {/* ✨ 저장 버튼 */}
              <div className="flex gap-2">
                 <Button onClick={handleSaveSummary} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
                 <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-slate-800 hover:bg-slate-700"><Layout className="w-4 h-4"/> Checklist View</Button>
@@ -474,7 +477,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            <div className="flex-1 p-6 flex flex-col bg-slate-100 overflow-auto">
               <div className="bg-white p-6 rounded-lg shadow-sm flex flex-col h-full">
                  <div className="flex justify-between items-center mb-4">
-                    {/* 툴바 */}
                     <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-lg border">
                         <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('draw')} title="Pen"><PenTool className="w-4 h-4"/></Button>
                         <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('line')} title="Straight Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
@@ -482,15 +484,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('eraser')} title="Eraser"><Eraser className="w-4 h-4"/></Button>
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
                         <input type="color" value={fontColor} onChange={(e) => setFontColor(e.target.value)} className="w-6 h-6 p-0 border-0 rounded cursor-pointer" title="Color" />
-                        
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        {/* ✨ Undo / Redo 버튼 추가 */}
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUndo} disabled={historyStep <= 0} title="Undo (Ctrl+Z)">
-                            <Undo className="w-4 h-4"/>
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRedo} disabled={historyStep >= history.length - 1} title="Redo (Ctrl+Shift+Z)">
-                            <Redo className="w-4 h-4"/>
-                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUndo} disabled={historyStep <= 0} title="Undo (Ctrl+Z)"><Undo className="w-4 h-4"/></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRedo} disabled={historyStep >= history.length - 1} title="Redo (Ctrl+Shift+Z)"><Redo className="w-4 h-4"/></Button>
                     </div>
                     <div className="flex gap-2">
                        <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
