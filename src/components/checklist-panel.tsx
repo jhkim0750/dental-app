@@ -99,6 +99,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
     // 텍스트 도구일 경우
     if (currentTool === 'text') {
+      e.preventDefault();
       setTextInput({ x, y, value: "" }); // 입력창 띄우기
       return;
     }
