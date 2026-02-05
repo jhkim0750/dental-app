@@ -5,7 +5,7 @@ import { usePatientStoreHydrated, Rule } from "@/hooks/use-patient-store";
 import { 
   CheckCheck, ChevronLeft, ChevronRight, 
   Plus, Trash2, Pencil, Save, Layout, FileImage, 
-  Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo, CheckSquare 
+  Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo, CheckSquare, CheckCircle2 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -345,14 +345,30 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleDeleteRule = async (ruleId: string) => { if (confirm("Delete this rule?")) { await store.deleteRule(patient.id, ruleId); if (editingRuleId === ruleId) cancelEdit(); }};
   
   const getRulesForStep = (step: number) => patient.rules.filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
-  const getMainRulesForStep = (step: number) => getRulesForStep(step).filter((r: Rule) => !r.type.toLowerCase().includes("attachment"));
-  const getAttachmentRulesForStep = (step: number) => getRulesForStep(step).filter((r: Rule) => r.type.toLowerCase().includes("attachment"));
+  
+  // ✨ 룰 분류 로직 (TypeScript 에러 해결 완료)
+  const getGroupedRules = (step: number) => {
+    const allRules = getRulesForStep(step);
+    // (r: Rule) 타입을 명시해서 에러 해결!
+    const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment");
+
+    // General (0번 치아, 어태치먼트 제외)
+    const genRules = allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r));
+    // Upper (10~20번대, 어태치먼트 제외)
+    const upperRules = allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r));
+    // Lower (30~40번대, 어태치먼트 제외)
+    const lowerRules = allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r));
+    // Attachment Only
+    const attRules = allRules.filter((r: Rule) => isAtt(r));
+
+    return { genRules, upperRules, lowerRules, attRules };
+  };
   
   const getStatus = (rule: Rule, step: number) => { if (step === rule.startStep) return "NEW"; if (step === rule.endStep) return "REMOVE"; return "CHECK"; };
   const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
 
-  // 스텝 완료 여부 (어태치먼트 포함 전체 룰 기준)
-  const isStepCompleted = (step: number, rules: Rule[]) => {
+  // ✨ 그룹별 완료 여부 확인
+  const areRulesCompleted = (rules: Rule[], step: number) => {
       if (rules.length === 0) return false;
       return rules.every(r => isChecked(r.id, step));
   };
@@ -361,7 +377,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     const status = getStatus(rule, step); const checked = isChecked(rule.id, step); const typeColorClass = getTypeColor(rule.type);
     return (
       <div key={rule.id} onClick={() => store.toggleChecklistItem(patient.id, step, rule.id)}
-        className={cn("rounded cursor-pointer transition-all flex flex-col relative group select-none", isTiny ? "p-1.5 mb-1.5 shadow-sm" : "p-3 mb-2 border", checked ? "bg-slate-100 text-slate-400 grayscale" : "bg-white hover:ring-2 hover:ring-blue-200", status === "NEW" && !checked && "border-l-4 border-l-green-500 shadow-md", status === "REMOVE" && !checked && "border-l-4 border-l-red-500 shadow-md")}>
+        className={cn("rounded cursor-pointer transition-all flex flex-col relative group select-none border", isTiny ? "p-1.5 mb-1.5 shadow-sm" : "p-3 mb-2", checked ? "bg-slate-100 text-slate-400 grayscale border-slate-200" : "bg-white hover:ring-2 hover:ring-blue-200 border-slate-200", status === "NEW" && !checked && "border-l-4 border-l-green-500 shadow-md", status === "REMOVE" && !checked && "border-l-4 border-l-red-500 shadow-md")}>
         <div className="flex justify-between items-start">
           <span className={cn("font-bold text-slate-800", isTiny ? "text-[11px]" : "text-lg")}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}</span>
           <div className="flex gap-1 items-center">
@@ -371,7 +387,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           </div>
         </div>
         <div className={cn("font-bold truncate mt-0.5", typeColorClass, isTiny && "text-[10px]")}>{rule.type}</div>
-        {rule.note && <div className={cn("text-slate-400 truncate", isTiny ? "text-[9px]" : "mt-1")}>{rule.note}</div>}
+        {rule.note && <div className={cn("text-slate-400 whitespace-pre-wrap break-words leading-tight", isTiny ? "text-[9px]" : "mt-1")}>{rule.note}</div>}
       </div>
     );
   };
@@ -391,60 +407,93 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
             </div>
         </div>
         <div className="flex-1 p-6 overflow-auto">
-             {/* 1. Main Rules */}
+             {/* 1. Main Rules (카드 분리) */}
              <div className="mb-8">
                  <h3 className="text-xl font-bold text-blue-800 mb-3 border-l-4 border-blue-600 pl-3 flex items-center gap-2"><Layout className="w-5 h-5"/> Main Rules</h3>
                  <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
                      {stepsToShow.map((step) => {
-                        const rules = getMainRulesForStep(step);
-                        const isCompleted = isStepCompleted(step, getRulesForStep(step));
+                        const { genRules, upperRules, lowerRules, attRules } = getGroupedRules(step);
+                        const allRulesInStep = [...genRules, ...upperRules, ...lowerRules, ...attRules];
+                        
+                        // 전체 스텝 완료 여부 (헤더 색상용)
+                        const isStepAllDone = areRulesCompleted(allRulesInStep, step);
+
+                        // 개별 카드 완료 여부 (초록 테두리용)
+                        const isGenDone = areRulesCompleted(genRules, step);
+                        const isUpperDone = areRulesCompleted(upperRules, step);
+                        const isLowerDone = areRulesCompleted(lowerRules, step);
                         
                         return (
-                            <div key={`main-${step}`} className={cn(
-                                "rounded-lg min-h-[250px] flex flex-col shadow-sm transition-all relative overflow-hidden bg-white",
-                                step > totalSteps ? "bg-slate-100 opacity-30 border-dashed border" : "",
-                                // ✨ [핵심] 완료 시: 초록색 안쪽 테두리 (Green Inset Ring)
-                                isCompleted ? "ring-2 ring-green-500 ring-inset border-transparent" : "border"
-                            )}>
+                            <div key={`main-${step}`} className="flex flex-col gap-2 min-h-[250px]">
+                                {/* ✨ 헤더: 전체 완료 시 진한 파란색 */}
                                 <div className={cn(
-                                    "p-2 border-b font-bold text-xs text-center sticky top-0 z-10 flex justify-between items-center", 
-                                    step===0 ? "bg-yellow-50" : "bg-slate-50 text-slate-700",
-                                    // 완료 시 헤더 하단 선 색상 변경
-                                    isCompleted && "border-b-green-100 bg-green-50/30"
+                                    "p-2 font-bold text-xs text-center sticky top-0 z-10 flex justify-between items-center rounded shadow-sm border", 
+                                    step===0 ? "bg-yellow-50 border-yellow-200" : (isStepAllDone ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-700 border-slate-200")
                                 )}>
                                   <span className="flex-1 text-center pl-4">{step === 0 ? "PRE" : `STEP ${step}`}</span>
-                                  {step <= totalSteps && getRulesForStep(step).length > 0 && (
-                                      <button onClick={() => store.checkAllInStep(patient.id, step)} className="hover:bg-slate-200 p-1 rounded transition-colors text-slate-400 hover:text-slate-600" title="Check All">
+                                  {step <= totalSteps && allRulesInStep.length > 0 && (
+                                      <button onClick={() => store.checkAllInStep(patient.id, step)} className="hover:bg-white/20 p-1 rounded transition-colors" title="Check All">
                                           <CheckSquare className="w-3.5 h-3.5"/>
                                       </button>
                                   )}
                                 </div>
-                                <div className="p-1 space-y-1 flex-1 overflow-y-auto">{step <= totalSteps && rules.map((rule: Rule) => renderCard(rule, step, true))}</div>
+
+                                <div className="space-y-2 flex-1">
+                                    {/* ✨ 1. General Card */}
+                                    {genRules.length > 0 && (
+                                        <div className={cn("bg-white rounded p-1 border shadow-sm transition-all", isGenDone ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}>
+                                            <div className="text-[9px] font-bold text-slate-400 uppercase px-1 mb-1">General</div>
+                                            {genRules.map((rule: Rule) => renderCard(rule, step, true))}
+                                        </div>
+                                    )}
+
+                                    {/* ✨ 2. Upper (Maxilla) Card */}
+                                    {upperRules.length > 0 && (
+                                        <div className={cn("bg-white rounded p-1 border shadow-sm transition-all", isUpperDone ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}>
+                                            <div className="text-[9px] font-bold text-slate-400 uppercase px-1 mb-1">Maxilla (상악)</div>
+                                            {upperRules.map((rule: Rule) => renderCard(rule, step, true))}
+                                        </div>
+                                    )}
+
+                                    {/* ✨ 3. Lower (Mandible) Card */}
+                                    {lowerRules.length > 0 && (
+                                        <div className={cn("bg-white rounded p-1 border shadow-sm transition-all", isLowerDone ? "ring-2 ring-green-500 ring-inset border-transparent" : "border-slate-200")}>
+                                            <div className="text-[9px] font-bold text-slate-400 uppercase px-1 mb-1">Mandible (하악)</div>
+                                            {lowerRules.map((rule: Rule) => renderCard(rule, step, true))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         );
                      })}
                  </div>
              </div>
-             {/* 2. Attachments Only */}
+             
+             {/* 2. Attachments Only (기존 위치 유지!) */}
              <div className="mb-10 pt-4 border-t-2 border-dashed border-slate-300">
                  <h3 className="text-xl font-bold text-green-800 mb-3 border-l-4 border-green-600 pl-3 flex items-center gap-2 mt-4"><Paperclip className="w-5 h-5"/> Attachments Only</h3>
                  <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
                      {stepsToShow.map((step) => {
-                        const isCompleted = isStepCompleted(step, getRulesForStep(step));
+                        const { attRules } = getGroupedRules(step);
+                        const isAttDone = areRulesCompleted(attRules, step);
+
                         return (
-                            <div key={`att-${step}`} className={cn(
-                                "rounded-lg min-h-[150px] flex flex-col shadow-sm transition-all relative overflow-hidden",
-                                step > totalSteps ? "bg-slate-100 opacity-30 border-dashed border" : "bg-slate-50/50",
-                                // ✨ [핵심] 여기도 동일하게 초록색 테두리 적용
-                                isCompleted ? "ring-2 ring-green-500 ring-inset border-transparent bg-white" : "border"
-                            )}>
-                                 <div className={cn(
-                                     "p-1.5 border-b text-[10px] font-bold text-slate-400 text-center",
-                                     isCompleted && "border-b-green-100 bg-green-50/30 text-green-600"
-                                 )}>
-                                    {step === 0 ? "PRE" : `STEP ${step}`}
-                                 </div>
-                                <div className="p-1 space-y-1 flex-1 overflow-y-auto">{step <= totalSteps && getAttachmentRulesForStep(step).map((rule: Rule) => renderCard(rule, step, true))}</div>
+                            <div key={`att-${step}`} className="flex flex-col">
+                                {attRules.length > 0 ? (
+                                    <div className={cn("rounded-lg flex flex-col shadow-sm transition-all bg-white relative overflow-hidden", isAttDone ? "ring-2 ring-green-500 ring-inset border-transparent" : "border border-slate-200")}>
+                                         <div className="p-1.5 border-b text-[10px] font-bold text-slate-400 text-center bg-slate-50/50">
+                                            {step === 0 ? "PRE" : `STEP ${step}`}
+                                         </div>
+                                        <div className="p-1 space-y-1 flex-1 overflow-y-auto">
+                                            {attRules.map((rule: Rule) => renderCard(rule, step, true))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    // 빈 칸일 때 흐릿하게 표시
+                                    <div className="rounded-lg h-24 border border-dashed border-slate-200 bg-slate-50/30 flex items-center justify-center">
+                                        <span className="text-[10px] text-slate-300">No Att</span>
+                                    </div>
+                                )}
                             </div>
                         );
                      })}
