@@ -45,6 +45,7 @@ interface PatientState {
   selectPatient: (id: string | null) => void;
   deletePatient: (id: string) => Promise<void>;
   addRule: (patientId: string, rule: Omit<Rule, "id">) => Promise<void>;
+  updateRule: (patientId: string, rule: Rule) => Promise<void>;
   deleteRule: (patientId: string, ruleId: string) => Promise<void>;
   toggleChecklistItem: (patientId: string, step: number, ruleId: string) => Promise<void>;
   checkAllInStep: (patientId: string, step: number) => Promise<void>;
@@ -154,6 +155,32 @@ updatePatient: async (id, name, caseNumber, totalSteps, clinicName) => {
       }));
     }
   },
+
+// 4.5 규칙 수정 (addRule 바로 밑에 붙여넣기)
+updateRule: async (patientId, updatedRule) => {
+  const state = get();
+  const patient = state.patients.find((p) => p.id === patientId);
+  if (!patient) return;
+
+  // 로컬 목록 업데이트
+  const updatedRules = patient.rules.map((r) => 
+    r.id === updatedRule.id ? updatedRule : r
+  );
+
+  // Supabase 업데이트
+  const { error } = await supabase
+    .from('patients')
+    .update({ rules: updatedRules }) // JSON 전체 업데이트
+    .eq('id', patientId);
+
+  if (!error) {
+    set((state) => ({
+      patients: state.patients.map((p) =>
+        p.id === patientId ? { ...p, rules: updatedRules } : p
+      ),
+    }));
+  }
+},
 
   // 5. 규칙 삭제
   deleteRule: async (patientId, ruleId) => {
