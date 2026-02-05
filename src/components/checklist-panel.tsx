@@ -345,15 +345,13 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleDeleteRule = async (ruleId: string) => { if (confirm("Delete this rule?")) { await store.deleteRule(patient.id, ruleId); if (editingRuleId === ruleId) cancelEdit(); }};
   
   const getRulesForStep = (step: number) => patient.rules.filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
-  // 어태치먼트 제외한 Main Rules
   const getMainRulesForStep = (step: number) => getRulesForStep(step).filter((r: Rule) => !r.type.toLowerCase().includes("attachment"));
-  // 어태치먼트만
   const getAttachmentRulesForStep = (step: number) => getRulesForStep(step).filter((r: Rule) => r.type.toLowerCase().includes("attachment"));
   
   const getStatus = (rule: Rule, step: number) => { if (step === rule.startStep) return "NEW"; if (step === rule.endStep) return "REMOVE"; return "CHECK"; };
   const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
 
-  // ✨ 스텝 완료 여부 확인 함수 (여기서 전체 완료 여부 판단)
+  // 스텝 완료 여부 (어태치먼트 포함 전체 룰 기준)
   const isStepCompleted = (step: number, rules: Rule[]) => {
       if (rules.length === 0) return false;
       return rules.every(r => isChecked(r.id, step));
@@ -399,19 +397,24 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                  <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
                      {stepsToShow.map((step) => {
                         const rules = getMainRulesForStep(step);
-                        // ✨ 스텝의 모든 룰(어태치먼트 포함)을 가져와서 완료 여부 체크
                         const isCompleted = isStepCompleted(step, getRulesForStep(step));
                         
                         return (
-                            <div key={`main-${step}`} className={cn("rounded-lg min-h-[250px] flex flex-col border shadow-sm transition-colors", step > totalSteps ? "bg-slate-100 opacity-30 border-dashed" : "bg-white")}>
-                                {/* ✨ 헤더: 완료 시 색상 변경(bg-blue-600) + 전체 선택 버튼 추가 */}
+                            <div key={`main-${step}`} className={cn(
+                                "rounded-lg min-h-[250px] flex flex-col shadow-sm transition-all relative overflow-hidden bg-white",
+                                step > totalSteps ? "bg-slate-100 opacity-30 border-dashed border" : "",
+                                // ✨ [핵심] 완료 시: 초록색 안쪽 테두리 (Green Inset Ring)
+                                isCompleted ? "ring-2 ring-green-500 ring-inset border-transparent" : "border"
+                            )}>
                                 <div className={cn(
                                     "p-2 border-b font-bold text-xs text-center sticky top-0 z-10 flex justify-between items-center", 
-                                    step===0 ? "bg-yellow-50" : (isCompleted ? "bg-blue-600 text-white" : "bg-slate-50 text-slate-700")
+                                    step===0 ? "bg-yellow-50" : "bg-slate-50 text-slate-700",
+                                    // 완료 시 헤더 하단 선 색상 변경
+                                    isCompleted && "border-b-green-100 bg-green-50/30"
                                 )}>
                                   <span className="flex-1 text-center pl-4">{step === 0 ? "PRE" : `STEP ${step}`}</span>
                                   {step <= totalSteps && getRulesForStep(step).length > 0 && (
-                                      <button onClick={() => store.checkAllInStep(patient.id, step)} className="hover:bg-white/20 p-1 rounded transition-colors" title="Check All">
+                                      <button onClick={() => store.checkAllInStep(patient.id, step)} className="hover:bg-slate-200 p-1 rounded transition-colors text-slate-400 hover:text-slate-600" title="Check All">
                                           <CheckSquare className="w-3.5 h-3.5"/>
                                       </button>
                                   )}
@@ -426,12 +429,25 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
              <div className="mb-10 pt-4 border-t-2 border-dashed border-slate-300">
                  <h3 className="text-xl font-bold text-green-800 mb-3 border-l-4 border-green-600 pl-3 flex items-center gap-2 mt-4"><Paperclip className="w-5 h-5"/> Attachments Only</h3>
                  <div className="grid grid-cols-10 gap-2 min-w-[1400px]">
-                     {stepsToShow.map((step) => (
-                        <div key={`att-${step}`} className={cn("rounded-lg min-h-[150px] flex flex-col border shadow-sm transition-colors", step > totalSteps ? "bg-slate-100 opacity-30 border-dashed" : "bg-slate-50/50")}>
-                             <div className="p-1.5 border-b text-[10px] font-bold text-slate-400 text-center">{step === 0 ? "PRE" : `STEP ${step}`}</div>
-                            <div className="p-1 space-y-1 flex-1 overflow-y-auto">{step <= totalSteps && getAttachmentRulesForStep(step).map((rule: Rule) => renderCard(rule, step, true))}</div>
-                        </div>
-                     ))}
+                     {stepsToShow.map((step) => {
+                        const isCompleted = isStepCompleted(step, getRulesForStep(step));
+                        return (
+                            <div key={`att-${step}`} className={cn(
+                                "rounded-lg min-h-[150px] flex flex-col shadow-sm transition-all relative overflow-hidden",
+                                step > totalSteps ? "bg-slate-100 opacity-30 border-dashed border" : "bg-slate-50/50",
+                                // ✨ [핵심] 여기도 동일하게 초록색 테두리 적용
+                                isCompleted ? "ring-2 ring-green-500 ring-inset border-transparent bg-white" : "border"
+                            )}>
+                                 <div className={cn(
+                                     "p-1.5 border-b text-[10px] font-bold text-slate-400 text-center",
+                                     isCompleted && "border-b-green-100 bg-green-50/30 text-green-600"
+                                 )}>
+                                    {step === 0 ? "PRE" : `STEP ${step}`}
+                                 </div>
+                                <div className="p-1 space-y-1 flex-1 overflow-y-auto">{step <= totalSteps && getAttachmentRulesForStep(step).map((rule: Rule) => renderCard(rule, step, true))}</div>
+                            </div>
+                        );
+                     })}
                  </div>
              </div>
         </div>
