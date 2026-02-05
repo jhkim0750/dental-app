@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { usePatientStoreHydrated, Rule } from "@/hooks/use-patient-store";
 import { 
   CheckCheck, ChevronLeft, ChevronRight, 
   Plus, Trash2, Pencil, Save, Layout, FileImage, 
-  Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus 
+  Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -62,67 +62,110 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [snapshot, setSnapshot] = useState<ImageData | null>(null);
   const [textInput, setTextInput] = useState<{x: number, y: number, value: string} | null>(null);
 
+  // ✨ Undo/Redo (히스토리) 상태
+  // ImageData 배열을 저장해서 과거 상태로 되돌립니다.
+  const [history, setHistory] = useState<ImageData[]>([]);
+  const [historyStep, setHistoryStep] = useState<number>(-1);
+
   if (!store) return null;
   const totalSteps = patient.total_steps || 20;
 
-  // ✨ 처음 로딩 시 DB에서 데이터 가져오기
+  // ✨ [중요] 환자가 바뀌면 상태 초기화 + 데이터 불러오기
   useEffect(() => {
+    // 1. 일단 싹 비웁니다 (다른 환자 데이터 잔상 제거)
+    setMemoText("");
+    setUploadedImage(null);
+    setHistory([]);
+    setHistoryStep(-1);
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (canvas && ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // 2. 그 다음 현재 환자 데이터가 있으면 채워넣습니다.
     if (patient.summary) {
       if (patient.summary.memo) setMemoText(patient.summary.memo);
       if (patient.summary.image) {
         setUploadedImage(patient.summary.image);
       }
     }
-  }, [patient.summary]);
+  }, [patient.id, patient.summary]); // patient.id가 바뀌면 무조건 실행
 
-  // ✨ 저장하기 버튼 기능 (에러 수정됨!)
-  const handleSaveSummary = async () => {
-    let finalImage = uploadedImage;
-    
-    // 캔버스 내용(그림)이 있으면 이미지로 변환해서 저장
-    if (containerRef.current && uploadedImage && canvasRef.current) {
-        const canvas = canvasRef.current;
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = canvas.width;
-        tempCanvas.height = canvas.height;
-        const ctx = tempCanvas.getContext('2d');
-        
-        if (ctx) {
-            // 1. 배경 이미지 그리기
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            img.src = uploadedImage;
-            await new Promise((resolve) => {
-                img.onload = () => {
-                    ctx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
-                    resolve(null);
-                };
-            });
-            // 2. 캔버스 그림 합치기
-            ctx.drawImage(canvas, 0, 0);
-            // 3. 변환
-            finalImage = tempCanvas.toDataURL("image/png");
-        }
-    }
-
-    // 👇 [여기가 수정되었습니다] null을 undefined로 바꿔서 에러 해결!
-    await store.saveSummary(patient.id, {
-      image: finalImage ?? undefined, 
-      memo: memoText
-    });
-    alert("Summary Saved! (저장되었습니다)");
-  };
-
-
-  // --- 캔버스 사이즈 조절 ---
+  // --- 캔버스 사이즈 조절 및 초기 히스토리 저장 ---
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (canvas && container) {
        canvas.width = container.offsetWidth;
        canvas.height = container.offsetHeight;
+       
+       // 캔버스 초기화 시 첫 상태(빈 화면) 저장
+       const ctx = canvas.getContext("2d");
+       if (ctx && history.length === 0) {
+           const initialData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+           setHistory([initialData]);
+           setHistoryStep(0);
+       }
     }
   }, [uploadedImage, isGridOpen]);
+
+  // ✨ 히스토리 저장 함수
+  const saveHistory = () => {
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (canvas && ctx) {
+          const newData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          // 현재 step 이후의 기록은 날려버림 (중간에서 수정하면 미래는 사라짐)
+          const newHistory = history.slice(0, historyStep + 1);
+          newHistory.push(newData);
+          setHistory(newHistory);
+          setHistoryStep(newHistory.length - 1);
+      }
+  };
+
+  // ✨ Undo (Ctrl+Z)
+  const handleUndo = useCallback(() => {
+      if (historyStep > 0) {
+          const prevStep = historyStep - 1;
+          const canvas = canvasRef.current;
+          const ctx = canvas?.getContext("2d");
+          if (canvas && ctx && history[prevStep]) {
+              ctx.putImageData(history[prevStep], 0, 0);
+              setHistoryStep(prevStep);
+          }
+      }
+  }, [history, historyStep]);
+
+  // ✨ Redo (Ctrl+Shift+Z)
+  const handleRedo = useCallback(() => {
+      if (historyStep < history.length - 1) {
+          const nextStep = historyStep + 1;
+          const canvas = canvasRef.current;
+          const ctx = canvas?.getContext("2d");
+          if (canvas && ctx && history[nextStep]) {
+              ctx.putImageData(history[nextStep], 0, 0);
+              setHistoryStep(nextStep);
+          }
+      }
+  }, [history, historyStep]);
+
+  // ✨ 키보드 이벤트 리스너 (Ctrl+Z)
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+              e.preventDefault();
+              if (e.shiftKey) {
+                  handleRedo();
+              } else {
+                  handleUndo();
+              }
+          }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
+
 
   // --- 그리기 핸들러 ---
   const getCanvasPoint = (e: React.MouseEvent) => {
@@ -190,11 +233,16 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   };
 
   const endAction = () => {
-    setIsDrawing(false);
-    setStartPos(null);
-    setSnapshot(null);
-    const ctx = canvasRef.current?.getContext("2d");
-    if (ctx) ctx.globalCompositeOperation = 'source-over';
+    if (isDrawing) {
+        setIsDrawing(false);
+        setStartPos(null);
+        setSnapshot(null);
+        const ctx = canvasRef.current?.getContext("2d");
+        if (ctx) ctx.globalCompositeOperation = 'source-over';
+        
+        // ✨ 그리기 동작이 끝나면 히스토리 저장
+        saveHistory();
+    }
   };
 
   const handleTextComplete = () => {
@@ -208,13 +256,82 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       ctx.font = "bold 16px sans-serif";
       ctx.fillStyle = fontColor;
       ctx.fillText(textInput.value, textInput.x, textInput.y + 12);
+      
+      // ✨ 텍스트 입력도 히스토리 저장
+      saveHistory();
     }
     setTextInput(null);
   };
 
-  // --- 기존 로직들 (축약) ---
+  // --- 저장하기 버튼 기능 ---
+  const handleSaveSummary = async () => {
+    let finalImage = uploadedImage;
+    if (containerRef.current && uploadedImage && canvasRef.current) {
+        const canvas = canvasRef.current;
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const ctx = tempCanvas.getContext('2d');
+        if (ctx) {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.src = uploadedImage;
+            await new Promise((resolve) => {
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                    resolve(null);
+                };
+            });
+            ctx.drawImage(canvas, 0, 0);
+            finalImage = tempCanvas.toDataURL("image/png");
+        }
+    }
+    await store.saveSummary(patient.id, {
+      image: finalImage ?? undefined, 
+      memo: memoText
+    });
+    alert("Summary Saved! (저장되었습니다)");
+  };
+
+  // --- 기타 기능 ---
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+          setUploadedImage(reader.result as string);
+          // 이미지 바뀌면 히스토리도 초기화
+          setHistory([]); 
+          setHistoryStep(-1);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setUploadedImage(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (ctx && canvas) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // 히스토리 초기화
+        setHistory([]);
+        setHistoryStep(-1);
+    }
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (ctx && canvas) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        saveHistory(); // 지운 것도 기록
+    }
+  };
+
+  // --- 기존 Rule 관련 함수들 ---
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
-  
   const handleSaveRules = async () => {
     const finalType = selectedType === "기타" ? customType : selectedType;
     if (!finalType) return alert("Please enter a type name.");
@@ -229,7 +346,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     }
     setSelectedTeeth([]); setNote(""); if (selectedType === "기타") setCustomType("");
   };
-
   const handleEditClick = (rule: Rule) => {
     setEditingRuleId(rule.id);
     if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } 
@@ -237,36 +353,12 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]);
     setStartStep(rule.startStep); setEndStep(rule.endStep); setNote(rule.note || "");
   };
-
   const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
   const handleDeleteRule = async (ruleId: string) => { if (confirm("Delete this rule?")) { await store.deleteRule(patient.id, ruleId); if (editingRuleId === ruleId) cancelEdit(); }};
   const getRulesForStep = (step: number) => patient.rules.filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
   const getAttachmentRulesForStep = (step: number) => getRulesForStep(step).filter((r: Rule) => r.type.toLowerCase().includes("attachment"));
   const getStatus = (rule: Rule, step: number) => { if (step === rule.startStep) return "NEW"; if (step === rule.endStep) return "REMOVE"; return "CHECK"; };
   const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
-
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setUploadedImage(reader.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleRemoveImage = () => {
-    setUploadedImage(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
-  };
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
-  };
 
   const renderCard = (rule: Rule, step: number, isTiny = false) => {
     const status = getStatus(rule, step); const checked = isChecked(rule.id, step); const typeColorClass = getTypeColor(rule.type);
@@ -332,7 +424,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   return (
     <>
       <div className="flex h-full">
-        {/* 왼쪽 패널 (생략: 기존과 동일) */}
+        {/* 왼쪽 패널 (Rule Definition) */}
         <div className="w-[340px] border-r bg-white flex flex-col h-full overflow-hidden shrink-0">
            <div className="p-4 border-b bg-slate-50 shrink-0"><h2 className="font-bold">Rule Definition</h2></div>
            <div className="p-4 space-y-4 overflow-y-auto flex-1">
@@ -369,11 +461,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            </div>
         </div>
 
-        {/* 오른쪽 패널 (Summary Default) */}
+        {/* 오른쪽 패널 (Work Summary) */}
         <div className="flex-1 flex flex-col bg-slate-50/50 h-full overflow-hidden">
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
-             {/* ✨ 저장 버튼 추가됨 */}
              <div className="flex gap-2">
                 <Button onClick={handleSaveSummary} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
                 <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-slate-800 hover:bg-slate-700"><Layout className="w-4 h-4"/> Checklist View</Button>
@@ -383,6 +474,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            <div className="flex-1 p-6 flex flex-col bg-slate-100 overflow-auto">
               <div className="bg-white p-6 rounded-lg shadow-sm flex flex-col h-full">
                  <div className="flex justify-between items-center mb-4">
+                    {/* 툴바 */}
                     <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-lg border">
                         <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('draw')} title="Pen"><PenTool className="w-4 h-4"/></Button>
                         <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('line')} title="Straight Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
@@ -390,6 +482,15 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" className="h-8 w-8" onClick={() => setCurrentTool('eraser')} title="Eraser"><Eraser className="w-4 h-4"/></Button>
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
                         <input type="color" value={fontColor} onChange={(e) => setFontColor(e.target.value)} className="w-6 h-6 p-0 border-0 rounded cursor-pointer" title="Color" />
+                        
+                        <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                        {/* ✨ Undo / Redo 버튼 추가 */}
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUndo} disabled={historyStep <= 0} title="Undo (Ctrl+Z)">
+                            <Undo className="w-4 h-4"/>
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRedo} disabled={historyStep >= history.length - 1} title="Redo (Ctrl+Shift+Z)">
+                            <Redo className="w-4 h-4"/>
+                        </Button>
                     </div>
                     <div className="flex gap-2">
                        <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
