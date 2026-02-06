@@ -18,7 +18,7 @@ interface ChecklistPanelProps {
   patient: any;
 }
 
-// ✨ 저장될 데이터 구조 (아이템)
+// 아이템 타입 정의
 type ItemType = 'image' | 'text' | 'line';
 
 interface CanvasItem {
@@ -37,7 +37,6 @@ interface CanvasItem {
   y2?: number;
 }
 
-// ✨ 저장될 데이터 구조 (펜)
 interface PenStroke {
   points: { x: number, y: number }[];
   color: string;
@@ -64,7 +63,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [isGridOpen, setIsGridOpen] = useState(false);
   const [pageStartStep, setPageStartStep] = useState(0);
 
-  // --- Rule 입력 상태 ---
+  // Rule 입력 상태
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState("BOS");
   const [customType, setCustomType] = useState("");
@@ -73,17 +72,15 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [endStep, setEndStep] = useState(10);
   const [note, setNote] = useState("");
 
-  // --- 캔버스 상태 ---
+  // 캔버스 Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 데이터 상태
+  // 상태 관리
   const [items, setItems] = useState<CanvasItem[]>([]);
   const [penStrokes, setPenStrokes] = useState<PenStroke[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  
-  // History
   const [history, setHistory] = useState<{items: CanvasItem[], strokes: PenStroke[]}[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
@@ -131,7 +128,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     }
 
     if (patient.summary) {
-       // 1. JSON 데이터 복원 (수정 가능 상태)
        if (patient.summary.memo && patient.summary.memo.startsWith('{')) {
            try {
                const savedData = JSON.parse(patient.summary.memo);
@@ -143,7 +139,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            } catch (e) { console.error("JSON Parse Error", e); }
        }
 
-       // 2. 레거시 이미지 복원 (이미지만 있을 경우)
        if (patient.summary.image) {
            const img = new Image();
            img.src = patient.summary.image;
@@ -205,7 +200,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
 
   // ============================================================
-  // 기능 함수들 (모두 상단으로 이동 완료)
+  // 기능 함수들
   // ============================================================
 
   const recordHistory = (newItems: CanvasItem[], newStrokes: PenStroke[]) => {
@@ -281,6 +276,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       recordHistory(newItems, penStrokes);
   };
 
+  // 속성 변경
   const handlePropertyChange = (type: 'color' | 'size', value: string | number) => {
       if (type === 'color') setMainColor(value as string);
       else setToolSize(value as number);
@@ -315,7 +311,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       };
   };
 
-  // ✨ [에러 수정] 이 함수가 없어서 에러가 났었습니다!
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
@@ -327,7 +322,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           };
           reader.readAsDataURL(file);
       }
-      e.target.value = ""; // 초기화
+      e.target.value = "";
   };
 
   const confirmText = () => {
@@ -335,7 +330,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           const newItem: CanvasItem = {
               id: Date.now(), type: 'text', text: textInput.value,
               x: textInput.x, y: textInput.y, color: mainColor, size: toolSize, zIndex: items.length,
-              width: toolSize * textInput.value.length * 0.6,
+              width: 200, // 기본 너비
               height: toolSize * 1.5
           };
           const newItems = [...items, newItem];
@@ -347,173 +342,34 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       setCurrentTool('select'); 
   };
 
-  // --- 저장 로직 ---
-  const handleSave = async () => {
-      if (!containerRef.current || !canvasRef.current) return;
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = canvasRef.current.width;
-      tempCanvas.height = canvasRef.current.height;
-      const ctx = tempCanvas.getContext('2d');
-      if (!ctx) return;
+  // --- 캔버스 헬퍼 ---
+  // ✨ 자동 줄바꿈 함수 (Canvas Draw용)
+  const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
+      const lines = text.split('\n');
+      let lineCounter = 0;
 
-      // 흰 배경
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+      lines.forEach((line) => {
+          const words = line.split(''); // 글자 단위로 체크 (한글 지원)
+          let currentLine = '';
 
-      // 아이템 그리기
-      for (const item of items) {
-          if (item.type === 'image' && item.src) {
-              const img = new Image();
-              img.src = item.src;
-              img.crossOrigin = 'anonymous';
-              await new Promise(r => { img.onload = r; img.onerror = r; });
-              ctx.drawImage(img, item.x, item.y, item.width!, item.height!);
-          } else if (item.type === 'line') {
-              ctx.beginPath();
-              ctx.moveTo(item.x, item.y);
-              ctx.lineTo(item.x2!, item.y2!);
-              ctx.strokeStyle = item.color!;
-              ctx.lineWidth = item.size!;
-              ctx.stroke();
-          } else if (item.type === 'text') {
-              ctx.font = `bold ${item.size}px sans-serif`;
-              ctx.fillStyle = item.color!;
-              ctx.textBaseline = 'top';
-              const lines = item.text!.split('\n');
-              lines.forEach((line, i) => {
-                  ctx.fillText(line, item.x, item.y + (i * item.size! * 1.2));
-              });
+          for(let n = 0; n < words.length; n++) {
+              const testLine = currentLine + words[n];
+              const metrics = ctx.measureText(testLine);
+              const testWidth = metrics.width;
+              if (testWidth > maxWidth && n > 0) {
+                  ctx.fillText(currentLine, x, y + (lineCounter * lineHeight));
+                  currentLine = words[n];
+                  lineCounter++;
+              } else {
+                  currentLine = testLine;
+              }
           }
-      }
-
-      // 펜 레이어 합치기
-      ctx.drawImage(canvasRef.current, 0, 0);
-
-      const finalImage = tempCanvas.toDataURL('image/png');
-      const saveData = { items, penStrokes }; 
-
-      await store.saveSummary(patient.id, { 
-          image: finalImage, 
-          memo: JSON.stringify(saveData) // JSON 저장
+          ctx.fillText(currentLine, x, y + (lineCounter * lineHeight));
+          lineCounter++;
       });
-      alert("Saved! (Editable data preserved)");
   };
 
-  // --- Rule & Grid 로직 ---
-  const getRulesForStep = (step: number) => (patient.rules || []).filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
-  
-  const getGroupedRules = (step: number) => {
-    const allRules = getRulesForStep(step);
-    const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment");
-    return { 
-        genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)),
-        upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)),
-        lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)),
-        attRules: allRules.filter((r: Rule) => isAtt(r))
-    };
-  };
-  
-  const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
-  const areRulesCompleted = (rules: Rule[], step: number) => rules.length > 0 && rules.every((r: Rule) => isChecked(r.id, step));
-
-  const renderCard = (rule: Rule, step: number, isTiny = false) => {
-    const checked = isChecked(rule.id, step);
-    const status = (step === rule.startStep) ? "NEW" : (step === rule.endStep ? "REMOVE" : "CHECK");
-    return (
-      <div key={rule.id} onClick={() => store.toggleChecklistItem(patient.id, step, rule.id)}
-        className={cn("rounded cursor-pointer flex flex-col relative border select-none", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-100 text-slate-400 grayscale" : "bg-white hover:ring-2 hover:ring-blue-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}>
-        <div className="flex justify-between items-start"><span className={cn("font-bold", isTiny ? "text-[11px]" : "text-lg")}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}</span><div className={cn("w-4 h-4 border rounded flex items-center justify-center", checked ? "bg-slate-500" : "bg-white")}>{checked && <CheckCheck className="text-white w-3 h-3"/>}</div></div>
-        <div className={cn("font-bold truncate mt-0.5", getTypeColor(rule.type), isTiny && "text-[10px]")}>{rule.type}</div>
-        {rule.note && <div className={cn("text-slate-400 whitespace-pre-wrap break-words leading-tight", isTiny ? "text-[9px]" : "mt-1")}>{rule.note}</div>}
-      </div>
-    );
-  };
-
-  // ✨ [에러 수정] renderFullScreenGrid 함수 위치 이동 (리턴문 위)
-  const renderFullScreenGrid = () => {
-    const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i);
-    let maxGenCount = 0; let maxUpperCount = 0; let maxLowerCount = 0;
-    stepsToShow.forEach(step => {
-        if (step > totalSteps) return;
-        const { genRules, upperRules, lowerRules } = getGroupedRules(step);
-        maxGenCount = Math.max(maxGenCount, genRules.length);
-        maxUpperCount = Math.max(maxUpperCount, upperRules.length);
-        maxLowerCount = Math.max(maxLowerCount, lowerRules.length);
-    });
-    const getFixedStyle = (count: number) => ({ minHeight: `${34 + (count * 64)}px` });
-
-    return (
-      <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in">
-        <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0">
-            <h2 className="text-2xl font-bold flex items-center gap-2"><Layout className="text-blue-600"/> Full Checklist Grid</h2>
-            <div className="flex gap-2"><Button variant="outline" onClick={() => setPageStartStep(Math.max(0, pageStartStep - 10))}>Prev 10</Button><Button variant="outline" onClick={() => setPageStartStep(Math.min(totalSteps, pageStartStep + 10))}>Next 10</Button><Button variant="destructive" onClick={() => setIsGridOpen(false)}>Close</Button></div>
-        </div>
-        <div className="flex-1 p-6 overflow-auto bg-slate-50">
-             <div className="mb-8">
-                 <h3 className="text-xl font-bold text-blue-800 mb-3 pl-3 border-l-4 border-blue-600">Main Rules</h3>
-                 <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
-                     {stepsToShow.map((step) => {
-                        if (step > totalSteps) return <div key={step} className="opacity-0 w-full"/>;
-                        const { genRules, upperRules, lowerRules } = getGroupedRules(step);
-                        const isAllDone = areRulesCompleted([...genRules, ...upperRules, ...lowerRules], step);
-                        return (
-                            <div key={`main-${step}`} className="flex flex-col gap-2">
-                                <div className={cn("p-2 font-bold text-xs text-center rounded-lg border flex justify-between", step===0?"bg-yellow-100":isAllDone?"bg-blue-600 text-white":"bg-white")}><span>{step===0?"PRE":`STEP ${step}`}</span>{step<=totalSteps && <button onClick={()=>store.checkAllInStep(patient.id,step)}><CheckSquare className="w-3.5 h-3.5"/></button>}</div>
-                                <div className="space-y-2">
-                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col", areRulesCompleted(genRules, step) && genRules.length>0 && "ring-2 ring-green-500 border-transparent")} style={getFixedStyle(maxGenCount)}><div className="text-[9px] font-bold text-slate-400 px-1 mb-1">GENERAL</div>{genRules.map((r: Rule) => renderCard(r, step, true))}</div>
-                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col", areRulesCompleted(upperRules, step) && upperRules.length>0 && "ring-2 ring-green-500 border-transparent")} style={getFixedStyle(maxUpperCount)}><div className="text-[9px] font-bold text-blue-400 px-1 mb-1">MAXILLA</div>{upperRules.map((r: Rule) => renderCard(r, step, true))}</div>
-                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col", areRulesCompleted(lowerRules, step) && lowerRules.length>0 && "ring-2 ring-green-500 border-transparent")} style={getFixedStyle(maxLowerCount)}><div className="text-[9px] font-bold text-orange-400 px-1 mb-1">MANDIBLE</div>{lowerRules.map((r: Rule) => renderCard(r, step, true))}</div>
-                                </div>
-                            </div>
-                        );
-                     })}
-                 </div>
-             </div>
-             <div className="mb-10 pt-4 border-t-2 border-dashed">
-                 <h3 className="text-xl font-bold text-green-800 mb-3 pl-3 border-l-4 border-green-600">Attachments Only</h3>
-                 <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
-                     {stepsToShow.map(step => {
-                         if(step>totalSteps) return null;
-                         const { attRules } = getGroupedRules(step);
-                         return (
-                             <div key={`att-${step}`} className={cn("rounded-lg bg-white border flex flex-col h-full min-h-[100px]", areRulesCompleted(attRules, step) && attRules.length>0 && "ring-2 ring-green-500 border-transparent")}>
-                                 <div className="p-1.5 border-b text-[10px] text-center bg-slate-50">{step===0?"PRE":`STEP ${step}`}</div>
-                                 <div className="p-1 flex-1">{attRules.map((r: Rule) => renderCard(r, step, true))}</div>
-                             </div>
-                         )
-                     })}
-                 </div>
-             </div>
-        </div>
-      </div>
-    );
-  };
-
-  // --- 룰 편집 핸들러들 ---
-  const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
-  const handleSaveRules = async () => { 
-    const finalType = selectedType === "기타" ? customType : selectedType;
-    const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t));
-    if (editingRuleId) {
-      await store.updateRule(patient.id, { id: editingRuleId, type: finalType, tooth: teethToSave[0], startStep, endStep, note });
-      setEditingRuleId(null);
-    } else {
-      for (const tooth of teethToSave) {
-        await store.addRule(patient.id, { type: finalType, tooth, startStep, endStep, note });
-      }
-    }
-    setSelectedTeeth([]); setNote(""); if (selectedType === "기타") setCustomType("");
-  };
-  const handleEditClick = (rule: Rule) => { 
-    setEditingRuleId(rule.id);
-    if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } else { setSelectedType("기타"); setCustomType(rule.type); }
-    setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]);
-    setStartStep(rule.startStep); setEndStep(rule.endStep); setNote(rule.note || "");
-  };
-  const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
-  const handleDeleteRule = async (ruleId: string) => { if (confirm("Delete?")) { await store.deleteRule(patient.id, ruleId); if (editingRuleId === ruleId) cancelEdit(); }};
-
-  // --- 마우스 이벤트들 ---
+  // --- 이벤트 핸들러 ---
   const getPos = (e: React.MouseEvent) => {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return { x: 0, y: 0 };
@@ -626,6 +482,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               }
               return { ...item, x: x - dragState.offsetX, y: y - dragState.offsetY };
           } 
+          // ✨ 리사이즈 로직 (텍스트: 너비만 변경, 이미지: 비율 유지/자유)
           else if (dragState.action === 'resize' && dragState.initialItem) {
               const init = dragState.initialItem;
               const dx = x - dragState.startX;
@@ -638,17 +495,20 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                   return item;
               }
 
+              // 텍스트는 너비만 조절 (폰트 크기 변경 X)
+              if (item.type === 'text') {
+                  if (dragState.resizeHandle?.includes('e')) newW = Math.max(50, init.width! + dx);
+                  if (dragState.resizeHandle?.includes('w')) { newW = Math.max(50, init.width! - dx); newX = init.x + dx; }
+                  return { ...item, x: newX, width: newW }; // 높이는 자동
+              }
+
+              // 이미지 리사이즈
               if (dragState.resizeHandle?.includes('e')) newW = Math.max(20, init.width! + dx);
               if (dragState.resizeHandle?.includes('w')) { newW = Math.max(20, init.width! - dx); newX = init.x + dx; }
               if (dragState.resizeHandle?.includes('s')) newH = Math.max(20, init.height! + dy);
               if (dragState.resizeHandle?.includes('n')) { newH = Math.max(20, init.height! - dy); newY = init.y + dy; }
 
-              let newSize = item.size;
-              if (item.type === 'text') {
-                  const scale = newH / (init.height || 1);
-                  newSize = (init.size || 20) * scale;
-              }
-              return { ...item, x: newX, y: newY, width: newW, height: newH, size: newSize };
+              return { ...item, x: newX, y: newY, width: newW, height: newH };
           }
           return item;
       }));
@@ -657,16 +517,19 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleMouseUp = () => {
       if (!dragState.isDragging) return;
 
-      if (dragState.action === 'draw_pen' || dragState.action === 'draw_line' || dragState.action) {
-          if(dragState.action === 'draw_line') {
-             const newItems = items.map(i => i.id === -1 ? { ...i, id: Date.now() } : i);
-             setItems(newItems);
-             setCurrentTool('select');
-             recordHistory(newItems, penStrokes);
-          } else {
-             recordHistory(items, penStrokes);
-          }
+      if (dragState.action === 'draw_pen') {
+          recordHistory(items, penStrokes);
       }
+      else if (dragState.action === 'draw_line') {
+          const newItems = items.map(i => i.id === -1 ? { ...i, id: Date.now() } : i);
+          setItems(newItems);
+          recordHistory(newItems, penStrokes);
+          setCurrentTool('select');
+      } 
+      else if (dragState.action) {
+          recordHistory(items, penStrokes);
+      }
+
       setDragState({ ...dragState, isDragging: false, action: null });
   };
 
@@ -719,9 +582,157 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   };
 
+  // ✨ 저장 로직
+  const handleSave = async () => {
+      if (!containerRef.current || !canvasRef.current) return;
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvasRef.current.width;
+      tempCanvas.height = canvasRef.current.height;
+      const ctx = tempCanvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+      // 아이템 그리기
+      for (const item of items) {
+          if (item.type === 'image' && item.src) {
+              const img = new Image();
+              img.src = item.src;
+              img.crossOrigin = 'anonymous';
+              await new Promise(r => { img.onload = r; img.onerror = r; });
+              ctx.drawImage(img, item.x, item.y, item.width!, item.height!);
+          } else if (item.type === 'line') {
+              ctx.beginPath();
+              ctx.moveTo(item.x, item.y);
+              ctx.lineTo(item.x2!, item.y2!);
+              ctx.strokeStyle = item.color!;
+              ctx.lineWidth = item.size!;
+              ctx.stroke();
+          } else if (item.type === 'text') {
+              ctx.font = `bold ${item.size}px sans-serif`;
+              ctx.fillStyle = item.color!;
+              ctx.textBaseline = 'top';
+              // ✨ 자동 줄바꿈 저장
+              wrapText(ctx, item.text || '', item.x, item.y, item.width || 200, (item.size || 20) * 1.2);
+          }
+      }
+
+      ctx.drawImage(canvasRef.current, 0, 0);
+
+      const finalImage = tempCanvas.toDataURL('image/png');
+      const saveData = { items, penStrokes }; 
+
+      await store.saveSummary(patient.id, { 
+          image: finalImage, 
+          memo: JSON.stringify(saveData) 
+      });
+      alert("Saved! (Editable data preserved)");
+  };
+
+  // Rule 로직
+  const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  const handleSaveRules = async () => { 
+    const finalType = selectedType === "기타" ? customType : selectedType;
+    const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t));
+    if (editingRuleId) {
+      await store.updateRule(patient.id, { id: editingRuleId, type: finalType, tooth: teethToSave[0], startStep, endStep, note });
+      setEditingRuleId(null);
+    } else {
+      for (const tooth of teethToSave) {
+        await store.addRule(patient.id, { type: finalType, tooth, startStep, endStep, note });
+      }
+    }
+    setSelectedTeeth([]); setNote(""); if (selectedType === "기타") setCustomType("");
+  };
+  const handleEditClick = (rule: Rule) => { 
+    setEditingRuleId(rule.id);
+    if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } else { setSelectedType("기타"); setCustomType(rule.type); }
+    setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]);
+    setStartStep(rule.startStep); setEndStep(rule.endStep); setNote(rule.note || "");
+  };
+  const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
+  const handleDeleteRule = async (ruleId: string) => { if (confirm("Delete?")) { await store.deleteRule(patient.id, ruleId); if (editingRuleId === ruleId) cancelEdit(); }};
+  const getRulesForStep = (step: number) => (patient.rules || []).filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
+  const getGroupedRules = (step: number) => {
+    const allRules = getRulesForStep(step);
+    const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment");
+    return { 
+        genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)),
+        upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)),
+        lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)),
+        attRules: allRules.filter((r: Rule) => isAtt(r))
+    };
+  };
+  const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
+  const areRulesCompleted = (rules: Rule[], step: number) => rules.length > 0 && rules.every((r: Rule) => isChecked(r.id, step));
+  const renderCard = (rule: Rule, step: number, isTiny = false) => {
+    const checked = isChecked(rule.id, step);
+    const status = (step === rule.startStep) ? "NEW" : (step === rule.endStep ? "REMOVE" : "CHECK");
+    return (
+      <div key={rule.id} onClick={() => store.toggleChecklistItem(patient.id, step, rule.id)} className={cn("rounded cursor-pointer flex flex-col relative border select-none", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-100 text-slate-400 grayscale" : "bg-white hover:ring-2 hover:ring-blue-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}>
+        <div className="flex justify-between items-start"><span className={cn("font-bold", isTiny ? "text-[11px]" : "text-lg")}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}</span><div className={cn("w-4 h-4 border rounded flex items-center justify-center", checked ? "bg-slate-500" : "bg-white")}>{checked && <CheckCheck className="text-white w-3 h-3"/>}</div></div>
+        <div className={cn("font-bold truncate mt-0.5", getTypeColor(rule.type), isTiny && "text-[10px]")}>{rule.type}</div>
+        {rule.note && <div className={cn("text-slate-400 whitespace-pre-wrap break-words leading-tight", isTiny ? "text-[9px]" : "mt-1")}>{rule.note}</div>}
+      </div>
+    );
+  };
+  const renderFullScreenGrid = () => {
+    const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i);
+    let maxGenCount = 0; let maxUpperCount = 0; let maxLowerCount = 0;
+    stepsToShow.forEach(step => { if (step > totalSteps) return; const { genRules, upperRules, lowerRules } = getGroupedRules(step); maxGenCount = Math.max(maxGenCount, genRules.length); maxUpperCount = Math.max(maxUpperCount, upperRules.length); maxLowerCount = Math.max(maxLowerCount, lowerRules.length); });
+    const getFixedStyle = (count: number) => ({ minHeight: `${34 + (count * 64)}px` });
+    return (
+      <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in">
+        <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0">
+            <h2 className="text-2xl font-bold flex items-center gap-2"><Layout className="text-blue-600"/> Full Checklist Grid</h2>
+            <div className="flex gap-2"><Button variant="outline" onClick={() => setPageStartStep(Math.max(0, pageStartStep - 10))}>Prev 10</Button><Button variant="outline" onClick={() => setPageStartStep(Math.min(totalSteps, pageStartStep + 10))}>Next 10</Button><Button variant="destructive" onClick={() => setIsGridOpen(false)}>Close</Button></div>
+        </div>
+        <div className="flex-1 p-6 overflow-auto bg-slate-50">
+             <div className="mb-8">
+                 <h3 className="text-xl font-bold text-blue-800 mb-3 pl-3 border-l-4 border-blue-600">Main Rules</h3>
+                 <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
+                     {stepsToShow.map((step) => {
+                        if (step > totalSteps) return <div key={step} className="opacity-0 w-full"/>;
+                        const { genRules, upperRules, lowerRules } = getGroupedRules(step);
+                        const isAllDone = areRulesCompleted([...genRules, ...upperRules, ...lowerRules], step);
+                        return (
+                            <div key={`main-${step}`} className="flex flex-col gap-2">
+                                <div className={cn("p-2 font-bold text-xs text-center rounded-lg border flex justify-between", step===0?"bg-yellow-100":isAllDone?"bg-blue-600 text-white":"bg-white")}><span>{step===0?"PRE":`STEP ${step}`}</span>{step<=totalSteps && <button onClick={()=>store.checkAllInStep(patient.id,step)}><CheckSquare className="w-3.5 h-3.5"/></button>}</div>
+                                <div className="space-y-2">
+                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col", areRulesCompleted(genRules, step) && genRules.length>0 && "ring-2 ring-green-500 border-transparent")} style={getFixedStyle(maxGenCount)}><div className="text-[9px] font-bold text-slate-400 px-1 mb-1">GENERAL</div>{genRules.map((r: Rule) => renderCard(r, step, true))}</div>
+                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col", areRulesCompleted(upperRules, step) && upperRules.length>0 && "ring-2 ring-green-500 border-transparent")} style={getFixedStyle(maxUpperCount)}><div className="text-[9px] font-bold text-blue-400 px-1 mb-1">MAXILLA</div>{upperRules.map((r: Rule) => renderCard(r, step, true))}</div>
+                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col", areRulesCompleted(lowerRules, step) && lowerRules.length>0 && "ring-2 ring-green-500 border-transparent")} style={getFixedStyle(maxLowerCount)}><div className="text-[9px] font-bold text-orange-400 px-1 mb-1">MANDIBLE</div>{lowerRules.map((r: Rule) => renderCard(r, step, true))}</div>
+                                </div>
+                            </div>
+                        );
+                     })}
+                 </div>
+             </div>
+             <div className="mb-10 pt-4 border-t-2 border-dashed">
+                 <h3 className="text-xl font-bold text-green-800 mb-3 pl-3 border-l-4 border-green-600">Attachments Only</h3>
+                 <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
+                     {stepsToShow.map(step => {
+                         if(step>totalSteps) return null;
+                         const { attRules } = getGroupedRules(step);
+                         return (
+                             <div key={`att-${step}`} className={cn("rounded-lg bg-white border flex flex-col h-full min-h-[100px]", areRulesCompleted(attRules, step) && attRules.length>0 && "ring-2 ring-green-500 border-transparent")}>
+                                 <div className="p-1.5 border-b text-[10px] text-center bg-slate-50">{step===0?"PRE":`STEP ${step}`}</div>
+                                 <div className="p-1 flex-1">{attRules.map((r: Rule) => renderCard(r, step, true))}</div>
+                             </div>
+                         )
+                     })}
+                 </div>
+             </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
       <div className="flex h-full">
+        {/* Left Panel */}
         <div className="w-[340px] border-r bg-white flex flex-col h-full overflow-hidden shrink-0">
            <div className="p-4 border-b bg-slate-50 shrink-0"><h2 className="font-bold">Rule Definition</h2></div>
            <div className="p-4 space-y-4 overflow-y-auto flex-1">
@@ -769,6 +780,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            
            <div className="flex-1 p-6 flex flex-col bg-slate-100 overflow-auto">
               <div className="bg-white p-4 rounded-lg shadow-sm flex flex-col h-full min-h-[600px] relative">
+                 
+                 {/* 툴바 */}
                  <div className="flex justify-between items-center mb-4 flex-wrap gap-2 sticky top-0 z-50 bg-white/90 backdrop-blur-sm p-2 border-b">
                     <div className="flex items-center gap-2">
                         <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('select')} className={cn(currentTool === 'select' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Select"><MousePointer2 className="w-4 h-4"/></Button>
@@ -808,6 +821,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                     </div>
                  </div>
 
+                 {/* 캔버스 영역 */}
                  <div 
                     className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative select-none", 
                         currentTool === 'draw' && "cursor-crosshair",
@@ -823,10 +837,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                     onDragOver={(e) => { e.preventDefault(); }}
                     onDrop={handleDrop}
                  >
-                    {/* (1) 아이템 렌더링 (순서 = z-index) */}
+                    {/* (1) 아이템 렌더링 */}
                     {items.map((item) => {
                         const isSelected = selectedId === item.id;
-                        
                         const commonStyle: React.CSSProperties = {
                             left: item.x, top: item.y, zIndex: items.indexOf(item) + 1,
                             pointerEvents: currentTool === 'select' ? 'auto' : 'none' 
@@ -868,7 +881,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         if (item.type === 'text') {
                             return (
                                 <div key={item.id} className={cn("absolute whitespace-pre-wrap px-1 border border-transparent", isSelected && "border-blue-500")}
-                                    style={{ ...commonStyle, color: item.color, fontSize: item.size, fontWeight: 'bold', width: item.width, height: item.height, lineHeight: '1.2' }}
+                                    style={{ ...commonStyle, color: item.color, fontSize: item.size, fontWeight: 'bold', width: item.width, lineHeight: '1.2' }}
                                     onMouseDown={(e) => handleItemMouseDown(e, item, 'move')}
                                     onContextMenu={(e) => handleItemContextMenu(e, item.id)}
                                 >
@@ -904,7 +917,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         }
                     })}
 
-                    {/* ✨ (2) 펜 그리기 레이어 (최상단) */}
+                    {/* (2) 펜 그리기 레이어 */}
                     <canvas 
                         ref={canvasRef} 
                         className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", 
