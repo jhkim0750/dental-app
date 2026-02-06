@@ -99,7 +99,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   if (!store) return null;
   const totalSteps = patient.total_steps || 20;
 
-  // 1. 초기화
+  // 1. 초기화 및 이미지 비율 유지 로드
   useEffect(() => {
     setPageStartStep(0);
     setItems([]);
@@ -108,25 +108,47 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     setSelectedId(null);
     setContextMenu(null);
     
+    // 캔버스 사이즈 설정
     const canvas = canvasRef.current;
-    if (canvas) {
-        canvas.width = canvas.parentElement?.offsetWidth || 800;
-        canvas.height = canvas.parentElement?.offsetHeight || 600;
+    const container = containerRef.current;
+    if (canvas && container) {
+        canvas.width = container.offsetWidth;
+        canvas.height = container.offsetHeight;
         const ctx = canvas.getContext("2d");
         if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 
+    // ✨ 저장된 이미지 로드 (비율 유지 Logic)
     if (patient.summary && patient.summary.image) {
        const img = new Image();
        img.src = patient.summary.image;
        img.onload = () => {
+           const containerW = containerRef.current?.offsetWidth || 800;
+           const containerH = containerRef.current?.offsetHeight || 600;
+           
+           // 원본 비율 계산
+           const imgRatio = img.width / img.height;
+           const containerRatio = containerW / containerH;
+
+           let finalW, finalH;
+
+           // 컨테이너에 맞춤 (Fit)
+           if (containerRatio > imgRatio) {
+               finalH = containerH * 0.9; // 높이 기준 90%
+               finalW = finalH * imgRatio;
+           } else {
+               finalW = containerW * 0.9; // 너비 기준 90%
+               finalH = finalW / imgRatio;
+           }
+
            const initialItem: CanvasItem = {
                id: Date.now(),
                type: 'image',
                src: patient.summary.image!,
-               x: 0, y: 0,
-               width: img.width > 800 ? 800 : img.width,
-               height: img.height > 600 ? 600 : img.height,
+               x: (containerW - finalW) / 2, // 중앙 정렬
+               y: (containerH - finalH) / 2,
+               width: finalW,
+               height: finalH,
                zIndex: 0
            };
            setItems([initialItem]);
@@ -135,6 +157,17 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
        }
     }
   }, [patient.id]);
+
+  // ✨ 선택된 아이템의 속성을 툴바에 반영
+  useEffect(() => {
+      if (selectedId) {
+          const item = items.find(i => i.id === selectedId);
+          if (item) {
+              if (item.color) setMainColor(item.color);
+              if (item.size) setToolSize(item.size);
+          }
+      }
+  }, [selectedId]);
 
   // ============================================================
   // 기능 함수들
@@ -215,6 +248,28 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       recordHistory(newItems);
   };
 
+  // ✨ 속성 변경 핸들러 (중간에 바꾸기 가능)
+  const handlePropertyChange = (type: 'color' | 'size', value: string | number) => {
+      if (type === 'color') setMainColor(value as string);
+      else setToolSize(value as number);
+
+      if (selectedId) {
+          // 선택된 아이템이 있으면 즉시 적용
+          const newItems = items.map(item => {
+              if (item.id === selectedId) {
+                  // 텍스트나 라인이면 속성 변경
+                  if (item.type === 'text' || item.type === 'line') {
+                      return { ...item, [type]: value };
+                  }
+              }
+              return item;
+          });
+          setItems(newItems);
+          // 너무 잦은 히스토리 저장을 방지하려면 Debounce가 필요하지만, 여기선 단순화
+          if (dragState.isDragging === false) recordHistory(newItems);
+      }
+  };
+
   const addImage = (src: string) => {
       const img = new Image();
       img.src = src;
@@ -256,12 +311,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-      // 메뉴 닫기
-      if (contextMenu) {
-          setContextMenu(null);
-          return;
-      }
-
+      if (contextMenu) { setContextMenu(null); return; }
       const { x, y } = getPos(e);
 
       // 1. 그리기 (Pen/Eraser)
@@ -279,7 +329,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           return;
       }
 
-      // 2. 선 그리기 시작
+      // 2. 선 그리기
       if (currentTool === 'line') {
           const tempLine: CanvasItem = {
               id: -1, type: 'line', x: x, y: y, x2: x, y2: y, color: mainColor, size: 3, zIndex: 999
@@ -289,26 +339,24 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           return;
       }
 
-      // 3. 텍스트 추가 (✨ 중요: e.preventDefault()로 포커스 스틸 방지)
+      // 3. 텍스트
       if (currentTool === 'text') {
           e.preventDefault(); 
-          if (textInput) confirmText(); // 기존 입력 완료
+          if (textInput) confirmText();
           else setTextInput({ x, y, value: "" });
           return;
       }
 
-      // 4. 선택 모드에서 빈 곳 클릭
+      // 4. 선택 모드 (빈 곳 클릭)
       if (currentTool === 'select') {
           setSelectedId(null);
       }
   };
 
-  // 아이템 클릭 핸들러
   const handleItemMouseDown = (e: React.MouseEvent, item: CanvasItem, action: typeof dragState.action) => {
       if (currentTool !== 'select') return;
       e.stopPropagation(); 
-
-      if (e.button === 2) return; // 우클릭 무시
+      if (e.button === 2) return;
 
       const { x, y } = getPos(e);
       setSelectedId(item.id);
@@ -397,14 +445,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       setDragState({ ...dragState, isDragging: false, action: null });
   };
 
-  // 키보드 이벤트 (Delete키만 허용)
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if (textInput) return;
-          // ✨ Backspace 제외하고 Delete 키만 허용
-          if (e.key === 'Delete') {
-              deleteSelectedItem();
-          }
+          if (e.key === 'Delete') deleteSelectedItem();
           if ((e.ctrlKey || e.metaKey)) {
               if (e.key.toLowerCase() === 'z') {
                   e.preventDefault();
@@ -412,9 +456,12 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               } else if (e.key.toLowerCase() === 'y') { 
                   e.preventDefault();
                   handleRedo();
+              } else if (e.key.toLowerCase() === 'v') {
+                  // Ctrl+V Paste는 window event listener에서 처리
               }
           }
       };
+      
       const handlePaste = (e: ClipboardEvent) => {
         const items = e.clipboardData?.items;
         if (!items) return;
@@ -491,6 +538,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       alert("Saved!");
   };
 
+  // Rule 로직 (기존 유지)
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const handleSaveRules = async () => { 
     const finalType = selectedType === "기타" ? customType : selectedType;
@@ -513,46 +561,30 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   };
   const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
   const handleDeleteRule = async (ruleId: string) => { if (confirm("Delete?")) { await store.deleteRule(patient.id, ruleId); if (editingRuleId === ruleId) cancelEdit(); }};
-  
   const getRulesForStep = (step: number) => (patient.rules || []).filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
   const getGroupedRules = (step: number) => {
     const allRules = getRulesForStep(step);
     const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment");
-    return { 
-        genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)),
-        upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)),
-        lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)),
-        attRules: allRules.filter((r: Rule) => isAtt(r))
-    };
+    return { genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)), upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)), lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)), attRules: allRules.filter((r: Rule) => isAtt(r)) };
   };
   const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
   const areRulesCompleted = (rules: Rule[], step: number) => rules.length > 0 && rules.every((r: Rule) => isChecked(r.id, step));
-
   const renderCard = (rule: Rule, step: number, isTiny = false) => {
     const checked = isChecked(rule.id, step);
     const status = (step === rule.startStep) ? "NEW" : (step === rule.endStep ? "REMOVE" : "CHECK");
     return (
-      <div key={rule.id} onClick={() => store.toggleChecklistItem(patient.id, step, rule.id)}
-        className={cn("rounded cursor-pointer flex flex-col relative border select-none", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-100 text-slate-400 grayscale" : "bg-white hover:ring-2 hover:ring-blue-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}>
+      <div key={rule.id} onClick={() => store.toggleChecklistItem(patient.id, step, rule.id)} className={cn("rounded cursor-pointer flex flex-col relative border select-none", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-100 text-slate-400 grayscale" : "bg-white hover:ring-2 hover:ring-blue-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}>
         <div className="flex justify-between items-start"><span className={cn("font-bold", isTiny ? "text-[11px]" : "text-lg")}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}</span><div className={cn("w-4 h-4 border rounded flex items-center justify-center", checked ? "bg-slate-500" : "bg-white")}>{checked && <CheckCheck className="text-white w-3 h-3"/>}</div></div>
         <div className={cn("font-bold truncate mt-0.5", getTypeColor(rule.type), isTiny && "text-[10px]")}>{rule.type}</div>
         {rule.note && <div className={cn("text-slate-400 whitespace-pre-wrap break-words leading-tight", isTiny ? "text-[9px]" : "mt-1")}>{rule.note}</div>}
       </div>
     );
   };
-
   const renderFullScreenGrid = () => {
     const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i);
     let maxGenCount = 0; let maxUpperCount = 0; let maxLowerCount = 0;
-    stepsToShow.forEach(step => {
-        if (step > totalSteps) return;
-        const { genRules, upperRules, lowerRules } = getGroupedRules(step);
-        maxGenCount = Math.max(maxGenCount, genRules.length);
-        maxUpperCount = Math.max(maxUpperCount, upperRules.length);
-        maxLowerCount = Math.max(maxLowerCount, lowerRules.length);
-    });
+    stepsToShow.forEach(step => { if (step > totalSteps) return; const { genRules, upperRules, lowerRules } = getGroupedRules(step); maxGenCount = Math.max(maxGenCount, genRules.length); maxUpperCount = Math.max(maxUpperCount, upperRules.length); maxLowerCount = Math.max(maxLowerCount, lowerRules.length); });
     const getFixedStyle = (count: number) => ({ minHeight: `${34 + (count * 64)}px` });
-
     return (
       <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in">
         <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0">
@@ -640,6 +672,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            </div>
         </div>
 
+        {/* Right Panel: Canvas */}
         <div className="flex-1 flex flex-col bg-slate-50/50 h-full overflow-hidden">
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
@@ -667,10 +700,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} title="Add Image"><ImageIcon className="w-4 h-4"/></Button>
 
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        <input type="color" value={mainColor} onChange={(e) => setMainColor(e.target.value)} className="w-6 h-6 p-0 border-0 rounded cursor-pointer" />
+                        <input type="color" value={mainColor} onChange={(e) => handlePropertyChange('color', e.target.value)} className="w-6 h-6 p-0 border-0 rounded cursor-pointer" />
                         <div className="flex items-center gap-1 ml-2">
                             <span className="text-[10px] text-slate-400 font-bold uppercase">Size</span>
-                            <input type="range" min="5" max="50" value={toolSize} onChange={(e) => setToolSize(Number(e.target.value))} className="w-20 accent-blue-600" />
+                            <input type="range" min="5" max="50" value={toolSize} onChange={(e) => handlePropertyChange('size', Number(e.target.value))} className="w-20 accent-blue-600" />
                         </div>
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
                         <Button variant="ghost" size="icon" onClick={handleUndo} title="Undo (Ctrl+Z)"><Undo className="w-4 h-4"/></Button>
@@ -708,10 +741,11 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                     onDragOver={(e) => { e.preventDefault(); }}
                     onDrop={handleDrop}
                  >
-                    {/* (1) 아이템 렌더링 */}
+                    {/* (1) 아이템 렌더링 (z-index 순서) */}
                     {items.map((item) => {
                         const isSelected = selectedId === item.id;
                         
+                        // Select 모드일 때만 클릭 가능
                         const commonStyle: React.CSSProperties = {
                             left: item.x, top: item.y, zIndex: items.indexOf(item) + 1,
                             pointerEvents: currentTool === 'select' ? 'auto' : 'none' 
@@ -750,17 +784,14 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                 <svg key={item.id} className="absolute overflow-visible" 
                                     style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}
                                 >
-                                    {/* 투명한 굵은 선 (클릭 판정용) */}
                                     <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.size || 3, 20)}
                                         className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")}
                                         onMouseDown={(e) => handleItemMouseDown(e, item, 'move')}
                                         onContextMenu={(e) => handleItemContextMenu(e, item.id)}
                                     />
-                                    {/* 실제 보이는 선 */}
                                     <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={item.color} strokeWidth={item.size}
                                         className={cn(currentTool === 'select' ? "pointer-events-none" : "", isSelected && "opacity-80")}
                                     />
-                                    {/* 양 끝점 핸들 */}
                                     {isSelected && currentTool === 'select' && (
                                         <>
                                             <circle cx={item.x} cy={item.y} r={6} fill="blue" className="pointer-events-auto cursor-pointer"
@@ -774,33 +805,33 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         }
                     })}
 
-                    {/* ✨ (2) 펜 그리기 레이어 (맨 위, 그리기 모드일 때만 활성) */}
+                    {/* ✨ (2) 펜 그리기 레이어 (맨 위 + 클릭 투과 제어) */}
                     <canvas 
                         ref={canvasRef} 
-                        className={cn("absolute inset-0 w-full h-full touch-none", 
-                            (currentTool === 'draw' || currentTool === 'eraser') ? "pointer-events-auto z-[9999]" : "pointer-events-none z-0"
+                        className={cn("absolute inset-0 w-full h-full touch-none z-[50]", 
+                            (currentTool === 'draw' || currentTool === 'eraser') ? "pointer-events-auto" : "pointer-events-none"
                         )} 
                     />
 
-                    {/* (3) 텍스트 입력창 - ✨ 이벤트 전파 차단 추가 */}
+                    {/* (3) 텍스트 입력창 */}
                     {textInput && (
                         <textarea autoFocus 
-                            className="absolute z-[9999] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none min-w-[100px] rounded resize-none overflow-hidden"
+                            className="absolute z-[100] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none min-w-[100px] rounded resize-none overflow-hidden"
                             style={{ left: textInput.x, top: textInput.y, color: mainColor, fontSize: toolSize, fontWeight: "bold", height: "auto" }}
                             value={textInput.value} 
-                            onMouseDown={(e) => e.stopPropagation()} // ✨ 중요: 입력창 클릭 시 도화지 클릭 방지
+                            onMouseDown={(e) => e.stopPropagation()} 
                             onChange={(e) => {
                                 e.target.style.height = 'auto';
                                 e.target.style.height = e.target.scrollHeight + 'px';
                                 setTextInput({ ...textInput, value: e.target.value })
                             }} 
                             onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) { // Shift+Enter 줄바꿈, Enter 저장
+                                if (e.key === 'Enter' && !e.shiftKey) { 
                                     e.preventDefault();
                                     confirmText();
                                 }
                             }}
-                            onBlur={confirmText} // 포커스 잃으면 자동 저장
+                            onBlur={confirmText}
                         />
                     )}
 
@@ -809,7 +840,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         <div 
                             className="absolute z-[10000] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[100px] animate-in fade-in zoom-in-95 duration-100"
                             style={{ left: contextMenu.x, top: contextMenu.y }}
-                            onMouseDown={(e) => e.stopPropagation()} // 메뉴 클릭 시 캔버스 이벤트 방지
+                            onMouseDown={(e) => e.stopPropagation()} 
                         >
                             <button 
                                 className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
