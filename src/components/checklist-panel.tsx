@@ -5,7 +5,8 @@ import { usePatientStoreHydrated, Rule } from "@/hooks/use-patient-store";
 import { 
   CheckCheck, ChevronLeft, ChevronRight, 
   Plus, Trash2, Pencil, Save, Layout, FileImage, 
-  Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo, CheckSquare, CheckCircle2 
+  Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo, CheckSquare, CheckCircle2,
+  ImagePlus, Move, Scaling
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -17,16 +18,26 @@ interface ChecklistPanelProps {
   patient: any;
 }
 
+// 오버레이 이미지 타입 정의
+interface OverlayImage {
+  id: number;
+  src: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 const PRESET_TYPES = ["BOS", "Attachment", "Vertical Ridge", "Power Ridge", "Bite Ramp", "IPR", "BC", "TAG", "기타"];
 
 const getTypeColor = (type: string) => {
   const t = type.toLowerCase();
   if (t.includes("bos")) return "text-blue-600";
-  if (t.includes("attachment")) return "text-purple-600";
-  if (t.includes("ipr")) return "text-red-600";
+  if (t.includes("attachment")) return "text-green-600";
+  if (t.includes("ipr")) return "text-purple-600";
+  if (t.includes("bc")) return "text-red-600";
   if (t.includes("ridge")) return "text-orange-600";
   if (t.includes("bite")) return "text-emerald-600";
-  if (t.includes("bc")) return "text-cyan-600";
   if (t.includes("tag")) return "text-pink-600";
   return "text-slate-700";
 };
@@ -47,6 +58,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   // --- Summary & Canvas 상태 ---
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const overlayInputRef = useRef<HTMLInputElement>(null); // 추가 이미지용 인풋
   const [memoText, setMemoText] = useState("");
   const [fontSize, setFontSize] = useState<"sm" | "base" | "lg">("base");
   const [fontColor, setFontColor] = useState("#334155");
@@ -55,7 +67,14 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   
+  // ✨ 오버레이 이미지 상태
+  const [overlays, setOverlays] = useState<OverlayImage[]>([]);
+  const [activeOverlayId, setActiveOverlayId] = useState<number | null>(null);
+  const [isResizingOverlay, setIsResizingOverlay] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
   const [currentTool, setCurrentTool] = useState<"draw" | "line" | "eraser" | "text">("draw");
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState<{x: number, y: number} | null>(null);
@@ -69,10 +88,12 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   if (!store) return null;
   const totalSteps = patient.total_steps || 20;
 
-  // 1. 환자가 바뀌면 초기화 및 데이터 로드
+  // 1. 초기화 및 데이터 로드
   useEffect(() => {
+    setPageStartStep(0);
     setMemoText("");
     setUploadedImage(null);
+    setOverlays([]); // 오버레이 초기화
     setHistory([]);
     setHistoryStep(-1);
     const canvas = canvasRef.current;
@@ -106,7 +127,156 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     }
   }, [uploadedImage, isGridOpen]);
 
-  // 히스토리 저장
+  // ✨ 붙여넣기 (Ctrl+V) 핸들러 수정
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf("image") !== -1) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              const result = event.target?.result as string;
+              
+              if (!uploadedImage) {
+                // 배경이 없으면 배경으로 설정
+                setUploadedImage(result);
+                setHistory([]);
+                setHistoryStep(-1);
+                const canvas = canvasRef.current;
+                if (canvas) {
+                    const ctx = canvas.getContext("2d");
+                    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+              } else {
+                // 배경이 있으면 오버레이(스티커)로 추가
+                addOverlayImage(result);
+              }
+            };
+            reader.readAsDataURL(blob);
+          }
+        }
+      }
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => {
+      window.removeEventListener("paste", handlePaste);
+    };
+  }, [uploadedImage]);
+
+  // ✨ 오버레이 이미지 추가 함수
+  const addOverlayImage = (src: string) => {
+    const img = new Image();
+    img.src = src;
+    img.onload = () => {
+        // 기본 크기 제한 (너무 크면 줄임)
+        let width = img.width;
+        let height = img.height;
+        const maxSize = 200;
+        if (width > maxSize || height > maxSize) {
+            const ratio = Math.min(maxSize / width, maxSize / height);
+            width *= ratio;
+            height *= ratio;
+        }
+
+        setOverlays(prev => [...prev, {
+            id: Date.now(),
+            src,
+            x: 50, // 기본 위치
+            y: 50,
+            width,
+            height
+        }]);
+    };
+  };
+
+  // ✨ 드래그 앤 드랍 핸들러 (배경 or 오버레이 결정)
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const result = event.target?.result as string;
+          if (!uploadedImage) {
+             // 배경으로 설정
+             setUploadedImage(result);
+             setHistory([]); setHistoryStep(-1);
+             const canvas = canvasRef.current;
+             if (canvas) canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+          } else {
+             // 오버레이로 추가
+             addOverlayImage(result);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
+
+  // ✨ 오버레이 조작 핸들러 (이동 및 리사이즈)
+  const handleOverlayMouseDown = (e: React.MouseEvent, id: number, type: 'move' | 'resize') => {
+      e.stopPropagation(); // 캔버스 그리기 방지
+      const overlay = overlays.find(o => o.id === id);
+      if (!overlay) return;
+
+      setActiveOverlayId(id);
+      setIsResizingOverlay(type === 'resize');
+      setDragOffset({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleGlobalMouseMove = useCallback((e: MouseEvent) => {
+      if (activeOverlayId === null) return;
+
+      const deltaX = e.clientX - dragOffset.x;
+      const deltaY = e.clientY - dragOffset.y;
+
+      setOverlays(prev => prev.map(o => {
+          if (o.id !== activeOverlayId) return o;
+          
+          if (isResizingOverlay) {
+              // 리사이즈 모드
+              return { ...o, width: Math.max(20, o.width + deltaX), height: Math.max(20, o.height + deltaY) };
+          } else {
+              // 이동 모드
+              return { ...o, x: o.x + deltaX, y: o.y + deltaY };
+          }
+      }));
+
+      setDragOffset({ x: e.clientX, y: e.clientY });
+  }, [activeOverlayId, dragOffset, isResizingOverlay]);
+
+  const handleGlobalMouseUp = useCallback(() => {
+      setActiveOverlayId(null);
+      setIsResizingOverlay(false);
+  }, []);
+
+  useEffect(() => {
+      if (activeOverlayId !== null) {
+          window.addEventListener('mousemove', handleGlobalMouseMove);
+          window.addEventListener('mouseup', handleGlobalMouseUp);
+      }
+      return () => {
+          window.removeEventListener('mousemove', handleGlobalMouseMove);
+          window.removeEventListener('mouseup', handleGlobalMouseUp);
+      };
+  }, [activeOverlayId, handleGlobalMouseMove, handleGlobalMouseUp]);
+
+  // 오버레이 삭제
+  const removeOverlay = (id: number) => {
+      setOverlays(prev => prev.filter(o => o.id !== id));
+  };
+
+
+  // --- 히스토리 및 그리기 로직 ---
   const saveHistory = () => {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
@@ -119,7 +289,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   };
 
-  // Undo/Redo
   const handleUndo = useCallback(() => {
       if (historyStep > 0) {
           const prevStep = historyStep - 1;
@@ -144,7 +313,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   }, [history, historyStep]);
 
-  // 단축키
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -156,8 +324,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo]);
 
-
-  // --- 그리기 핸들러 ---
   const getCanvasPoint = (e: React.MouseEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -167,6 +333,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   const startAction = (e: React.MouseEvent) => {
     if (!uploadedImage) return;
+    // 오버레이 조작 중이면 그리기 시작 안함
+    if (activeOverlayId !== null) return;
+
     const { x, y } = getCanvasPoint(e);
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -242,6 +411,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     setTextInput(null);
   };
 
+  // ✨ [수정됨] 저장 로직: 배경 + 캔버스 그림 + 오버레이 이미지 병합
   const handleSaveSummary = async () => {
     let finalImage = uploadedImage;
     if (containerRef.current && uploadedImage && canvasRef.current) {
@@ -252,16 +422,37 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         const ctx = tempCanvas.getContext('2d');
         
         if (ctx) {
+            // 1. 배경 이미지 그리기 (비율 유지)
             const img = new Image();
             img.crossOrigin = "anonymous";
             img.src = uploadedImage;
             await new Promise((resolve) => {
                 img.onload = () => {
-                    ctx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                    const hRatio = tempCanvas.width / img.width;
+                    const vRatio = tempCanvas.height / img.height;
+                    const ratio = Math.min(hRatio, vRatio);
+                    const centerShift_x = (tempCanvas.width - img.width * ratio) / 2;
+                    const centerShift_y = (tempCanvas.height - img.height * ratio) / 2;
+                    ctx.drawImage(img, 0, 0, img.width, img.height, centerShift_x, centerShift_y, img.width * ratio, img.height * ratio);
                     resolve(null);
                 };
             });
+
+            // 2. 캔버스 그림(펜, 텍스트) 합치기
             ctx.drawImage(canvas, 0, 0);
+
+            // 3. ✨ 오버레이 이미지들 합치기 (z-index 순서대로)
+            for (const overlay of overlays) {
+                const oImg = new Image();
+                oImg.src = overlay.src;
+                await new Promise((resolve) => {
+                    oImg.onload = () => {
+                        ctx.drawImage(oImg, overlay.x, overlay.y, overlay.width, overlay.height);
+                        resolve(null);
+                    }
+                });
+            }
+
             finalImage = tempCanvas.toDataURL("image/png");
         }
     }
@@ -273,6 +464,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
     if (finalImage) {
         setUploadedImage(finalImage); 
+        setOverlays([]); // 저장 후 오버레이는 배경에 병합되었으므로 초기화
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext("2d");
         if (canvas && ctx) {
@@ -290,14 +482,29 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       const reader = new FileReader();
       reader.onloadend = () => {
           setUploadedImage(reader.result as string);
+          setOverlays([]);
           setHistory([]); setHistoryStep(-1);
       };
       reader.readAsDataURL(file);
     }
   };
 
+  // 오버레이 전용 업로드 핸들러
+  const handleOverlayUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            addOverlayImage(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+    }
+    if (overlayInputRef.current) overlayInputRef.current.value = "";
+  }
+
   const handleRemoveImage = () => {
     setUploadedImage(null);
+    setOverlays([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
     const canvas = canvasRef.current;
     if (canvas) {
@@ -318,7 +525,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     }
   };
 
-  // --- Rule & Status Logic ---
+  // --- 기존 Rule 로직 ---
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const handleSaveRules = async () => {
     const finalType = selectedType === "기타" ? customType : selectedType;
@@ -346,27 +553,18 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   
   const getRulesForStep = (step: number) => patient.rules.filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
   
-  // 룰 분류 로직
   const getGroupedRules = (step: number) => {
     const allRules = getRulesForStep(step);
     const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment");
-
-    // General (0번 치아, 어태치먼트 제외)
     const genRules = allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r));
-    // Upper (10~20번대, 어태치먼트 제외)
     const upperRules = allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r));
-    // Lower (30~40번대, 어태치먼트 제외)
     const lowerRules = allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r));
-    // Attachment Only
     const attRules = allRules.filter((r: Rule) => isAtt(r));
-
     return { genRules, upperRules, lowerRules, attRules };
   };
   
   const getStatus = (rule: Rule, step: number) => { if (step === rule.startStep) return "NEW"; if (step === rule.endStep) return "REMOVE"; return "CHECK"; };
   const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
-
-  // 그룹별 완료 여부 확인
   const areRulesCompleted = (rules: Rule[], step: number) => {
       if (rules.length === 0) return false;
       return rules.every(r => isChecked(r.id, step));
@@ -393,25 +591,14 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   const renderFullScreenGrid = () => {
     const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i);
-    
-    // 1. 현재 페이지(10개 스텝) 내에서 각 섹션별 최대 아이템 개수 계산
-    let maxGenCount = 0;
-    let maxUpperCount = 0;
-    let maxLowerCount = 0;
-
+    let maxGenCount = 0; let maxUpperCount = 0; let maxLowerCount = 0;
     stepsToShow.forEach(step => {
         const { genRules, upperRules, lowerRules } = getGroupedRules(step);
         maxGenCount = Math.max(maxGenCount, genRules.length);
         maxUpperCount = Math.max(maxUpperCount, upperRules.length);
         maxLowerCount = Math.max(maxLowerCount, lowerRules.length);
     });
-
-    // 높이 계산 헬퍼 (52px = 아이템 높이)
-    const getMinHeightStyle = (count: number) => {
-        if (count === 0) return {};
-        // 헤더(28px) + 내용(count * 52px) + 여백(8px)
-        return { minHeight: `${28 + (count * 52) + 8}px` };
-    };
+    const getMinHeightStyle = (count: number) => { if (count === 0) return {}; return { minHeight: `${32 + (count * 52) + 10}px` }; };
 
     return (
       <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in duration-200">
@@ -426,111 +613,43 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
             </div>
         </div>
         <div className="flex-1 p-6 overflow-auto bg-slate-50">
-             {/* 1. Main Rules */}
              <div className="mb-8">
                  <h3 className="text-xl font-bold text-blue-800 mb-3 border-l-4 border-blue-600 pl-3 flex items-center gap-2"><Layout className="w-5 h-5"/> Main Rules</h3>
                  <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
                      {stepsToShow.map((step) => {
+                        if (step > totalSteps) return null;
                         const { genRules, upperRules, lowerRules, attRules } = getGroupedRules(step);
                         const allRulesInStep = [...genRules, ...upperRules, ...lowerRules, ...attRules];
-                        
-                        // 전체 스텝 완료 여부
                         const isStepAllDone = areRulesCompleted(allRulesInStep, step);
-
-                        // 개별 카드 완료 여부
                         const isGenDone = areRulesCompleted(genRules, step);
                         const isUpperDone = areRulesCompleted(upperRules, step);
                         const isLowerDone = areRulesCompleted(lowerRules, step);
-                        
                         return (
                             <div key={`main-${step}`} className="flex flex-col gap-3">
-                                {/* ✨ STEP 헤더 (독립적인 파란색 뱃지 느낌) */}
-                                <div className={cn(
-                                    "p-2 font-bold text-xs text-center rounded-lg shadow-sm flex justify-between items-center transition-colors border", 
-                                    step===0 ? "bg-yellow-100 border-yellow-200 text-yellow-800" : (isStepAllDone ? "bg-blue-600 text-white border-blue-600 shadow-md" : "bg-white text-slate-600 border-slate-200")
-                                )}>
+                                <div className={cn("p-2 font-bold text-xs text-center sticky top-0 z-10 flex justify-between items-center rounded-lg shadow-sm border", step===0 ? "bg-yellow-100 border-yellow-200 text-yellow-800" : (isStepAllDone ? "bg-blue-600 text-white border-blue-600 shadow-md" : "bg-white text-slate-600 border-slate-200"))}>
                                   <span className="flex-1 text-center pl-4">{step === 0 ? "PRE" : `STEP ${step}`}</span>
-                                  {step <= totalSteps && allRulesInStep.length > 0 && (
-                                      <button onClick={() => store.checkAllInStep(patient.id, step)} className={cn("p-1 rounded transition-colors", isStepAllDone ? "text-blue-200 hover:text-white hover:bg-blue-500" : "text-slate-300 hover:text-slate-500 hover:bg-slate-100")} title="Check All">
-                                          <CheckSquare className="w-3.5 h-3.5"/>
-                                      </button>
-                                  )}
+                                  {step <= totalSteps && allRulesInStep.length > 0 && <button onClick={() => store.checkAllInStep(patient.id, step)} className={cn("p-1 rounded transition-colors", isStepAllDone ? "text-blue-200 hover:text-white hover:bg-blue-500" : "text-slate-300 hover:text-slate-500 hover:bg-slate-100")} title="Check All"><CheckSquare className="w-3.5 h-3.5"/></button>}
                                 </div>
-
                                 <div className="space-y-3 flex-1">
-                                    {/* ✨ 1. General Card */}
-                                    {maxGenCount > 0 && (
-                                        <div 
-                                            className={cn("bg-white rounded-lg p-1 border shadow-sm transition-all flex flex-col overflow-hidden", (genRules.length > 0 && isGenDone) ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border-slate-200")}
-                                            style={getMinHeightStyle(maxGenCount)}
-                                        >
-                                            <div className="text-[9px] font-bold text-slate-500 uppercase px-2 py-1 bg-slate-50 mb-1 rounded-sm border-b border-slate-100 flex items-center justify-between">
-                                                <span>General</span>
-                                                {genRules.length > 0 && isGenDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}
-                                            </div>
-                                            {genRules.map((rule: Rule) => renderCard(rule, step, true))}
-                                        </div>
-                                    )}
-
-                                    {/* ✨ 2. Upper (Maxilla) Card */}
-                                    {maxUpperCount > 0 && (
-                                        <div 
-                                            className={cn("bg-white rounded-lg p-1 border shadow-sm transition-all flex flex-col overflow-hidden", (upperRules.length > 0 && isUpperDone) ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border-slate-200")}
-                                            style={getMinHeightStyle(maxUpperCount)}
-                                        >
-                                            <div className="text-[9px] font-bold text-blue-600 uppercase px-2 py-1 bg-blue-50/50 mb-1 rounded-sm border-b border-blue-100 flex items-center justify-between">
-                                                <span>Maxilla</span>
-                                                {upperRules.length > 0 && isUpperDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}
-                                            </div>
-                                            {upperRules.map((rule: Rule) => renderCard(rule, step, true))}
-                                        </div>
-                                    )}
-
-                                    {/* ✨ 3. Lower (Mandible) Card */}
-                                    {maxLowerCount > 0 && (
-                                        <div 
-                                            className={cn("bg-white rounded-lg p-1 border shadow-sm transition-all flex flex-col overflow-hidden", (lowerRules.length > 0 && isLowerDone) ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border-slate-200")}
-                                            style={getMinHeightStyle(maxLowerCount)}
-                                        >
-                                            <div className="text-[9px] font-bold text-orange-600 uppercase px-2 py-1 bg-orange-50/50 mb-1 rounded-sm border-b border-orange-100 flex items-center justify-between">
-                                                <span>Mandible</span>
-                                                {lowerRules.length > 0 && isLowerDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}
-                                            </div>
-                                            {lowerRules.map((rule: Rule) => renderCard(rule, step, true))}
-                                        </div>
-                                    )}
+                                    {maxGenCount > 0 && <div className={cn("bg-white rounded-lg p-1 border shadow-sm transition-all flex flex-col overflow-hidden", (genRules.length > 0 && isGenDone) ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border-slate-200")} style={getMinHeightStyle(maxGenCount)}><div className="text-[9px] font-bold text-slate-500 uppercase px-2 py-1 bg-slate-50 mb-1 rounded-sm border-b border-slate-100 flex items-center justify-between"><span>General</span>{genRules.length > 0 && isGenDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}</div>{genRules.map((rule: Rule) => renderCard(rule, step, true))}</div>}
+                                    {maxUpperCount > 0 && <div className={cn("bg-white rounded-lg p-1 border shadow-sm transition-all flex flex-col overflow-hidden", (upperRules.length > 0 && isUpperDone) ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border-slate-200")} style={getMinHeightStyle(maxUpperCount)}><div className="text-[9px] font-bold text-blue-600 uppercase px-2 py-1 bg-blue-50/50 mb-1 rounded-sm border-b border-blue-100 flex items-center justify-between"><span>Maxilla</span>{upperRules.length > 0 && isUpperDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}</div>{upperRules.map((rule: Rule) => renderCard(rule, step, true))}</div>}
+                                    {maxLowerCount > 0 && <div className={cn("bg-white rounded-lg p-1 border shadow-sm transition-all flex flex-col overflow-hidden", (lowerRules.length > 0 && isLowerDone) ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border-slate-200")} style={getMinHeightStyle(maxLowerCount)}><div className="text-[9px] font-bold text-orange-600 uppercase px-2 py-1 bg-orange-50/50 mb-1 rounded-sm border-b border-orange-100 flex items-center justify-between"><span>Mandible</span>{lowerRules.length > 0 && isLowerDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}</div>{lowerRules.map((rule: Rule) => renderCard(rule, step, true))}</div>}
                                 </div>
                             </div>
                         );
                      })}
                  </div>
              </div>
-             
-             {/* 2. Attachments Only (기존 유지) */}
              <div className="mb-10 pt-4 border-t-2 border-dashed border-slate-300">
                  <h3 className="text-xl font-bold text-green-800 mb-3 border-l-4 border-green-600 pl-3 flex items-center gap-2 mt-4"><Paperclip className="w-5 h-5"/> Attachments Only</h3>
                  <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
                      {stepsToShow.map((step) => {
+                        if (step > totalSteps) return null;
                         const { attRules } = getGroupedRules(step);
                         const isAttDone = areRulesCompleted(attRules, step);
-
                         return (
                             <div key={`att-${step}`} className="flex flex-col">
-                                {attRules.length > 0 ? (
-                                    <div className={cn("rounded-lg flex flex-col shadow-sm transition-all bg-white relative overflow-hidden", isAttDone ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border border-slate-200")}>
-                                         <div className="p-1.5 border-b text-[10px] font-bold text-slate-400 text-center bg-slate-50/50 flex justify-between items-center px-3">
-                                            <span>{step === 0 ? "PRE" : `STEP ${step}`}</span>
-                                            {isAttDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}
-                                         </div>
-                                        <div className="p-1 space-y-1 flex-1 overflow-y-auto">
-                                            {attRules.map((rule: Rule) => renderCard(rule, step, true))}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="rounded-lg h-24 border border-dashed border-slate-200 bg-slate-50/30 flex items-center justify-center">
-                                        <span className="text-[10px] text-slate-300">No Att</span>
-                                    </div>
-                                )}
+                                {attRules.length > 0 ? <div className={cn("rounded-lg flex flex-col shadow-sm transition-all bg-white relative overflow-hidden", isAttDone ? "ring-2 ring-green-500 ring-inset border-transparent shadow-md" : "border border-slate-200")}><div className="p-1.5 border-b text-[10px] font-bold text-slate-400 text-center bg-slate-50/50 flex justify-between items-center px-3"><span>{step === 0 ? "PRE" : `STEP ${step}`}</span>{isAttDone && <CheckCircle2 className="w-3 h-3 text-green-500"/>}</div><div className="p-1 space-y-1 flex-1 overflow-y-auto">{attRules.map((rule: Rule) => renderCard(rule, step, true))}</div></div> : <div className="rounded-lg h-24 border border-dashed border-slate-200 bg-slate-50/30 flex items-center justify-center"><span className="text-[10px] text-slate-300">No Att</span></div>}
                             </div>
                         );
                      })}
@@ -544,7 +663,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   return (
     <>
       <div className="flex h-full">
-        {/* 왼쪽 패널 (기존 동일) */}
         <div className="w-[340px] border-r bg-white flex flex-col h-full overflow-hidden shrink-0">
            <div className="p-4 border-b bg-slate-50 shrink-0"><h2 className="font-bold">Rule Definition</h2></div>
            <div className="p-4 space-y-4 overflow-y-auto flex-1">
@@ -581,7 +699,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            </div>
         </div>
 
-        {/* 오른쪽 패널 (기존 동일) */}
+        {/* 오른쪽 패널 */}
         <div className="flex-1 flex flex-col bg-slate-50/50 h-full overflow-hidden">
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
@@ -606,19 +724,54 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleRedo} disabled={historyStep >= history.length - 1} title="Redo (Ctrl+Shift+Z)"><Redo className="w-4 h-4"/></Button>
                     </div>
                     <div className="flex gap-2">
+                       {/* 오버레이 전용 버튼 */}
+                       <input type="file" accept="image/*" className="hidden" ref={overlayInputRef} onChange={handleOverlayUpload} />
+                       <Button variant="outline" size="sm" onClick={() => overlayInputRef.current?.click()} className="text-blue-600 bg-blue-50 border-blue-200 hover:bg-blue-100"><ImagePlus className="w-4 h-4 mr-1"/> Add Image</Button>
+                       
                        <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
-                       <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="w-4 h-4 mr-1"/> Upload</Button>
+                       <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="w-4 h-4 mr-1"/> BG Upload</Button>
                        {uploadedImage && <Button variant="ghost" size="sm" onClick={clearCanvas} className="text-slate-500 hover:bg-slate-100"><Eraser className="w-4 h-4 mr-1"/> Clear Draw</Button>}
                        {uploadedImage && <Button variant="ghost" size="sm" onClick={handleRemoveImage} className="text-red-500 hover:text-red-600 hover:bg-red-50"><Trash2 className="w-4 h-4 mr-1"/> Remove All</Button>}
                     </div>
                  </div>
 
-                 <div className="flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative mb-4 min-h-[400px]" ref={containerRef}>
+                 {/* ✨ 캔버스 영역 + 오버레이 */}
+                 <div 
+                    className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative mb-4 min-h-[400px]", isDragging && "border-blue-500 bg-blue-50")}
+                    ref={containerRef}
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
+                 >
                     {uploadedImage ? (
                        <>
                          <img src={uploadedImage} alt="Background" className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"/>
-                         <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full cursor-crosshair touch-none", currentTool === 'text' && "cursor-text", currentTool === 'eraser' && "cursor-cell")}
+                         <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full cursor-crosshair touch-none z-10", currentTool === 'text' && "cursor-text", currentTool === 'eraser' && "cursor-cell")}
                             onMouseDown={startAction} onMouseMove={moveAction} onMouseUp={endAction} onMouseLeave={endAction}/>
+                         
+                         {/* ✨ 오버레이 이미지 렌더링 (z-index 20) */}
+                         {overlays.map((overlay) => (
+                             <div 
+                                key={overlay.id}
+                                className={cn("absolute group cursor-move select-none", activeOverlayId === overlay.id ? "z-50 ring-2 ring-blue-500" : "z-20")}
+                                style={{ 
+                                    left: overlay.x, 
+                                    top: overlay.y, 
+                                    width: overlay.width, 
+                                    height: overlay.height 
+                                }}
+                                onMouseDown={(e) => handleOverlayMouseDown(e, overlay.id, 'move')}
+                             >
+                                 <img src={overlay.src} alt="Overlay" className="w-full h-full object-fill pointer-events-none" />
+                                 {/* 삭제 버튼 */}
+                                 <button onClick={(e) => { e.stopPropagation(); removeOverlay(overlay.id); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"><X className="w-3 h-3"/></button>
+                                 {/* 리사이즈 핸들 */}
+                                 <div className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize opacity-0 group-hover:opacity-100" onMouseDown={(e) => handleOverlayMouseDown(e, overlay.id, 'resize')}>
+                                     <div className="w-2 h-2 bg-blue-500 rounded-full absolute bottom-0 right-0 border border-white"/>
+                                 </div>
+                             </div>
+                         ))}
+
                          {textInput && (
                            <input autoFocus className="absolute z-50 border-2 border-blue-500 bg-white px-2 py-1 text-base shadow-lg outline-none min-w-[150px] rounded"
                              style={{ left: textInput.x, top: textInput.y, color: fontColor, fontFamily: "sans-serif", fontWeight: "bold" }}
@@ -626,7 +779,11 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                          )}
                        </>
                     ) : (
-                       <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400"><FileImage className="w-12 h-12 mb-2 opacity-50"/><p>Upload a graph image to start drawing</p></div>
+                       <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                           <FileImage className="w-12 h-12 mb-2 opacity-50"/>
+                           <p className="font-bold">Upload an image</p>
+                           <p className="text-sm">Drag & drop or Paste (Ctrl+V)</p>
+                       </div>
                     )}
                  </div>
 

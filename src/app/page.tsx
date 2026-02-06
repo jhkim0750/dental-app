@@ -5,11 +5,12 @@ import { usePatientStoreHydrated } from "@/hooks/use-patient-store";
 import { ChecklistPanel } from "@/components/checklist-panel";
 import { PatientSidebar } from "@/components/patient-sidebar";
 import { Button } from "@/components/ui/button";
-import { FolderOpen, Home, X } from "lucide-react";
+import { FolderOpen, Home, UserPlus } from "lucide-react";
 
 export default function DentalApp() {
   const store = usePatientStoreHydrated();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // ✨ [수정 1] 처음에 사이드바가 열려있도록 설정 (true)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // --- 앱 시작 시 데이터 불러오기 ---
   useEffect(() => {
@@ -31,7 +32,6 @@ export default function DentalApp() {
             {activePatient ? (
                <div className="flex items-center gap-2 text-sm text-slate-500">
                  <span className="font-bold text-slate-800">{activePatient.name}</span>
-                 {/* caseNumber -> case_number 로 변경 (DB 컬럼명 이슈) */}
                  <span>(#{activePatient.case_number})</span>
                </div>
             ) : (
@@ -62,9 +62,10 @@ export default function DentalApp() {
             </div>
             <h2 className="text-2xl font-bold text-slate-800">Ready to start?</h2>
             <p className="text-slate-500 max-w-md">Select an existing patient from the list or create a new case.</p>
+            {/* ✨ [수정 2] 버튼 문구 변경 및 아이콘 변경 */}
             <Button size="lg" className="mt-4 gap-2 text-lg px-8 py-6" onClick={() => setIsSidebarOpen(true)}>
-              <FolderOpen className="w-5 h-5" />
-              Open Patient List
+              <UserPlus className="w-5 h-5" />
+              Add Patient
             </Button>
           </div>
         )}
@@ -74,12 +75,8 @@ export default function DentalApp() {
       {isSidebarOpen && (
         <div className="absolute inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/50" onClick={() => setIsSidebarOpen(false)} />
-          <div className="relative w-[320px] h-full bg-white shadow-xl flex flex-col animate-in slide-in-from-left">
-            <div className="absolute top-2 right-2 z-10">
-               <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(false)}>
-                 <X className="w-4 h-4" />
-               </Button>
-            </div>
+          <div className="relative w-[340px] h-full bg-white shadow-xl flex flex-col animate-in slide-in-from-left">
+            {/* ✨ X 버튼을 여기서 제거하고 PatientSidebar 내부로 이동하여 디자인 통합 */}
             <PatientSidebar onClose={() => setIsSidebarOpen(false)} />
           </div>
         </div>
