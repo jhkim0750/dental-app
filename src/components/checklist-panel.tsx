@@ -6,7 +6,7 @@ import {
   CheckCheck, ChevronLeft, ChevronRight, 
   Plus, Trash2, Pencil, Save, Layout, FileImage, 
   Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo, CheckSquare, CheckCircle2,
-  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, GripHorizontal
+  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, MoreVertical
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,7 @@ interface ChecklistPanelProps {
   patient: any;
 }
 
-// ✨ 아이템 타입 정의
+// 아이템 타입 정의
 type ItemType = 'image' | 'text' | 'line';
 
 interface CanvasItem {
@@ -27,16 +27,12 @@ interface CanvasItem {
   x: number;
   y: number;
   zIndex: number;
-  // 공통
   color?: string;
   size?: number; 
-  // 이미지
   src?: string;
   width?: number;
   height?: number;
-  // 텍스트
   text?: string;
-  // 선 (끝점)
   x2?: number;
   y2?: number;
 }
@@ -69,16 +65,14 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [endStep, setEndStep] = useState(10);
   const [note, setNote] = useState("");
 
-  // 캔버스 관련 Refs
+  // 캔버스 Refs
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null); // 펜 그리기용 (Raster)
+  const canvasRef = useRef<HTMLCanvasElement>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ✨ 상태 관리
   const [items, setItems] = useState<CanvasItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  
-  // Undo/Redo를 위한 History (아이템 배열 전체를 저장)
   const [history, setHistory] = useState<CanvasItem[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
@@ -87,7 +81,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [mainColor, setMainColor] = useState("#334155");
   const [toolSize, setToolSize] = useState<number>(20); 
 
-  // 드래그 상태 관리
+  // 드래그 상태
   const [dragState, setDragState] = useState<{
       isDragging: boolean;
       action: "move" | "resize_img" | "resize_line_start" | "resize_line_end" | "draw_pen" | "draw_line" | null;
@@ -100,6 +94,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   });
 
   const [textInput, setTextInput] = useState<{x: number, y: number, value: string} | null>(null);
+  
+  // ✨ 우클릭 메뉴 상태
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, itemId: number } | null>(null);
 
   if (!store) return null;
   const totalSteps = patient.total_steps || 20;
@@ -111,8 +108,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     setHistory([]);
     setHistoryIndex(-1);
     setSelectedId(null);
+    setContextMenu(null);
     
-    // 캔버스 클리어
     const canvas = canvasRef.current;
     if (canvas) {
         canvas.width = canvas.parentElement?.offsetWidth || 800;
@@ -121,7 +118,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 
-    // 저장된 이미지 로드
     if (patient.summary && patient.summary.image) {
        const img = new Image();
        img.src = patient.summary.image;
@@ -143,10 +139,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   }, [patient.id]);
 
   // ============================================================
-  // ✨ [핵심 수정] 함수들을 사용하는 곳보다 위로 끌어올림
+  // 기능 함수들
   // ============================================================
 
-  // --- History Management (Undo/Redo) ---
   const recordHistory = (newItems: CanvasItem[]) => {
       const newHistory = history.slice(0, historyIndex + 1);
       newHistory.push(newItems);
@@ -172,22 +167,20 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   };
 
-  // --- Actions ---
-  const clearPenLayer = () => {
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext("2d");
-      if (canvas && ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          // 펜 히스토리는 별도 관리하지 않으므로 여기선 생략
-      }
-  };
-
   const clearAll = () => {
       if(confirm("Clear all content?")) {
           setItems([]);
           recordHistory([]); 
           const ctx = canvasRef.current?.getContext("2d");
           if(ctx && canvasRef.current) ctx.clearRect(0,0, canvasRef.current.width, canvasRef.current.height);
+      }
+  };
+
+  const clearPenLayer = () => {
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (canvas && ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
   };
 
@@ -200,7 +193,17 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   };
 
-  // ✨ [에러 수정] moveLayer 함수를 여기로 이동!
+  // ✨ 메뉴에서 삭제 실행
+  const handleDeleteFromMenu = () => {
+      if (contextMenu) {
+          const newItems = items.filter(i => i.id !== contextMenu.itemId);
+          setItems(newItems);
+          recordHistory(newItems);
+          setContextMenu(null);
+          setSelectedId(null);
+      }
+  };
+
   const moveLayer = (direction: 'up' | 'down') => {
       if (!selectedId) return;
       const idx = items.findIndex(i => i.id === selectedId);
@@ -215,7 +218,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       recordHistory(newItems);
   };
 
-  // --- Adding Items ---
   const addImage = (src: string) => {
       const img = new Image();
       img.src = src;
@@ -223,7 +225,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           let w = img.width;
           let h = img.height;
           if (w > 400) { const r = 400/w; w = 400; h = h*r; }
-          
           const newItem: CanvasItem = {
               id: Date.now(), type: 'image', src, x: 50, y: 50, width: w, height: h, zIndex: items.length
           };
@@ -247,21 +248,26 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           setSelectedId(newItem.id);
       }
       setTextInput(null);
-      setCurrentTool('select');
+      setCurrentTool('select'); // 입력 후 선택 모드로
   };
 
-  // --- Mouse Event Helpers ---
+  // --- 이벤트 핸들러 ---
   const getPos = (e: React.MouseEvent) => {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return { x: 0, y: 0 };
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  // --- MOUSE DOWN ---
   const handleMouseDown = (e: React.MouseEvent) => {
+      // 메뉴 떠있으면 닫기
+      if (contextMenu) {
+          setContextMenu(null);
+          return;
+      }
+
       const { x, y } = getPos(e);
 
-      // 1. 그리기 (Pen/Eraser)
+      // 그리기
       if (currentTool === 'draw' || currentTool === 'eraser') {
           setDragState({ isDragging: true, action: 'draw_pen', startX: x, startY: y, offsetX: 0, offsetY: 0 });
           const ctx = canvasRef.current?.getContext('2d');
@@ -276,7 +282,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           return;
       }
 
-      // 2. 선 그리기 시작
+      // 선 그리기 시작
       if (currentTool === 'line') {
           const tempLine: CanvasItem = {
               id: -1, type: 'line', x: x, y: y, x2: x, y2: y, color: mainColor, size: 3, zIndex: 999
@@ -286,27 +292,31 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           return;
       }
 
-      // 3. 텍스트 추가
+      // 텍스트 추가
       if (currentTool === 'text') {
-          setTextInput({ x, y, value: "" });
+          // 기존 입력 중이면 완료 처리
+          if (textInput) confirmText();
+          else setTextInput({ x, y, value: "" });
           return;
       }
 
-      // 4. 선택 모드: 배경 클릭시 선택 해제
+      // 선택 모드에서 빈 곳 클릭
       if (currentTool === 'select') {
           setSelectedId(null);
       }
   };
 
-  // --- ITEM MOUSE DOWN (이동/리사이즈) ---
+  // 아이템 클릭 핸들러
   const handleItemMouseDown = (e: React.MouseEvent, item: CanvasItem, action: typeof dragState.action) => {
       if (currentTool !== 'select') return;
-      e.stopPropagation(); // 배경 전파 방지
+      e.stopPropagation(); 
+
+      // 우클릭이면 무시 (onContextMenu에서 처리)
+      if (e.button === 2) return;
 
       const { x, y } = getPos(e);
       setSelectedId(item.id);
 
-      // 이동 시 클릭 지점과 객체 원점 간의 거리(Offset) 계산
       let offsetX = 0, offsetY = 0;
       if (action === 'move') {
           offsetX = x - item.x;
@@ -314,25 +324,33 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
 
       setDragState({
-          isDragging: true,
-          action: action,
-          startX: x, startY: y,
-          offsetX, offsetY
+          isDragging: true, action: action, startX: x, startY: y, offsetX, offsetY
       });
   };
 
-  // --- MOUSE MOVE ---
+  // ✨ 우클릭 메뉴 핸들러
+  const handleItemContextMenu = (e: React.MouseEvent, itemId: number) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = containerRef.current?.getBoundingClientRect();
+      if(rect) {
+          setContextMenu({
+              x: e.clientX - rect.left,
+              y: e.clientY - rect.top,
+              itemId
+          });
+      }
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
       const { x, y } = getPos(e);
 
-      // 1. 펜 그리기
       if (dragState.isDragging && dragState.action === 'draw_pen') {
           const ctx = canvasRef.current?.getContext('2d');
           if (ctx) { ctx.lineTo(x, y); ctx.stroke(); }
           return;
       }
 
-      // 2. 선 그리기 (미리보기)
       if (dragState.isDragging && dragState.action === 'draw_line') {
           setItems(prev => prev.map(i => i.id === -1 ? { ...i, x2: x, y2: y } : i));
           return;
@@ -340,7 +358,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
       if (!dragState.isDragging || !selectedId) return;
 
-      // 3. 아이템 이동/리사이즈 적용
       setItems(prevItems => prevItems.map(item => {
           if (item.id !== selectedId) return item;
 
@@ -352,40 +369,32 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                       return { ...item, x: item.x + dx, y: item.y + dy, x2: (item.x2 || 0) + dx, y2: (item.y2 || 0) + dy };
                   }
                   return { ...item, x: x - dragState.offsetX, y: y - dragState.offsetY };
-              
               case 'resize_img':
                   return { ...item, width: Math.max(20, x - item.x), height: Math.max(20, y - item.y) };
-              
               case 'resize_line_start':
-                  return { ...item, x: x, y: y }; // 시작점 이동
-              
+                  return { ...item, x: x, y: y };
               case 'resize_line_end':
-                  return { ...item, x2: x, y2: y }; // 끝점 이동
-              
+                  return { ...item, x2: x, y2: y };
               default:
                   return item;
           }
       }));
   };
 
-  // --- MOUSE UP ---
   const handleMouseUp = () => {
       if (!dragState.isDragging) return;
 
-      // 펜 그리기 종료
       if (dragState.action === 'draw_pen') {
           const ctx = canvasRef.current?.getContext('2d');
           if(ctx) { ctx.closePath(); ctx.globalCompositeOperation = 'source-over'; }
       }
 
-      // 선 그리기 확정
       if (dragState.action === 'draw_line') {
           const newItems = items.map(i => i.id === -1 ? { ...i, id: Date.now() } : i);
           setItems(newItems);
           recordHistory(newItems);
           setCurrentTool('select');
       } 
-      // 이동/리사이즈 완료
       else if (['move', 'resize_img', 'resize_line_start', 'resize_line_end'].includes(dragState.action || '')) {
           recordHistory(items);
       }
@@ -393,11 +402,14 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       setDragState({ ...dragState, isDragging: false, action: null });
   };
 
-  // --- 키보드 이벤트 ---
+  // 키보드 이벤트 (Delete키만 허용)
   useEffect(() => {
-      const handleKey = (e: KeyboardEvent) => {
-          if (textInput) return; 
-          if (e.key === 'Delete' || e.key === 'Backspace') deleteSelectedItem();
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (textInput) return;
+          // ✨ Backspace는 제외하고 Delete 키만 허용
+          if (e.key === 'Delete') {
+              deleteSelectedItem();
+          }
           if ((e.ctrlKey || e.metaKey)) {
               if (e.key.toLowerCase() === 'z') {
                   e.preventDefault();
@@ -408,11 +420,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               }
           }
       };
-      window.addEventListener('keydown', handleKey);
-      return () => window.removeEventListener('keydown', handleKey);
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedId, textInput, historyIndex, history]);
 
-  // --- 파일 드랍 ---
   const handleDrop = (e: React.DragEvent) => {
       e.preventDefault();
       const file = e.dataTransfer.files?.[0];
@@ -423,7 +434,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   };
 
-  // --- 저장 ---
   const handleSave = async () => {
       if (!containerRef.current || !canvasRef.current) return;
       const tempCanvas = document.createElement('canvas');
@@ -467,7 +477,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       alert("Saved!");
   };
 
-  // --- 기존 룰 로직 ---
+  // 기존 Rule 로직
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const handleSaveRules = async () => { 
     const finalType = selectedType === "기타" ? customType : selectedType;
@@ -617,7 +627,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            </div>
         </div>
 
-        {/* Right Panel: Canvas */}
         <div className="flex-1 flex flex-col bg-slate-50/50 h-full overflow-hidden">
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
@@ -650,18 +659,23 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                             <span className="text-[10px] text-slate-400 font-bold uppercase">Size</span>
                             <input type="range" min="5" max="50" value={toolSize} onChange={(e) => setToolSize(Number(e.target.value))} className="w-20 accent-blue-600" />
                         </div>
+                        <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                        <Button variant="ghost" size="icon" onClick={handleUndo} title="Undo (Ctrl+Z)"><Undo className="w-4 h-4"/></Button>
+                        <Button variant="ghost" size="icon" onClick={handleRedo} title="Redo (Ctrl+Y)"><Redo className="w-4 h-4"/></Button>
                     </div>
                     
                     <div className="flex gap-2">
                        {selectedId && (
                            <>
-                               <Button variant="ghost" size="sm" onClick={() => moveLayer('up')}><BringToFront className="w-4 h-4"/></Button>
-                               <Button variant="ghost" size="sm" onClick={() => moveLayer('down')}><SendToBack className="w-4 h-4"/></Button>
-                               <Button variant="ghost" size="sm" onClick={deleteSelectedItem} className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4"/></Button>
+                               <Button variant="ghost" size="sm" onClick={() => moveLayer('up')} title="Bring Forward"><BringToFront className="w-4 h-4"/></Button>
+                               <Button variant="ghost" size="sm" onClick={() => moveLayer('down')} title="Send Backward"><SendToBack className="w-4 h-4"/></Button>
                                <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                               <Button variant="ghost" size="sm" onClick={deleteSelectedItem} className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4"/></Button>
                            </>
                        )}
-                       <Button variant="ghost" size="sm" onClick={clearAll} className="text-slate-400">Clear All</Button>
+                       <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                       <Button variant="ghost" size="sm" onClick={clearPenLayer} className="text-slate-500">Clear Pen</Button>
+                       <Button variant="ghost" size="sm" onClick={clearAll} className="text-red-400">Clear All</Button>
                     </div>
                  </div>
 
@@ -681,12 +695,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                     onDragOver={(e) => { e.preventDefault(); }}
                     onDrop={handleDrop}
                  >
-                    {/* (1) 펜 그리기 레이어 (최하단) */}
-                    <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none z-0" />
-
-                    {/* (2) 아이템 렌더링 (순서 = z-index) */}
+                    {/* (1) 아이템 렌더링 */}
                     {items.map((item) => {
                         const isSelected = selectedId === item.id;
+                        
                         const commonStyle: React.CSSProperties = {
                             left: item.x, top: item.y, zIndex: items.indexOf(item) + 1,
                             pointerEvents: currentTool === 'select' ? 'auto' : 'none' 
@@ -697,6 +709,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                 <div key={item.id} className={cn("absolute", isSelected && "ring-2 ring-blue-500")}
                                     style={{ ...commonStyle, width: item.width, height: item.height }}
                                     onMouseDown={(e) => handleItemMouseDown(e, item, 'move')}
+                                    onContextMenu={(e) => handleItemContextMenu(e, item.id)}
                                 >
                                     <img src={item.src} className="w-full h-full object-fill pointer-events-none" />
                                     {isSelected && currentTool === 'select' && (
@@ -712,6 +725,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                 <div key={item.id} className={cn("absolute whitespace-pre-wrap px-1 border border-transparent", isSelected && "border-blue-500")}
                                     style={{ ...commonStyle, color: item.color, fontSize: item.size, fontWeight: 'bold' }}
                                     onMouseDown={(e) => handleItemMouseDown(e, item, 'move')}
+                                    onContextMenu={(e) => handleItemContextMenu(e, item.id)}
                                 >
                                     {item.text}
                                 </div>
@@ -719,21 +733,21 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         }
 
                         if (item.type === 'line') {
-                            // 선: 컨테이너 전체를 덮는 개별 SVG로 렌더링
                             return (
                                 <svg key={item.id} className="absolute overflow-visible" 
                                     style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}
                                 >
-                                    {/* 투명한 굵은 선 (클릭 판정용) */}
+                                    {/* 투명 히트박스 */}
                                     <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.size || 3, 20)}
                                         className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")}
                                         onMouseDown={(e) => handleItemMouseDown(e, item, 'move')}
+                                        onContextMenu={(e) => handleItemContextMenu(e, item.id)}
                                     />
-                                    {/* 실제 보이는 선 */}
+                                    {/* 실제 선 */}
                                     <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={item.color} strokeWidth={item.size}
                                         className={cn(currentTool === 'select' ? "pointer-events-none" : "", isSelected && "opacity-80")}
                                     />
-                                    {/* 양 끝점 핸들 (선택 시) */}
+                                    {/* 핸들 */}
                                     {isSelected && currentTool === 'select' && (
                                         <>
                                             <circle cx={item.x} cy={item.y} r={6} fill="blue" className="pointer-events-auto cursor-pointer"
@@ -747,10 +761,18 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         }
                     })}
 
+                    {/* ✨ (2) 펜 그리기 레이어 (맨 위, 그리기 모드일 때만 활성) */}
+                    <canvas 
+                        ref={canvasRef} 
+                        className={cn("absolute inset-0 w-full h-full touch-none", 
+                            (currentTool === 'draw' || currentTool === 'eraser') ? "pointer-events-auto z-[9999]" : "pointer-events-none z-0"
+                        )} 
+                    />
+
                     {/* (3) 텍스트 입력창 */}
                     {textInput && (
                         <textarea autoFocus 
-                            className="absolute z-[999] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none min-w-[100px] rounded resize-none overflow-hidden"
+                            className="absolute z-[9999] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none min-w-[100px] rounded resize-none overflow-hidden"
                             style={{ left: textInput.x, top: textInput.y, color: mainColor, fontSize: toolSize, fontWeight: "bold", height: "auto" }}
                             value={textInput.value} 
                             onChange={(e) => {
@@ -766,6 +788,22 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                             }}
                             onBlur={confirmText}
                         />
+                    )}
+
+                    {/* ✨ (4) 우클릭 메뉴 */}
+                    {contextMenu && (
+                        <div 
+                            className="absolute z-[10000] bg-white border border-slate-200 shadow-lg rounded-md py-1 min-w-[120px] animate-in fade-in zoom-in-95 duration-100"
+                            style={{ left: contextMenu.x, top: contextMenu.y }}
+                            onMouseDown={(e) => e.stopPropagation()} // 메뉴 클릭 시 닫히지 않게
+                        >
+                            <button 
+                                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                onClick={handleDeleteFromMenu}
+                            >
+                                <Trash2 className="w-4 h-4"/> Delete
+                            </button>
+                        </div>
                     )}
 
                     {items.length === 0 && history.length === 0 && !textInput && (
