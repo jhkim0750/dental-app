@@ -6,7 +6,7 @@ import {
   CheckCheck, ChevronLeft, ChevronRight, 
   Plus, Trash2, Pencil, Save, Layout, FileImage, 
   Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo, CheckSquare, CheckCircle2,
-  Image as ImageIcon, Move, MousePointer2
+  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, GripHorizontal
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -18,36 +18,41 @@ interface ChecklistPanelProps {
   patient: any;
 }
 
-// 오버레이 이미지 타입 정의
-interface OverlayImage {
+// ✨ 모든 오브젝트를 통합 관리하는 타입 (PPT 방식)
+type CanvasItemType = 'image' | 'text' | 'line';
+
+interface BaseItem {
   id: number;
-  src: string;
+  type: CanvasItemType;
   x: number;
   y: number;
+  zIndex: number;
+}
+
+interface ImageItem extends BaseItem {
+  type: 'image';
+  src: string;
   width: number;
   height: number;
 }
 
-// 오버레이 텍스트 타입 정의
-interface OverlayText {
-  id: number;
+interface TextItem extends BaseItem {
+  type: 'text';
   text: string;
-  x: number;
-  y: number;
   color: string;
   fontSize: number;
+  width?: number; // 텍스트 박스 너비 (줄바꿈용)
 }
 
-// 오버레이 선 타입 정의
-interface OverlayLine {
-  id: number;
-  x1: number;
-  y1: number;
+interface LineItem extends BaseItem {
+  type: 'line';
   x2: number;
   y2: number;
   color: string;
-  width: number;
+  width: number; // 선 굵기
 }
+
+type CanvasItem = ImageItem | TextItem | LineItem;
 
 const PRESET_TYPES = ["BOS", "Attachment", "Vertical Ridge", "Power Ridge", "Bite Ramp", "IPR", "BC", "TAG", "기타"];
 
@@ -68,7 +73,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [isGridOpen, setIsGridOpen] = useState(false);
   const [pageStartStep, setPageStartStep] = useState(0);
 
-  // --- 입력 상태 ---
+  // --- 룰 입력 상태 ---
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState("BOS");
   const [customType, setCustomType] = useState("");
@@ -77,40 +82,30 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [endStep, setEndStep] = useState(10);
   const [note, setNote] = useState("");
 
-  // --- Summary & Canvas 상태 ---
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const overlayInputRef = useRef<HTMLInputElement>(null);
-  
-  // 캔버스 & 오버레이 상태
+  // --- 캔버스 상태 ---
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  
-  const [overlays, setOverlays] = useState<OverlayImage[]>([]);
-  const [textOverlays, setTextOverlays] = useState<OverlayText[]>([]);
-  const [lineOverlays, setLineOverlays] = useState<OverlayLine[]>([]);
-  
-  // 조작 관련 상태
-  const [activeOverlayId, setActiveOverlayId] = useState<number | null>(null);
-  const [activeTextId, setActiveTextId] = useState<number | null>(null);
-  const [activeLineId, setActiveLineId] = useState<number | null>(null);
-  
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [isResizingOverlay, setIsResizingOverlay] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null); // 펜 그리기용 (Raster)
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ✨ PPT 방식: 모든 아이템을 하나의 배열로 관리
+  const [items, setItems] = useState<CanvasItem[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   // 툴 설정
   const [currentTool, setCurrentTool] = useState<"select" | "draw" | "line" | "eraser" | "text">("select");
-  const [fontColor, setFontColor] = useState("#334155");
-  const [fontSize, setFontSize] = useState<number>(16); 
-  
-  // 그리기(Pen) 상태
-  const [isDrawing, setIsDrawing] = useState(false);
+  const [mainColor, setMainColor] = useState("#334155");
+  const [toolSize, setToolSize] = useState<number>(20); // 폰트크기, 선굵기, 지우개크기 통합
+
+  // 드래그/리사이즈 상태
+  const [isDragging, setIsDragging] = useState(false); // 파일 드래그 여부
+  const [dragAction, setDragAction] = useState<"move" | "resize" | "draw" | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [startPos, setStartPos] = useState<{x: number, y: number} | null>(null);
+
+  // 텍스트 입력
   const [textInput, setTextInput] = useState<{x: number, y: number, value: string} | null>(null);
 
-  // 히스토리 (펜 드로잉만 관리)
+  // 펜 히스토리
   const [history, setHistory] = useState<ImageData[]>([]);
   const [historyStep, setHistoryStep] = useState<number>(-1);
 
@@ -120,47 +115,56 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   // 1. 초기화
   useEffect(() => {
     setPageStartStep(0);
-    setOverlays([]);
-    setTextOverlays([]);
-    setLineOverlays([]);
+    setItems([]);
+    setSelectedId(null);
     setHistory([]);
     setHistoryStep(-1);
+    
+    // 캔버스 초기화 (흰색 배경)
     const canvas = canvasRef.current;
     if (canvas) {
+        canvas.width = canvas.parentElement?.offsetWidth || 800;
+        canvas.height = canvas.parentElement?.offsetHeight || 600;
         const ctx = canvas.getContext("2d");
-        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (ctx) {
+            ctx.fillStyle = "transparent";
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
     }
 
-    if (patient.summary) {
-      if (patient.summary.image) {
-         const img = new Image();
-         img.src = patient.summary.image;
-         img.onload = () => {
-             addOverlayImage(patient.summary.image); 
-         }
-      }
+    // 저장된 이미지 불러오기 (배경 이미지처럼 첫 번째 아이템으로 추가)
+    if (patient.summary && patient.summary.image) {
+       const img = new Image();
+       img.src = patient.summary.image;
+       img.onload = () => {
+           // 기존 이미지는 수정 불가능한 배경으로 깔기보다, 수정 가능한 이미지 아이템으로 추가
+           const newItem: ImageItem = {
+               id: Date.now(),
+               type: 'image',
+               src: patient.summary.image!,
+               x: 0, y: 0,
+               width: img.width > 600 ? 600 : img.width, // 적절히 리사이즈
+               height: img.height > 400 ? 400 : img.height,
+               zIndex: 0
+           };
+           setItems([newItem]);
+       }
     }
   }, [patient.id]);
 
-  // 2. 캔버스 사이즈
+  // 2. 캔버스 리사이즈 감지
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (canvas && container) {
-       canvas.width = container.offsetWidth;
-       canvas.height = container.offsetHeight;
-       
-       const ctx = canvas.getContext("2d");
-       if (ctx && history.length === 0) {
-           const initialData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-           setHistory([initialData]);
-           setHistoryStep(0);
-       }
-    }
-  }, [overlays, isGridOpen]);
+      const container = containerRef.current;
+      const canvas = canvasRef.current;
+      if(container && canvas && history.length === 0) {
+          canvas.width = container.offsetWidth;
+          canvas.height = container.offsetHeight;
+      }
+  }, []);
 
-  // --- 함수 정의 ---
+  // --- 핵심 기능 함수들 ---
 
+  // 펜 히스토리 저장
   const saveHistory = useCallback(() => {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
@@ -173,7 +177,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   }, [history, historyStep]);
 
-  const handleUndo = useCallback(() => {
+  // Undo/Redo
+  const handleUndo = () => {
       if (historyStep > 0) {
           const prevStep = historyStep - 1;
           const canvas = canvasRef.current;
@@ -182,10 +187,15 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               ctx.putImageData(history[prevStep], 0, 0);
               setHistoryStep(prevStep);
           }
+      } else if (historyStep === 0) {
+          const canvas = canvasRef.current;
+          const ctx = canvas?.getContext("2d");
+          if(canvas && ctx) ctx.clearRect(0,0, canvas.width, canvas.height);
+          setHistoryStep(-1);
       }
-  }, [history, historyStep]);
+  };
 
-  const handleRedo = useCallback(() => {
+  const handleRedo = () => {
       if (historyStep < history.length - 1) {
           const nextStep = historyStep + 1;
           const canvas = canvasRef.current;
@@ -195,203 +205,218 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               setHistoryStep(nextStep);
           }
       }
-  }, [history, historyStep]);
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            saveHistory();
-        }
-    }
   };
 
-  const handleResetAll = () => {
-    if(confirm("Clear all contents?")) {
-        setOverlays([]);
-        setTextOverlays([]);
-        setLineOverlays([]);
-        clearCanvas();
-    }
+  // 펜 지우기
+  const clearPen = () => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+          const ctx = canvas.getContext("2d");
+          ctx?.clearRect(0, 0, canvas.width, canvas.height);
+          saveHistory();
+      }
   };
 
-  // --- 오버레이 추가/조작 ---
-  const addOverlayImage = (src: string) => {
-    const img = new Image();
-    img.src = src;
-    img.onload = () => {
-        let width = img.width;
-        let height = img.height;
-        const maxSize = 400;
-        if (width > maxSize || height > maxSize) {
-            const ratio = Math.min(maxSize / width, maxSize / height);
-            width *= ratio;
-            height *= ratio;
-        }
-        setOverlays(prev => [...prev, { id: Date.now(), src, x: 50, y: 50, width, height }]);
-        setCurrentTool("select");
-    };
+  // 전체 초기화
+  const clearAll = () => {
+      if(confirm("Clear all content?")) {
+          setItems([]);
+          clearPen();
+          setSelectedId(null);
+      }
   };
 
+  // 아이템 추가 (이미지)
+  const addItemImage = (src: string) => {
+      const img = new Image();
+      img.src = src;
+      img.onload = () => {
+          let w = img.width;
+          let h = img.height;
+          // 너무 크면 줄이기
+          if (w > 400) {
+              const ratio = 400 / w;
+              w = 400;
+              h = h * ratio;
+          }
+          const newItem: ImageItem = {
+              id: Date.now(),
+              type: 'image',
+              src,
+              x: 50, y: 50,
+              width: w, height: h,
+              zIndex: items.length
+          };
+          setItems(prev => [...prev, newItem]);
+          setSelectedId(newItem.id);
+          setCurrentTool('select');
+      };
+  };
+
+  // 아이템 삭제 (선택된 것)
+  const deleteSelectedItem = () => {
+      if (selectedId) {
+          setItems(prev => prev.filter(i => i.id !== selectedId));
+          setSelectedId(null);
+      }
+  };
+
+  // 레이어 순서 변경
+  const changeZIndex = (direction: 'up' | 'down') => {
+      if (!selectedId) return;
+      const index = items.findIndex(i => i.id === selectedId);
+      if (index === -1) return;
+
+      const newItems = [...items];
+      if (direction === 'up' && index < items.length - 1) {
+          [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
+      } else if (direction === 'down' && index > 0) {
+          [newItems[index], newItems[index - 1]] = [newItems[index - 1], newItems[index]];
+      }
+      setItems(newItems);
+  };
+
+  // 텍스트 완료
   const handleTextComplete = () => {
-    if (!textInput || !textInput.value.trim()) {
+      if (textInput && textInput.value.trim()) {
+          const newItem: TextItem = {
+              id: Date.now(),
+              type: 'text',
+              text: textInput.value,
+              x: textInput.x,
+              y: textInput.y,
+              color: mainColor,
+              fontSize: toolSize,
+              zIndex: items.length
+          };
+          setItems(prev => [...prev, newItem]);
+          setSelectedId(newItem.id);
+      }
       setTextInput(null);
-      return;
-    }
-    setTextOverlays(prev => [...prev, {
-        id: Date.now(),
-        text: textInput.value,
-        x: textInput.x,
-        y: textInput.y,
-        color: fontColor,
-        fontSize: fontSize 
-    }]);
-    setTextInput(null);
-    setCurrentTool("select");
+      setCurrentTool('select');
   };
 
-  // --- 통합 마우스 이벤트 핸들러 ---
-  const getCanvasPoint = (e: React.MouseEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  // --- 마우스 이벤트 핸들러 ---
+  const getPoint = (e: React.MouseEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return { x: 0, y: 0 };
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-      const { x, y } = getCanvasPoint(e);
+      const { x, y } = getPoint(e);
 
+      // 1. 그리기 모드
       if (currentTool === 'draw' || currentTool === 'eraser') {
-          setIsDrawing(true);
-          setStartPos({ x, y });
-          const ctx = canvasRef.current?.getContext("2d");
+          setDragAction('draw');
+          const ctx = canvasRef.current?.getContext('2d');
           if (ctx) {
               ctx.beginPath();
               ctx.moveTo(x, y);
-              ctx.lineWidth = currentTool === 'eraser' ? 20 : 3;
-              ctx.lineCap = "round";
-              ctx.lineJoin = "round";
-              if (currentTool === 'eraser') ctx.globalCompositeOperation = 'destination-out';
-              else {
-                  ctx.globalCompositeOperation = 'source-over';
-                  ctx.strokeStyle = fontColor;
-              }
+              ctx.lineWidth = currentTool === 'eraser' ? toolSize : 3;
+              ctx.lineCap = 'round';
+              ctx.lineJoin = 'round';
+              ctx.strokeStyle = currentTool === 'eraser' ? 'rgba(0,0,0,1)' : mainColor;
+              ctx.globalCompositeOperation = currentTool === 'eraser' ? 'destination-out' : 'source-over';
           }
           return;
       }
 
+      // 2. 선 그리기
       if (currentTool === 'line') {
-          setIsDrawing(true); 
+          setDragAction('draw');
           setStartPos({ x, y });
           return;
       }
 
+      // 3. 텍스트 추가
       if (currentTool === 'text') {
-          setTextInput({ x, y, value: "" }); 
+          setTextInput({ x, y, value: "" });
           return;
       }
 
+      // 4. 선택 모드 (바탕 클릭 시 선택 해제)
       if (currentTool === 'select') {
-          setActiveOverlayId(null);
-          setActiveTextId(null);
-          setActiveLineId(null);
+          // 아이템을 클릭했는지는 아이템 자체의 onMouseDown에서 처리됨.
+          // 여기서 이벤트가 발생했다는 건 빈 공간을 눌렀다는 뜻.
+          setSelectedId(null);
       }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-      const { x, y } = getCanvasPoint(e);
+      const { x, y } = getPoint(e);
 
-      if (isDrawing && (currentTool === 'draw' || currentTool === 'eraser')) {
-          const ctx = canvasRef.current?.getContext("2d");
+      // 그리기
+      if (dragAction === 'draw' && (currentTool === 'draw' || currentTool === 'eraser')) {
+          const ctx = canvasRef.current?.getContext('2d');
           if (ctx) {
               ctx.lineTo(x, y);
               ctx.stroke();
           }
           return;
       }
+
+      // 아이템 이동/리사이즈
+      if (dragAction === 'move' && selectedId) {
+          setItems(prev => prev.map(item => {
+              if (item.id !== selectedId) return item;
+              return { ...item, x: x - dragOffset.x, y: y - dragOffset.y };
+          }));
+      } else if (dragAction === 'resize' && selectedId) {
+          setItems(prev => prev.map(item => {
+              if (item.id !== selectedId) return item;
+              if (item.type === 'image') {
+                  return { ...item, width: Math.max(20, x - item.x), height: Math.max(20, y - item.y) };
+              }
+              if (item.type === 'line') {
+                  return { ...item, x2: x, y2: y };
+              }
+              return item;
+          }));
+      }
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
-      if (isDrawing && (currentTool === 'draw' || currentTool === 'eraser')) {
-          setIsDrawing(false);
-          const ctx = canvasRef.current?.getContext("2d");
-          if (ctx) {
-              ctx.closePath();
-              ctx.globalCompositeOperation = 'source-over';
+      const { x, y } = getPoint(e);
+
+      if (dragAction === 'draw') {
+          if (currentTool === 'line' && startPos) {
+              // 선 객체 생성
+              const newItem: LineItem = {
+                  id: Date.now(),
+                  type: 'line',
+                  x: startPos.x,
+                  y: startPos.y,
+                  x2: x, 
+                  y2: y,
+                  color: mainColor,
+                  width: 3,
+                  zIndex: items.length
+              };
+              setItems(prev => [...prev, newItem]);
+              setSelectedId(newItem.id);
+              setCurrentTool('select');
+          } else {
+              // 펜 그리기 종료
+              const ctx = canvasRef.current?.getContext('2d');
+              if(ctx) {
+                  ctx.closePath();
+                  ctx.globalCompositeOperation = 'source-over';
+              }
               saveHistory();
           }
       }
 
-      if (isDrawing && currentTool === 'line' && startPos) {
-          const { x, y } = getCanvasPoint(e);
-          if (Math.abs(x - startPos.x) > 5 || Math.abs(y - startPos.y) > 5) {
-              setLineOverlays(prev => [...prev, {
-                  id: Date.now(),
-                  x1: startPos.x,
-                  y1: startPos.y,
-                  x2: x,
-                  y2: y,
-                  color: fontColor,
-                  width: 3
-              }]);
-          }
-          setIsDrawing(false);
-          setStartPos(null);
-          setCurrentTool("select"); 
-      }
+      setDragAction(null);
+      setStartPos(null);
   };
 
-  const handleGlobalMouseMove = useCallback((e: MouseEvent) => {
-      const deltaX = e.clientX - dragOffset.x;
-      const deltaY = e.clientY - dragOffset.y;
-
-      if (activeOverlayId !== null) {
-          setOverlays(prev => prev.map(o => {
-              if (o.id !== activeOverlayId) return o;
-              if (isResizingOverlay) {
-                  return { ...o, width: Math.max(20, o.width + deltaX), height: Math.max(20, o.height + deltaY) };
-              }
-              return { ...o, x: o.x + deltaX, y: o.y + deltaY };
-          }));
-      } 
-      else if (activeTextId !== null) {
-          setTextOverlays(prev => prev.map(t => {
-              if (t.id !== activeTextId) return t;
-              return { ...t, x: t.x + deltaX, y: t.y + deltaY };
-          }));
-      }
-      else if (activeLineId !== null) {
-          setLineOverlays(prev => prev.map(l => {
-              if (l.id !== activeLineId) return l;
-              return { ...l, x1: l.x1 + deltaX, y1: l.y1 + deltaY, x2: l.x2 + deltaX, y2: l.y2 + deltaY };
-          }));
-      }
-
-      setDragOffset({ x: e.clientX, y: e.clientY });
-  }, [activeOverlayId, activeTextId, activeLineId, dragOffset, isResizingOverlay]);
-
-  const handleGlobalMouseUp = useCallback(() => {
-      setActiveOverlayId(null);
-      setActiveTextId(null);
-      setActiveLineId(null);
-      setIsResizingOverlay(false);
-  }, []);
-
-  useEffect(() => {
-      if (activeOverlayId !== null || activeTextId !== null || activeLineId !== null) {
-          window.addEventListener('mousemove', handleGlobalMouseMove);
-          window.addEventListener('mouseup', handleGlobalMouseUp);
-      }
-      return () => {
-          window.removeEventListener('mousemove', handleGlobalMouseMove);
-          window.removeEventListener('mouseup', handleGlobalMouseUp);
-      };
-  }, [activeOverlayId, activeTextId, activeLineId, handleGlobalMouseMove, handleGlobalMouseUp]);
-
+  // 키보드 삭제 / Undo
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
+          if (e.key === 'Delete' || e.key === 'Backspace') {
+              if (selectedId && !textInput) deleteSelectedItem();
+          }
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
               e.preventDefault();
               if (e.shiftKey) handleRedo(); else handleUndo();
@@ -399,103 +424,68 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       };
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo]);
+  }, [selectedId, textInput, history, historyStep]);
 
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-        const items = e.clipboardData?.items;
-        if (!items) return;
-        for (let i = 0; i < items.length; i++) {
-            if (items[i].type.indexOf("image") !== -1) {
-                const blob = items[i].getAsFile();
-                if (blob) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => addOverlayImage(ev.target?.result as string);
-                    reader.readAsDataURL(blob);
-                }
-            }
-        }
-    };
-    window.addEventListener("paste", handlePaste);
-    return () => window.removeEventListener("paste", handlePaste);
-  }, []);
-
-  // --- 저장 로직 (병합 + 줄바꿈 지원) ---
-  const handleSaveSummary = async () => {
-    if (containerRef.current && canvasRef.current) {
-        const canvas = canvasRef.current;
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = canvas.width;
-        tempCanvas.height = canvas.height;
-        const ctx = tempCanvas.getContext('2d');
-        
-        if (ctx) {
-            ctx.fillStyle = "white";
-            ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-
-            // 1. 이미지
-            for (const overlay of overlays) {
-                const oImg = new Image();
-                oImg.src = overlay.src;
-                oImg.crossOrigin = "anonymous";
-                await new Promise((resolve) => {
-                    oImg.onload = () => {
-                        ctx.drawImage(oImg, overlay.x, overlay.y, overlay.width, overlay.height);
-                        resolve(null);
-                    }
-                    oImg.onerror = () => resolve(null);
-                });
-            }
-
-            // 2. 선
-            for (const line of lineOverlays) {
-                ctx.beginPath();
-                ctx.moveTo(line.x1, line.y1);
-                ctx.lineTo(line.x2, line.y2);
-                ctx.strokeStyle = line.color;
-                ctx.lineWidth = line.width;
-                ctx.stroke();
-            }
-
-            // 3. 펜
-            ctx.drawImage(canvas, 0, 0);
-
-            // 4. 텍스트 (줄바꿈 지원)
-            for (const textObj of textOverlays) {
-                ctx.font = `bold ${textObj.fontSize}px sans-serif`;
-                ctx.fillStyle = textObj.color;
-                ctx.textBaseline = "top";
-                
-                // ✨ 줄바꿈(\n) 분리하여 그리기
-                const lines = textObj.text.split('\n');
-                const lineHeight = textObj.fontSize * 1.2; // 줄 간격
-                lines.forEach((line, index) => {
-                    ctx.fillText(line, textObj.x, textObj.y + (index * lineHeight));
-                });
-            }
-
-            const finalImage = tempCanvas.toDataURL("image/png");
-            
-            await store.saveSummary(patient.id, {
-                image: finalImage, 
-                memo: ""
-            });
-            alert("Summary Saved!");
-        }
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
+  // 파일 붙여넣기 / 드랍
+  const handleDrop = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const file = e.dataTransfer.files?.[0];
+      if (file && file.type.startsWith('image/')) {
           const reader = new FileReader();
-          reader.onloadend = () => addOverlayImage(reader.result as string);
+          reader.onload = (ev) => addItemImage(ev.target?.result as string);
           reader.readAsDataURL(file);
       }
-      e.target.value = "";
   };
 
-  // --- 기존 룰 로직 ---
+  const handleSave = async () => {
+      if (!containerRef.current || !canvasRef.current) return;
+      
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvasRef.current.width;
+      tempCanvas.height = canvasRef.current.height;
+      const ctx = tempCanvas.getContext('2d');
+      if (!ctx) return;
+
+      // 1. 흰 배경
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+      // 2. 아이템 순서대로 그리기
+      for (const item of items) {
+          if (item.type === 'image') {
+              const img = new Image();
+              img.src = item.src;
+              img.crossOrigin = "anonymous";
+              await new Promise(r => { img.onload = r; img.onerror = r; });
+              ctx.drawImage(img, item.x, item.y, item.width, item.height);
+          } else if (item.type === 'line') {
+              ctx.beginPath();
+              ctx.moveTo(item.x, item.y);
+              ctx.lineTo(item.x2, item.y2);
+              ctx.strokeStyle = item.color;
+              ctx.lineWidth = item.width;
+              ctx.stroke();
+          } else if (item.type === 'text') {
+              ctx.font = `bold ${item.fontSize}px sans-serif`;
+              ctx.fillStyle = item.color;
+              ctx.textBaseline = 'top';
+              const lines = item.text.split('\n');
+              lines.forEach((line, i) => {
+                  ctx.fillText(line, item.x, item.y + (i * item.fontSize * 1.2));
+              });
+          }
+      }
+
+      // 3. 펜 레이어 합치기
+      ctx.drawImage(canvasRef.current, 0, 0);
+
+      const finalImage = tempCanvas.toDataURL('image/png');
+      await store.saveSummary(patient.id, { image: finalImage, memo: '' });
+      alert("Saved!");
+  };
+
+  // --- 기존 룰 로직 (그리드) ---
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const handleSaveRules = async () => { 
     const finalType = selectedType === "기타" ? customType : selectedType;
@@ -520,7 +510,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleDeleteRule = async (ruleId: string) => { if (confirm("Delete?")) { await store.deleteRule(patient.id, ruleId); if (editingRuleId === ruleId) cancelEdit(); }};
   
   const getRulesForStep = (step: number) => (patient.rules || []).filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
-  
   const getGroupedRules = (step: number) => {
     const allRules = getRulesForStep(step);
     const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment");
@@ -531,7 +520,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         attRules: allRules.filter((r: Rule) => isAtt(r))
     };
   };
-  
   const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
   const areRulesCompleted = (rules: Rule[], step: number) => rules.length > 0 && rules.every((r: Rule) => isChecked(r.id, step));
 
@@ -614,6 +602,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         <div className="w-[340px] border-r bg-white flex flex-col h-full overflow-hidden shrink-0">
            <div className="p-4 border-b bg-slate-50 shrink-0"><h2 className="font-bold">Rule Definition</h2></div>
            <div className="p-4 space-y-4 overflow-y-auto flex-1">
+              {/* ... Rule 입력 폼 ... */}
               <div className="space-y-1">
                  <Label className="text-xs font-bold text-slate-500">Item Type</Label>
                  <select className="w-full border p-2 rounded" value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
@@ -649,115 +638,182 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
         {/* Right Panel: Canvas */}
         <div className="flex-1 flex flex-col bg-slate-50/50 h-full overflow-hidden">
+           {/* 헤더 */}
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
              <div className="flex gap-2">
-                <Button onClick={handleSaveSummary} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
+                <Button onClick={handleSave} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
                 <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-slate-800 hover:bg-slate-700"><Layout className="w-4 h-4"/> Checklist View</Button>
              </div>
            </div>
            
            <div className="flex-1 p-6 flex flex-col bg-slate-100 overflow-auto">
-              <div className="bg-white p-4 rounded-lg shadow-sm flex flex-col h-full min-h-[600px]">
-                 <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-                    <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-lg border">
-                        <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('select')} title="Select"><MousePointer2 className="w-4 h-4"/></Button>
+              <div className="bg-white p-4 rounded-lg shadow-sm flex flex-col h-full min-h-[600px] relative">
+                 
+                 {/* 툴바 */}
+                 <div className="flex justify-between items-center mb-4 flex-wrap gap-2 sticky top-0 z-50 bg-white/90 backdrop-blur-sm p-2 border-b">
+                    <div className="flex items-center gap-2">
+                        <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('select')} title="Select (V)"><MousePointer2 className="w-4 h-4"/></Button>
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('draw')} title="Pen"><PenTool className="w-4 h-4"/></Button>
-                        <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('line')} title="Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
-                        <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('text')} title="Text (Click to add)"><Type className="w-4 h-4"/></Button>
-                        <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('eraser')} title="Eraser"><Eraser className="w-4 h-4"/></Button>
+                        <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('draw')} title="Pen (P)"><PenTool className="w-4 h-4"/></Button>
+                        <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('line')} title="Line (L)"><Minus className="w-4 h-4 -rotate-45"/></Button>
+                        <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('text')} title="Text (T)"><Type className="w-4 h-4"/></Button>
+                        <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('eraser')} title="Eraser (E)"><Eraser className="w-4 h-4"/></Button>
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-                        <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} title="Upload Image"><ImageIcon className="w-4 h-4"/></Button>
+                        
+                        <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={(e) => { 
+                            if(e.target.files?.[0]) { 
+                                const reader = new FileReader(); 
+                                reader.onload=(ev)=>addItemImage(ev.target?.result as string); 
+                                reader.readAsDataURL(e.target.files[0]); 
+                            } 
+                        }} />
+                        <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} title="Add Image"><ImageIcon className="w-4 h-4"/></Button>
+
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        <input type="color" value={fontColor} onChange={(e) => setFontColor(e.target.value)} className="w-6 h-6 p-0 border-0 rounded cursor-pointer" />
-                        <input type="range" min="10" max="40" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} className="w-20" title="Font Size" />
-                        <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        <Button variant="ghost" size="icon" onClick={handleUndo} disabled={historyStep <= 0}><Undo className="w-4 h-4"/></Button>
-                        <Button variant="ghost" size="icon" onClick={handleRedo} disabled={historyStep >= history.length - 1}><Redo className="w-4 h-4"/></Button>
+                        <input type="color" value={mainColor} onChange={(e) => setMainColor(e.target.value)} className="w-6 h-6 p-0 border-0 rounded cursor-pointer" />
+                        <div className="flex items-center gap-1 ml-2">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase">Size</span>
+                            <input type="range" min="10" max="60" value={toolSize} onChange={(e) => setToolSize(Number(e.target.value))} className="w-20 accent-blue-600" />
+                        </div>
                     </div>
+                    
                     <div className="flex gap-2">
-                       <Button variant="ghost" size="sm" onClick={clearCanvas} className="text-slate-500"><Eraser className="w-4 h-4 mr-1"/> Clear Pen</Button>
-                       <Button variant="ghost" size="sm" onClick={handleResetAll} className="text-red-500"><Trash2 className="w-4 h-4 mr-1"/> Clear All</Button>
+                       {selectedId && (
+                           <>
+                               <Button variant="ghost" size="sm" onClick={() => changeZIndex('up')} title="Bring Forward"><BringToFront className="w-4 h-4"/></Button>
+                               <Button variant="ghost" size="sm" onClick={() => changeZIndex('down')} title="Send Backward"><SendToBack className="w-4 h-4"/></Button>
+                               <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                               <Button variant="ghost" size="sm" onClick={deleteSelectedItem} className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4"/></Button>
+                           </>
+                       )}
+                       <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                       <Button variant="ghost" size="sm" onClick={clearAll} className="text-slate-400">Clear All</Button>
                     </div>
                  </div>
 
+                 {/* 캔버스 영역 */}
                  <div 
-                    className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative", 
+                    className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative cursor-default", 
                         isDragging && "border-blue-500 bg-blue-50",
-                        (currentTool === 'draw' || currentTool === 'eraser') ? "cursor-crosshair" : "cursor-default"
+                        currentTool === 'draw' && "cursor-crosshair",
+                        currentTool === 'text' && "cursor-text"
                     )}
                     ref={containerRef}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
-                    onMouseLeave={handleMouseUp} 
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
                  >
-                    {overlays.map((overlay) => (
-                        <div key={overlay.id}
-                            className={cn("absolute group cursor-move select-none", activeOverlayId === overlay.id ? "z-10 ring-2 ring-blue-500" : "z-0")}
-                            style={{ left: overlay.x, top: overlay.y, width: overlay.width, height: overlay.height }}
-                            onMouseDown={(e) => { 
-                                if(currentTool !== 'select') return;
-                                e.stopPropagation(); setActiveOverlayId(overlay.id); setDragOffset({x: e.clientX, y: e.clientY}); setIsResizingOverlay(false); 
-                            }}
-                        >
-                            <img src={overlay.src} className="w-full h-full object-fill pointer-events-none" />
-                            {activeOverlayId === overlay.id && (
-                                <>
-                                    <button onClick={(e) => { e.stopPropagation(); setOverlays(p => p.filter(o => o.id !== overlay.id)); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5"><X className="w-3 h-3"/></button>
-                                    <div className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize bg-blue-500 border border-white" 
-                                        onMouseDown={(e) => { e.stopPropagation(); setIsResizingOverlay(true); setDragOffset({x: e.clientX, y: e.clientY}); }}/>
-                                </>
-                            )}
-                        </div>
-                    ))}
+                    {/* (1) 이미지 & 텍스트 & 선 (오브젝트) */}
+                    {items.map((item) => {
+                        const isSelected = selectedId === item.id;
+                        
+                        if (item.type === 'image') {
+                            return (
+                                <div key={item.id}
+                                    className={cn("absolute select-none", isSelected ? "ring-2 ring-blue-500 z-50" : "z-auto")}
+                                    style={{ left: item.x, top: item.y, width: (item as ImageItem).width, height: (item as ImageItem).height, zIndex: item.zIndex }}
+                                    onMouseDown={(e) => {
+                                        if (currentTool !== 'select') return;
+                                        e.stopPropagation();
+                                        setSelectedId(item.id);
+                                        setDragAction('move');
+                                        setDragOffset({ x: e.clientX - item.x, y: e.clientY - item.y });
+                                    }}
+                                >
+                                    <img src={(item as ImageItem).src} className="w-full h-full object-fill pointer-events-none" />
+                                    {isSelected && (
+                                        <div className="absolute bottom-0 right-0 w-4 h-4 bg-blue-500 cursor-nwse-resize"
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                setDragAction('resize');
+                                                setDragOffset({ x: e.clientX, y: e.clientY }); // 리사이즈는 좌표만 저장
+                                            }}
+                                        />
+                                    )}
+                                </div>
+                            );
+                        } 
+                        
+                        if (item.type === 'text') {
+                            const tItem = item as TextItem;
+                            return (
+                                <div key={item.id}
+                                    className={cn("absolute select-none px-1 border border-transparent whitespace-pre-wrap", isSelected ? "border-blue-500 z-50" : "z-auto")}
+                                    style={{ left: item.x, top: item.y, color: tItem.color, fontSize: tItem.fontSize, fontWeight: 'bold', zIndex: item.zIndex }}
+                                    onMouseDown={(e) => {
+                                        if (currentTool !== 'select') return;
+                                        e.stopPropagation();
+                                        setSelectedId(item.id);
+                                        setDragAction('move');
+                                        setDragOffset({ x: e.clientX - item.x, y: e.clientY - item.y });
+                                    }}
+                                >
+                                    {tItem.text}
+                                </div>
+                            );
+                        }
 
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-20">
-                        {lineOverlays.map(line => (
-                            <line key={line.id} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} 
-                                stroke={line.color} strokeWidth={line.width} 
-                                className={cn("pointer-events-auto cursor-move hover:stroke-opacity-70", activeLineId === line.id ? "stroke-blue-500" : "")}
-                                onMouseDown={(e) => { 
-                                    if(currentTool !== 'select') return;
-                                    e.stopPropagation(); setActiveLineId(line.id); setDragOffset({x: e.clientX, y: e.clientY}); 
-                                }}
-                            />
-                        ))}
-                        {isDrawing && currentTool === 'line' && startPos && (
-                            <line x1={startPos.x} y1={startPos.y} x2={startPos.x} y2={startPos.y} stroke={fontColor} strokeWidth={3} />
-                        )}
-                    </svg>
-                    {activeLineId && (
-                        <button 
-                            className="absolute z-30 bg-red-500 text-white rounded p-1 text-xs" 
-                            style={{ left: lineOverlays.find(l=>l.id===activeLineId)?.x2, top: lineOverlays.find(l=>l.id===activeLineId)?.y2 }}
-                            onClick={() => setLineOverlays(p => p.filter(l => l.id !== activeLineId))}>Delete Line
-                        </button>
+                        if (item.type === 'line') {
+                            const lItem = item as LineItem;
+                            // 선은 SVG로 따로 그리지 않고 DIV 오버레이로 처리하거나, 
+                            // 여기서는 간단히 SVG 레이어에 통합하지 않고 개별 SVG로 렌더링하여 클릭 감지
+                            // (편의상 SVG 컨테이너를 따로 두지 않고 개별 렌더링)
+                            const width = Math.abs(lItem.x2 - lItem.x);
+                            const height = Math.abs(lItem.y2 - lItem.y);
+                            const left = Math.min(lItem.x, lItem.x2);
+                            const top = Math.min(lItem.y, lItem.y2);
+                            
+                            return (
+                                <svg key={item.id} className="absolute pointer-events-none" style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: item.zIndex }}>
+                                    <line 
+                                        x1={lItem.x} y1={lItem.y} x2={lItem.x2} y2={lItem.y2}
+                                        stroke={lItem.color} strokeWidth={lItem.width}
+                                        className={cn("pointer-events-auto cursor-move", isSelected ? "stroke-blue-500 opacity-80" : "")}
+                                        onMouseDown={(e) => {
+                                            if (currentTool !== 'select') return;
+                                            e.stopPropagation();
+                                            setSelectedId(item.id);
+                                            setDragAction('move');
+                                            // 선 이동은 dx, dy 계산 필요
+                                            setDragOffset({ x: e.clientX, y: e.clientY }); 
+                                        }}
+                                    />
+                                    {isSelected && (
+                                        <circle cx={lItem.x2} cy={lItem.y2} r={6} fill="blue" className="pointer-events-auto cursor-nwse-resize"
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedId(item.id);
+                                                setDragAction('resize');
+                                            }}
+                                        />
+                                    )}
+                                </svg>
+                            );
+                        }
+                    })}
+
+                    {/* (2) 펜 드로잉 레이어 (항상 최상위, pointer-events 제어) */}
+                    <canvas 
+                        ref={canvasRef} 
+                        className={cn("absolute inset-0 w-full h-full touch-none z-40", (currentTool === 'draw' || currentTool === 'eraser') ? "pointer-events-auto" : "pointer-events-none")} 
+                    />
+
+                    {/* (3) 임시 라인 (그리는 중) */}
+                    {dragAction === 'draw' && currentTool === 'line' && startPos && (
+                        <svg className="absolute inset-0 w-full h-full pointer-events-none z-50">
+                            <line x1={startPos.x} y1={startPos.y} x2={dragOffset.x || startPos.x} y2={dragOffset.y || startPos.y} stroke={mainColor} strokeWidth={toolSize/4} />
+                        </svg>
                     )}
 
-                    <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full touch-none z-30", (currentTool === 'draw' || currentTool === 'eraser' || currentTool === 'line') ? "pointer-events-auto" : "pointer-events-none")} />
-
-                    {textOverlays.map((t: OverlayText) => (
-                        <div key={t.id}
-                            className={cn("absolute cursor-move select-none px-2 py-1 border border-transparent hover:border-blue-300 rounded z-40", activeTextId === t.id && "border-blue-500")}
-                            style={{ left: t.x, top: t.y, color: t.color, fontSize: t.fontSize, fontWeight: 'bold', whiteSpace: "pre-wrap" }}
-                            onMouseDown={(e) => { 
-                                if(currentTool !== 'select') return;
-                                e.stopPropagation(); setActiveTextId(t.id); setDragOffset({x: e.clientX, y: e.clientY}); 
-                            }}
-                        >
-                            {t.text}
-                            {activeTextId === t.id && (
-                                <button onClick={(e) => { e.stopPropagation(); setTextOverlays(p => p.filter(o => o.id !== t.id)); }} className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-0.5"><X className="w-3 h-3"/></button>
-                            )}
-                        </div>
-                    ))}
-
+                    {/* (4) 텍스트 입력창 */}
                     {textInput && (
-                        <textarea autoFocus className="absolute z-50 border-2 border-blue-500 bg-white px-2 py-1 shadow-lg outline-none min-w-[150px] rounded resize-none overflow-hidden"
-                            style={{ left: textInput.x, top: textInput.y, color: fontColor, fontSize: fontSize, fontWeight: "bold", height: "auto" }}
+                        <textarea autoFocus 
+                            className="absolute z-50 border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none min-w-[200px] rounded resize-none overflow-hidden"
+                            style={{ left: textInput.x, top: textInput.y, color: mainColor, fontSize: toolSize, fontWeight: "bold", height: "auto" }}
                             value={textInput.value} 
                             onChange={(e) => {
                                 e.target.style.height = 'auto';
@@ -774,10 +830,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         />
                     )}
 
-                    {overlays.length === 0 && !uploadedImage && (
-                       <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 pointer-events-none">
-                           <FileImage className="w-16 h-16 mb-4 opacity-30"/>
-                           <p className="font-bold text-lg">Add Images or Draw</p>
+                    {items.length === 0 && history.length === 0 && !textInput && (
+                       <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none">
+                           <FileImage className="w-16 h-16 mb-4 opacity-50"/>
+                           <p className="font-bold text-lg">Drop image or Start drawing</p>
                        </div>
                     )}
                  </div>
