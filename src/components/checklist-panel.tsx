@@ -6,7 +6,7 @@ import {
   CheckCheck, ChevronLeft, ChevronRight, 
   Plus, Trash2, Pencil, Save, Layout, FileImage, 
   Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo, CheckSquare, CheckCircle2,
-  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, MoreVertical
+  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, GripHorizontal
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -70,7 +70,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ✨ 상태 관리
+  // 상태 관리
   const [items, setItems] = useState<CanvasItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [history, setHistory] = useState<CanvasItem[][]>([]);
@@ -94,8 +94,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   });
 
   const [textInput, setTextInput] = useState<{x: number, y: number, value: string} | null>(null);
-  
-  // ✨ 우클릭 메뉴 상태
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, itemId: number } | null>(null);
 
   if (!store) return null;
@@ -193,7 +191,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   };
 
-  // ✨ 메뉴에서 삭제 실행
   const handleDeleteFromMenu = () => {
       if (contextMenu) {
           const newItems = items.filter(i => i.id !== contextMenu.itemId);
@@ -248,7 +245,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           setSelectedId(newItem.id);
       }
       setTextInput(null);
-      setCurrentTool('select'); // 입력 후 선택 모드로
+      setCurrentTool('select'); 
   };
 
   // --- 이벤트 핸들러 ---
@@ -259,7 +256,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-      // 메뉴 떠있으면 닫기
+      // 메뉴 닫기
       if (contextMenu) {
           setContextMenu(null);
           return;
@@ -267,7 +264,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
       const { x, y } = getPos(e);
 
-      // 그리기
+      // 1. 그리기 (Pen/Eraser)
       if (currentTool === 'draw' || currentTool === 'eraser') {
           setDragState({ isDragging: true, action: 'draw_pen', startX: x, startY: y, offsetX: 0, offsetY: 0 });
           const ctx = canvasRef.current?.getContext('2d');
@@ -282,7 +279,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           return;
       }
 
-      // 선 그리기 시작
+      // 2. 선 그리기 시작
       if (currentTool === 'line') {
           const tempLine: CanvasItem = {
               id: -1, type: 'line', x: x, y: y, x2: x, y2: y, color: mainColor, size: 3, zIndex: 999
@@ -292,15 +289,15 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           return;
       }
 
-      // 텍스트 추가
+      // 3. 텍스트 추가 (✨ 중요: e.preventDefault()로 포커스 스틸 방지)
       if (currentTool === 'text') {
-          // 기존 입력 중이면 완료 처리
-          if (textInput) confirmText();
+          e.preventDefault(); 
+          if (textInput) confirmText(); // 기존 입력 완료
           else setTextInput({ x, y, value: "" });
           return;
       }
 
-      // 선택 모드에서 빈 곳 클릭
+      // 4. 선택 모드에서 빈 곳 클릭
       if (currentTool === 'select') {
           setSelectedId(null);
       }
@@ -311,8 +308,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       if (currentTool !== 'select') return;
       e.stopPropagation(); 
 
-      // 우클릭이면 무시 (onContextMenu에서 처리)
-      if (e.button === 2) return;
+      if (e.button === 2) return; // 우클릭 무시
 
       const { x, y } = getPos(e);
       setSelectedId(item.id);
@@ -328,7 +324,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       });
   };
 
-  // ✨ 우클릭 메뉴 핸들러
   const handleItemContextMenu = (e: React.MouseEvent, itemId: number) => {
       e.preventDefault();
       e.stopPropagation();
@@ -406,7 +401,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if (textInput) return;
-          // ✨ Backspace는 제외하고 Delete 키만 허용
+          // ✨ Backspace 제외하고 Delete 키만 허용
           if (e.key === 'Delete') {
               deleteSelectedItem();
           }
@@ -420,8 +415,27 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               }
           }
       };
+      const handlePaste = (e: ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf("image") !== -1) {
+                const blob = items[i].getAsFile();
+                if (blob) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => addImage(ev.target?.result as string);
+                    reader.readAsDataURL(blob);
+                }
+            }
+        }
+      };
+
       window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
+      window.addEventListener("paste", handlePaste);
+      return () => {
+          window.removeEventListener('keydown', handleKeyDown);
+          window.removeEventListener("paste", handlePaste);
+      };
   }, [selectedId, textInput, historyIndex, history]);
 
   const handleDrop = (e: React.DragEvent) => {
@@ -477,7 +491,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       alert("Saved!");
   };
 
-  // 기존 Rule 로직
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const handleSaveRules = async () => { 
     const finalType = selectedType === "기타" ? customType : selectedType;
@@ -737,17 +750,17 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                 <svg key={item.id} className="absolute overflow-visible" 
                                     style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}
                                 >
-                                    {/* 투명 히트박스 */}
+                                    {/* 투명한 굵은 선 (클릭 판정용) */}
                                     <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.size || 3, 20)}
                                         className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")}
                                         onMouseDown={(e) => handleItemMouseDown(e, item, 'move')}
                                         onContextMenu={(e) => handleItemContextMenu(e, item.id)}
                                     />
-                                    {/* 실제 선 */}
+                                    {/* 실제 보이는 선 */}
                                     <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={item.color} strokeWidth={item.size}
                                         className={cn(currentTool === 'select' ? "pointer-events-none" : "", isSelected && "opacity-80")}
                                     />
-                                    {/* 핸들 */}
+                                    {/* 양 끝점 핸들 */}
                                     {isSelected && currentTool === 'select' && (
                                         <>
                                             <circle cx={item.x} cy={item.y} r={6} fill="blue" className="pointer-events-auto cursor-pointer"
@@ -769,33 +782,34 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         )} 
                     />
 
-                    {/* (3) 텍스트 입력창 */}
+                    {/* (3) 텍스트 입력창 - ✨ 이벤트 전파 차단 추가 */}
                     {textInput && (
                         <textarea autoFocus 
                             className="absolute z-[9999] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none min-w-[100px] rounded resize-none overflow-hidden"
                             style={{ left: textInput.x, top: textInput.y, color: mainColor, fontSize: toolSize, fontWeight: "bold", height: "auto" }}
                             value={textInput.value} 
+                            onMouseDown={(e) => e.stopPropagation()} // ✨ 중요: 입력창 클릭 시 도화지 클릭 방지
                             onChange={(e) => {
                                 e.target.style.height = 'auto';
                                 e.target.style.height = e.target.scrollHeight + 'px';
                                 setTextInput({ ...textInput, value: e.target.value })
                             }} 
                             onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
+                                if (e.key === 'Enter' && !e.shiftKey) { // Shift+Enter 줄바꿈, Enter 저장
                                     e.preventDefault();
                                     confirmText();
                                 }
                             }}
-                            onBlur={confirmText}
+                            onBlur={confirmText} // 포커스 잃으면 자동 저장
                         />
                     )}
 
                     {/* ✨ (4) 우클릭 메뉴 */}
                     {contextMenu && (
                         <div 
-                            className="absolute z-[10000] bg-white border border-slate-200 shadow-lg rounded-md py-1 min-w-[120px] animate-in fade-in zoom-in-95 duration-100"
+                            className="absolute z-[10000] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[100px] animate-in fade-in zoom-in-95 duration-100"
                             style={{ left: contextMenu.x, top: contextMenu.y }}
-                            onMouseDown={(e) => e.stopPropagation()} // 메뉴 클릭 시 닫히지 않게
+                            onMouseDown={(e) => e.stopPropagation()} // 메뉴 클릭 시 캔버스 이벤트 방지
                         >
                             <button 
                                 className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
