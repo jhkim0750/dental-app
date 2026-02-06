@@ -1,38 +1,44 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, forwardRef, useImperativeHandle } from "react";
 import { usePatientStoreHydrated } from "@/hooks/use-patient-store";
 import { Plus, User, Trash2, X, Search, Pencil, Hospital } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-interface PatientSidebarProps {
-  onClose?: () => void;
+export interface PatientSidebarHandle {
+  openAddModal: () => void;
 }
 
-export function PatientSidebar({ onClose }: PatientSidebarProps) {
+interface PatientSidebarProps {
+  onClose?: () => void; // onClose가 있으면 '닫기 버튼'이 보임
+}
+
+export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarProps>(({ onClose }, ref) => {
   const store = usePatientStoreHydrated();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  // 검색어 상태
   const [searchTerm, setSearchTerm] = useState("");
-
-  // 입력 폼 상태
   const [name, setName] = useState("");
   const [caseNum, setCaseNum] = useState("");
   const [clinicName, setClinicName] = useState("");
   const [totalSteps, setTotalSteps] = useState(20);
 
+  // 부모 컴포넌트에서 openAddModal 함수를 호출할 수 있게 연결
+  useImperativeHandle(ref, () => ({
+    openAddModal: () => {
+      openAddModal();
+    }
+  }));
+
   if (!store) return null;
 
-  // 검색 필터링
   const filteredPatients = store.patients.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     p.case_number.includes(searchTerm)
   );
 
-  // 모달 열기 (추가 모드)
   const openAddModal = () => {
     setIsEditMode(false);
     setEditingId(null);
@@ -43,7 +49,6 @@ export function PatientSidebar({ onClose }: PatientSidebarProps) {
     setIsModalOpen(true);
   };
 
-  // 모달 열기 (수정 모드)
   const openEditModal = (e: React.MouseEvent, patient: any) => {
     e.stopPropagation();
     setIsEditMode(true);
@@ -55,24 +60,20 @@ export function PatientSidebar({ onClose }: PatientSidebarProps) {
     setIsModalOpen(true);
   };
 
-  // 저장 (추가 또는 수정)
   const handleSave = async () => {
     if (!name || !caseNum) return alert("이름과 케이스 번호는 필수입니다.");
 
     if (isEditMode && editingId) {
       if (store.updatePatient) {
         await store.updatePatient(editingId, name, caseNum, totalSteps, clinicName);
-      } else {
-        alert("수정 기능이 스토어에 업데이트되지 않았습니다.");
       }
     } else {
       await store.addPatient(name, caseNum, totalSteps, clinicName);
     }
     
     setIsModalOpen(false);
-    // ✨ 환자를 추가/수정하고 나서는 사이드바를 닫지 않고 유지하는게 일반적인 UX입니다.
-    // 필요하다면 아래 주석을 해제하세요.
-    // if (!isEditMode && onClose) onClose();
+    // 오버레이 모드일 때만 저장 후 닫을지 결정 (보통 유지하는 게 편함)
+    // if (onClose) onClose(); 
   };
 
   const handleDelete = async (e: React.MouseEvent, id: string, name: string) => {
@@ -83,15 +84,15 @@ export function PatientSidebar({ onClose }: PatientSidebarProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white border-r relative">
-      {/* ✨ 헤더 디자인 수정: 버튼 겹침 해결 */}
+    <div className="flex flex-col h-full bg-white border-r w-full">
+      {/* 헤더 */}
       <div className="p-4 border-b flex items-center justify-between bg-slate-50 shrink-0">
         <h2 className="font-bold text-lg text-slate-800">Patients List</h2>
         <div className="flex items-center gap-2">
             <Button size="sm" onClick={openAddModal} className="h-8 px-2 text-xs">
               <Plus className="w-3.5 h-3.5 mr-1" /> New
             </Button>
-            {/* ✨ 닫기 버튼을 헤더 안으로 통합 */}
+            {/* ✨ onClose가 있을 때만(즉, 오버레이 모드일 때만) 닫기 버튼 표시 */}
             {onClose && (
                 <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-slate-400 hover:text-slate-600">
                     <X className="w-5 h-5" />
@@ -128,6 +129,7 @@ export function PatientSidebar({ onClose }: PatientSidebarProps) {
               key={patient.id}
               onClick={() => {
                 store.selectPatient(patient.id);
+                // 오버레이 모드라면 선택 시 닫아줌 (선택사항)
                 if (onClose) onClose();
               }}
               className={`
@@ -178,7 +180,7 @@ export function PatientSidebar({ onClose }: PatientSidebarProps) {
         )}
       </div>
 
-      {/* 추가/수정 모달 */}
+      {/* 모달 */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
@@ -188,47 +190,24 @@ export function PatientSidebar({ onClose }: PatientSidebarProps) {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
             <div className="p-4 space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Name</label>
-                <input 
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. Kim"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoFocus
-                />
+                <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. Kim" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Case Number</label>
-                <input 
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. 1221"
-                  value={caseNum}
-                  onChange={(e) => setCaseNum(e.target.value)}
-                />
+                <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 1221" value={caseNum} onChange={(e) => setCaseNum(e.target.value)} />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Clinic Name (Optional)</label>
-                <input 
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. Seoul Dental"
-                  value={clinicName}
-                  onChange={(e) => setClinicName(e.target.value)}
-                />
+                <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. Seoul Dental" value={clinicName} onChange={(e) => setClinicName(e.target.value)} />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Total Steps</label>
-                <input 
-                  type="number"
-                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={totalSteps}
-                  onChange={(e) => setTotalSteps(Number(e.target.value))}
-                />
+                <input type="number" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value={totalSteps} onChange={(e) => setTotalSteps(Number(e.target.value))} />
               </div>
             </div>
-
             <div className="px-4 py-3 bg-slate-50 flex justify-end gap-2 border-t">
               <Button variant="ghost" onClick={() => setIsModalOpen(false)}>Cancel</Button>
               <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">{isEditMode ? "Save Changes" : "Create Patient"}</Button>
@@ -238,4 +217,6 @@ export function PatientSidebar({ onClose }: PatientSidebarProps) {
       )}
     </div>
   );
-}
+});
+
+PatientSidebar.displayName = "PatientSidebar";
