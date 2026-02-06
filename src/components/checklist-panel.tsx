@@ -103,7 +103,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       isDragging: false, action: null, startX: 0, startY: 0, offsetX: 0, offsetY: 0
   });
 
-  const [textInput, setTextInput] = useState<{x: number, y: number, value: string} | null>(null);
+  // ✨ 텍스트 입력 상태 (수정 모드 포함)
+  // id가 있으면 '기존 텍스트 수정', 없으면 '새 텍스트 생성'
+  const [textInput, setTextInput] = useState<{id?: number, x: number, y: number, value: string, width?: number} | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, itemId: number } | null>(null);
 
   if (!store) return null;
@@ -198,6 +200,13 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   }, [selectedId]);
 
+  // ✨ 텍스트 입력 중일 때 툴바 속성 변경 시 입력창에도 반영
+  useEffect(() => {
+      // 입력 중이 아니라면 무시
+      if (!textInput) return;
+      // 입력 중이라면 색상/크기 변경 시 시각적 업데이트는 렌더링에서 처리됨 (style prop)
+  }, [mainColor, toolSize]);
+
 
   // ============================================================
   // 기능 함수들
@@ -276,11 +285,11 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       recordHistory(newItems, penStrokes);
   };
 
-  // 속성 변경
   const handlePropertyChange = (type: 'color' | 'size', value: string | number) => {
       if (type === 'color') setMainColor(value as string);
       else setToolSize(value as number);
 
+      // 선택된 아이템이 있으면 즉시 변경
       if (selectedId) {
           const newItems = items.map(item => {
               if (item.id === selectedId) {
@@ -325,33 +334,69 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       e.target.value = "";
   };
 
+  // ✨ 텍스트 완료 (생성 또는 수정)
   const confirmText = () => {
-      if (textInput && textInput.value.trim()) {
-          const newItem: CanvasItem = {
-              id: Date.now(), type: 'text', text: textInput.value,
-              x: textInput.x, y: textInput.y, color: mainColor, size: toolSize, zIndex: items.length,
-              width: 200, // 기본 너비
-              height: toolSize * 1.5
-          };
-          const newItems = [...items, newItem];
-          setItems(newItems);
-          recordHistory(newItems, penStrokes);
-          setSelectedId(newItem.id);
+      // 내용이 없으면 취소 (단, 수정 중이었다면 삭제할지 말지 결정 - 여기선 삭제)
+      if (!textInput) return;
+      
+      const trimmedText = textInput.value.trim();
+      let newItems = [...items];
+
+      if (!trimmedText) {
+          // 내용 비었으면 항목 삭제 (기존 수정 중이었으면 제거)
+          if (textInput.id) {
+              newItems = newItems.filter(i => i.id !== textInput.id);
+          }
+      } else {
+          if (textInput.id) {
+              // ✨ 기존 텍스트 수정
+              newItems = newItems.map(i => i.id === textInput.id ? { ...i, text: trimmedText, color: mainColor, size: toolSize, width: textInput.width } : i);
+          } else {
+              // ✨ 새 텍스트 생성
+              const newItem: CanvasItem = {
+                  id: Date.now(), type: 'text', text: trimmedText,
+                  x: textInput.x, y: textInput.y, color: mainColor, size: toolSize, zIndex: items.length,
+                  width: 200, // 기본 너비
+                  height: toolSize * 1.5
+              };
+              newItems.push(newItem);
+              setSelectedId(newItem.id);
+          }
       }
+
+      setItems(newItems);
+      recordHistory(newItems, penStrokes);
       setTextInput(null);
       setCurrentTool('select'); 
   };
 
-  // --- 캔버스 헬퍼 ---
-  // ✨ 자동 줄바꿈 함수 (Canvas Draw용)
+  // ✨ 텍스트 더블 클릭 -> 수정 모드 진입
+  const handleTextDoubleClick = (item: CanvasItem) => {
+      if (item.type !== 'text') return;
+      
+      // 해당 텍스트의 속성을 툴바에 반영
+      setMainColor(item.color || "#000");
+      setToolSize(item.size || 20);
+      
+      // 입력창 열기 (기존 내용 포함)
+      setTextInput({
+          id: item.id,
+          x: item.x,
+          y: item.y,
+          value: item.text || "",
+          width: item.width
+      });
+      
+      // 현재 툴을 텍스트로 변경 (선택사항)
+      setCurrentTool('text');
+  };
+
   const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
       const lines = text.split('\n');
       let lineCounter = 0;
-
       lines.forEach((line) => {
-          const words = line.split(''); // 글자 단위로 체크 (한글 지원)
+          const words = line.split(''); 
           let currentLine = '';
-
           for(let n = 0; n < words.length; n++) {
               const testLine = currentLine + words[n];
               const metrics = ctx.measureText(testLine);
@@ -482,7 +527,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               }
               return { ...item, x: x - dragState.offsetX, y: y - dragState.offsetY };
           } 
-          // ✨ 리사이즈 로직 (텍스트: 너비만 변경, 이미지: 비율 유지/자유)
           else if (dragState.action === 'resize' && dragState.initialItem) {
               const init = dragState.initialItem;
               const dx = x - dragState.startX;
@@ -495,14 +539,12 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                   return item;
               }
 
-              // 텍스트는 너비만 조절 (폰트 크기 변경 X)
               if (item.type === 'text') {
                   if (dragState.resizeHandle?.includes('e')) newW = Math.max(50, init.width! + dx);
                   if (dragState.resizeHandle?.includes('w')) { newW = Math.max(50, init.width! - dx); newX = init.x + dx; }
-                  return { ...item, x: newX, width: newW }; // 높이는 자동
+                  return { ...item, x: newX, width: newW };
               }
 
-              // 이미지 리사이즈
               if (dragState.resizeHandle?.includes('e')) newW = Math.max(20, init.width! + dx);
               if (dragState.resizeHandle?.includes('w')) { newW = Math.max(20, init.width! - dx); newX = init.x + dx; }
               if (dragState.resizeHandle?.includes('s')) newH = Math.max(20, init.height! + dy);
@@ -533,7 +575,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       setDragState({ ...dragState, isDragging: false, action: null });
   };
 
-  // 키보드 & 붙여넣기
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if (textInput) return;
@@ -582,7 +623,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   };
 
-  // ✨ 저장 로직
   const handleSave = async () => {
       if (!containerRef.current || !canvasRef.current) return;
       const tempCanvas = document.createElement('canvas');
@@ -594,7 +634,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
 
-      // 아이템 그리기
       for (const item of items) {
           if (item.type === 'image' && item.src) {
               const img = new Image();
@@ -613,7 +652,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               ctx.font = `bold ${item.size}px sans-serif`;
               ctx.fillStyle = item.color!;
               ctx.textBaseline = 'top';
-              // ✨ 자동 줄바꿈 저장
               wrapText(ctx, item.text || '', item.x, item.y, item.width || 200, (item.size || 20) * 1.2);
           }
       }
@@ -839,6 +877,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                  >
                     {/* (1) 아이템 렌더링 */}
                     {items.map((item) => {
+                        // 수정 중인 아이템은 화면에서 숨김 (입력창이 대체)
+                        if (textInput && textInput.id === item.id) return null;
+
                         const isSelected = selectedId === item.id;
                         const commonStyle: React.CSSProperties = {
                             left: item.x, top: item.y, zIndex: items.indexOf(item) + 1,
@@ -884,6 +925,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                     style={{ ...commonStyle, color: item.color, fontSize: item.size, fontWeight: 'bold', width: item.width, lineHeight: '1.2' }}
                                     onMouseDown={(e) => handleItemMouseDown(e, item, 'move')}
                                     onContextMenu={(e) => handleItemContextMenu(e, item.id)}
+                                    // ✨ 더블 클릭 시 수정 모드 진입
+                                    onDoubleClick={(e) => { e.stopPropagation(); handleTextDoubleClick(item); }}
                                 >
                                     {item.text}
                                     {renderResizeHandles()}
@@ -925,11 +968,15 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         )} 
                     />
 
-                    {/* (3) 텍스트 입력창 */}
+                    {/* (3) 텍스트 입력창 (생성 및 수정용) */}
                     {textInput && (
                         <textarea autoFocus 
-                            className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none min-w-[100px] rounded resize-none overflow-hidden"
-                            style={{ left: textInput.x, top: textInput.y, color: mainColor, fontSize: toolSize, fontWeight: "bold", height: "auto" }}
+                            className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden"
+                            style={{ 
+                                left: textInput.x, top: textInput.y, 
+                                width: textInput.width ? textInput.width : 'auto', minWidth: '100px',
+                                color: mainColor, fontSize: toolSize, fontWeight: "bold", height: "auto", lineHeight: '1.2' 
+                            }}
                             value={textInput.value} 
                             onMouseDown={(e) => e.stopPropagation()} 
                             onChange={(e) => {
