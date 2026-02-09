@@ -1,16 +1,18 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { usePatientStoreHydrated, Rule } from "@/hooks/use-patient-store";
 import { 
-  CheckCheck, ChevronLeft, ChevronRight, 
-  Plus, Trash2, Pencil, Save, Layout, FileImage, 
-  Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo, CheckSquare, CheckCircle2,
-  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, GripHorizontal, MoreVertical, Highlighter, Copy
+  CheckCheck, Plus, Trash2, Pencil, Save, Layout, FileImage, 
+  Type, Eraser, PenTool, Minus, Undo, Redo, CheckSquare,
+  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter, 
+  MonitorPlay, X 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ToothGrid } from "@/components/tooth-grid";
+import DentalSequenceViewer from "@/components/dental-sequence-viewer";
+import FolderUploader from "@/components/folder-uploader";
 
 const Label = ({ children, className }: any) => <label className={className}>{children}</label>;
 
@@ -50,7 +52,6 @@ interface SlideData {
   penStrokes: PenStroke[];
 }
 
-// --- ✨ 썸네일 컴포넌트 (미리보기용) ---
 const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete }: { 
     items: CanvasItem[], penStrokes: PenStroke[], isActive: boolean, index: number, onClick: () => void, onDelete: (e: React.MouseEvent) => void 
 }) => {
@@ -61,24 +62,21 @@ const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete 
         const ctx = canvas?.getContext('2d');
         if (!canvas || !ctx) return;
 
-        // 썸네일 캔버스 초기화 & 스케일링
-        const scale = 0.15; // 약 15% 크기로 축소
-        canvas.width = 150; // 고정 너비
-        canvas.height = 110; // 고정 높이
+        const scale = 0.15;
+        canvas.width = 150; 
+        canvas.height = 110; 
         
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "white";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
         ctx.save();
-        ctx.scale(scale, scale); // 축소 그리기 시작
+        ctx.scale(scale, scale); 
 
-        // 1. 이미지/텍스트/선 그리기
         items.forEach(item => {
             if (item.type === 'image' && item.src) {
                 const img = new Image();
                 img.src = item.src;
-                // 이미지는 비동기라 썸네일에선 늦게 뜰 수 있음 (간소화)
                 ctx.drawImage(img, item.x, item.y, item.width!, item.height!);
             } else if (item.type === 'line') {
                 ctx.beginPath();
@@ -94,7 +92,6 @@ const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete 
             }
         });
 
-        // 2. 펜 그리기
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         penStrokes.forEach(stroke => {
@@ -105,42 +102,29 @@ const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete 
             
             if (stroke.tool === 'highlighter') {
                 ctx.globalCompositeOperation = 'multiply';
-                ctx.strokeStyle = stroke.color + '40'; // 투명도 반영
+                ctx.strokeStyle = stroke.color + '40'; 
                 ctx.lineWidth = stroke.size * 2;
             } else {
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.strokeStyle = stroke.color;
                 ctx.lineWidth = stroke.size;
             }
-            if (stroke.tool !== 'eraser') ctx.stroke(); // 지우개는 썸네일에서 흰색 덧칠보단 생략이 나음
+            if (stroke.tool !== 'eraser') ctx.stroke();
         });
 
         ctx.restore();
     }, [items, penStrokes]);
 
     return (
-        <div 
-            className={cn(
-                "w-full aspect-[4/3] bg-white border-2 rounded cursor-pointer relative group shadow-sm transition-all overflow-hidden", 
-                isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200 hover:border-slate-400"
-            )}
-            onClick={onClick}
-        >
-            {/* 실제 캔버스 렌더링 */}
+        <div className={cn("w-full aspect-[4/3] bg-white border-2 rounded cursor-pointer relative group shadow-sm transition-all overflow-hidden", isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200 hover:border-slate-400")} onClick={onClick}>
             <canvas ref={canvasRef} className="w-full h-full object-contain pointer-events-none" />
-            
-            <div className="absolute top-1 left-1 bg-slate-100/80 text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-bold border border-slate-300">
-                {index + 1}
-            </div>
-            <button onClick={onDelete} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-opacity z-10">
-                <Trash2 className="w-3 h-3"/>
-            </button>
+            <div className="absolute top-1 left-1 bg-slate-100/80 text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-bold border border-slate-300">{index + 1}</div>
+            <button onClick={onDelete} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-opacity z-10"><Trash2 className="w-3 h-3"/></button>
         </div>
     );
 };
 
 const PRESET_TYPES = ["BOS", "Attachment", "Vertical Ridge", "Power Ridge", "Bite Ramp", "IPR", "BC", "TAG", "기타"];
-
 const getTypeColor = (type: string) => {
   const t = type.toLowerCase();
   if (t.includes("bos")) return "text-blue-600";
@@ -156,6 +140,7 @@ const getTypeColor = (type: string) => {
 export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const store = usePatientStoreHydrated();
   const [isGridOpen, setIsGridOpen] = useState(false);
+  const [is3DOpen, setIs3DOpen] = useState(false); 
   const [pageStartStep, setPageStartStep] = useState(0);
 
   // --- Rule 입력 상태 ---
@@ -167,16 +152,13 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [endStep, setEndStep] = useState(10);
   const [note, setNote] = useState("");
 
-  // --- 캔버스 Refs ---
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- 슬라이드 및 캔버스 상태 ---
   const [slides, setSlides] = useState<SlideData[]>([{ id: 1, items: [], penStrokes: [] }]);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
-  // 현재 데이터
   const currentSlide = slides[currentSlideIndex] || { items: [], penStrokes: [] };
   const items = currentSlide.items || [];
   const penStrokes = currentSlide.penStrokes || [];
@@ -185,24 +167,20 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [history, setHistory] = useState<SlideData[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
-  // --- 툴 설정 & 도구별 메모리 (Tool Memory) ---
   const [currentTool, setCurrentTool] = useState<"select" | "draw" | "line" | "eraser" | "text" | "highlighter">("select");
   
-  // ✨ 도구별 설정값 저장소
   const [toolSettings, setToolSettings] = useState({
       draw: { color: "#000000", size: 3 },
       line: { color: "#000000", size: 3 },
       text: { color: "#000000", size: 20 },
-      highlighter: { color: "#FFFF00", size: 15 }, // 형광펜 기본: 노랑, 15
+      highlighter: { color: "#FFFF00", size: 15 }, 
       eraser: { color: "#ffffff", size: 20 },
-      select: { color: "#000000", size: 0 } // dummy
+      select: { color: "#000000", size: 0 }
   });
 
-  // 현재 적용된 스타일 (UI 표시용)
   const mainColor = toolSettings[currentTool === 'select' ? 'draw' : currentTool]?.color || "#000000";
   const toolSize = toolSettings[currentTool === 'select' ? 'draw' : currentTool]?.size || 20;
 
-  // 드래그 상태
   const [dragState, setDragState] = useState<{
       isDragging: boolean;
       action: "move" | "resize" | "draw_pen" | "draw_line" | null;
@@ -212,17 +190,17 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       offsetX: number; 
       offsetY: number;
       initialItem?: CanvasItem;
-  }>({
-      isDragging: false, action: null, startX: 0, startY: 0, offsetX: 0, offsetY: 0
-  });
+  }>({ isDragging: false, action: null, startX: 0, startY: 0, offsetX: 0, offsetY: 0 });
 
   const [textInput, setTextInput] = useState<{id?: number, x: number, y: number, value: string, width?: number} | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, itemId: number } | null>(null);
 
   if (!store) return null;
-  const totalSteps = patient.total_steps || 20;
+  
+  // ✨ 여기서 총 스텝 수 계산을 미리 해둡니다.
+  const totalSteps = patient.total_steps || 21;
+  const subsetCount = Math.max(0, totalSteps - 2); // 시작과 끝을 뺀 중간 단계 개수
 
-  // 1. 초기화
   useEffect(() => {
     setPageStartStep(0);
     const canvas = canvasRef.current;
@@ -230,7 +208,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         canvas.width = canvas.parentElement?.offsetWidth || 800;
         canvas.height = canvas.parentElement?.offsetHeight || 600;
     }
-
     if (patient.summary) {
        if (patient.summary.memo && patient.summary.memo.startsWith('{')) {
            try {
@@ -240,90 +217,48 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                    setHistory([savedData.slides]);
                    setHistoryIndex(0);
                }
-               return; 
            } catch (e) { console.error("JSON Error", e); }
        }
-       // 레거시 이미지 처리 생략 (위와 동일)
     }
   }, [patient.id]);
 
-  // 펜 렌더링 (형광펜 투명도 적용)
   useEffect(() => {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
       if (!canvas || !ctx) return;
-
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-
       penStrokes.forEach(stroke => {
           if (stroke.points.length < 2) return;
           ctx.beginPath();
           ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
           for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-          
           if (stroke.tool === 'eraser') {
-              ctx.globalCompositeOperation = 'destination-out';
-              ctx.lineWidth = stroke.size;
-              ctx.strokeStyle = 'rgba(0,0,0,1)';
+              ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = stroke.size; ctx.strokeStyle = 'rgba(0,0,0,1)';
           } else if (stroke.tool === 'highlighter') {
-              ctx.globalCompositeOperation = 'multiply';
-              // ✨ 형광펜 투명도 조정 (40 = 약 25% Opacity)
-              ctx.strokeStyle = stroke.color + '40'; 
-              ctx.lineWidth = stroke.size * 2;
+              ctx.globalCompositeOperation = 'multiply'; ctx.strokeStyle = stroke.color + '40'; ctx.lineWidth = stroke.size * 2;
           } else {
-              ctx.globalCompositeOperation = 'source-over';
-              ctx.strokeStyle = stroke.color;
-              ctx.lineWidth = stroke.size;
+              ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = stroke.color; ctx.lineWidth = stroke.size;
           }
           ctx.stroke();
       });
       ctx.globalCompositeOperation = 'source-over';
   }, [penStrokes, currentSlideIndex]);
 
-  // 선택된 아이템 속성 동기화 (선택 시 해당 아이템 속성을 툴바에 반영)
-  useEffect(() => {
-      if (selectedId) {
-          const item = items.find(i => i.id === selectedId);
-          if (item) {
-              // 선택 모드일 때는 툴 설정을 임시로 덮어씌움 (시각적으로만)
-              // 실제 저장은 changeToolConfig에서 처리
-          }
-      }
-  }, [selectedId, items]);
-
-  // =========================================================================
-  // 헬퍼 함수들
-  // =========================================================================
-
-  // ✨ 도구 변경 핸들러 (설정 기억)
+  // --- 헬퍼 함수들 ---
   const changeTool = (tool: typeof currentTool) => {
       setCurrentTool(tool);
-      // 해당 도구의 저장된 설정은 toolSettings에서 자동으로 가져옴 (렌더링 시)
       if (tool === 'select') setSelectedId(null);
   };
 
-  // ✨ 속성 변경 핸들러 (현재 도구 설정 저장 + 선택된 아이템 변경)
   const handleConfigChange = (key: 'color' | 'size', value: string | number) => {
-      // 1. 현재 도구의 설정 저장
       if (currentTool !== 'select') {
-          setToolSettings(prev => ({
-              ...prev,
-              [currentTool]: { ...prev[currentTool], [key]: value }
-          }));
+          setToolSettings(prev => ({ ...prev, [currentTool]: { ...prev[currentTool], [key]: value } }));
       } else {
-          // 선택 모드일 땐 'draw' 설정을 기본으로 변경하거나, 선택된 아이템이 있으면 그 아이템 변경
           setToolSettings(prev => ({ ...prev, draw: { ...prev.draw, [key]: value } }));
       }
-
-      // 2. 선택된 아이템이 있다면 즉시 속성 변경
       if (selectedId) {
-          const newItems = items.map(item => {
-              if (item.id === selectedId) {
-                  return { ...item, [key]: value };
-              }
-              return item;
-          });
+          const newItems = items.map(item => item.id === selectedId ? { ...item, [key]: value } : item);
           updateCurrentSlide(newItems, penStrokes);
       }
   };
@@ -339,546 +274,166 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       const stateToSave = newSlides || slides;
       const newHistory = history.slice(0, historyIndex + 1);
       newHistory.push(JSON.parse(JSON.stringify(stateToSave))); 
-      setHistory(newHistory);
-      setHistoryIndex(newHistory.length - 1);
+      setHistory(newHistory); setHistoryIndex(newHistory.length - 1);
   };
 
-  const handleUndo = () => {
-      if (historyIndex > 0) {
-          const prevIndex = historyIndex - 1;
-          setSlides(history[prevIndex]);
-          setHistoryIndex(prevIndex);
-          setSelectedId(null); 
-      }
-  };
+  const handleUndo = () => { if (historyIndex > 0) { const prevIndex = historyIndex - 1; setSlides(history[prevIndex]); setHistoryIndex(prevIndex); setSelectedId(null); } };
+  const handleRedo = () => { if (historyIndex < history.length - 1) { const nextIndex = historyIndex + 1; setSlides(history[nextIndex]); setHistoryIndex(nextIndex); setSelectedId(null); } };
 
-  const handleRedo = () => {
-      if (historyIndex < history.length - 1) {
-          const nextIndex = historyIndex + 1;
-          setSlides(history[nextIndex]);
-          setHistoryIndex(nextIndex);
-          setSelectedId(null);
-      }
-  };
-
-  const addSlide = () => {
-      const newSlide = { id: Date.now(), items: [], penStrokes: [] };
-      const newSlides = [...slides, newSlide];
-      setSlides(newSlides);
-      setCurrentSlideIndex(newSlides.length - 1);
-      recordHistory(newSlides);
-  };
-
-  const deleteSlide = (index: number) => {
-      if (slides.length <= 1) return; 
-      if (confirm("Delete this slide?")) {
-          const newSlides = slides.filter((_, i) => i !== index);
-          setSlides(newSlides);
-          setCurrentSlideIndex(prev => Math.min(prev, newSlides.length - 1));
-          recordHistory(newSlides);
-      }
-  };
-
-  const clearAll = () => {
-      if(confirm("Clear current slide?")) {
-          const newSlides = updateCurrentSlide([], []);
-          recordHistory(newSlides);
-      }
-  };
-
-  const clearPenLayer = () => {
-      const newSlides = updateCurrentSlide(items, []);
-      recordHistory(newSlides);
-  };
-
-  const deleteSelectedItem = () => {
-      if (selectedId) {
-          const newItems = items.filter(i => i.id !== selectedId);
-          const newSlides = updateCurrentSlide(newItems, penStrokes);
-          recordHistory(newSlides);
-          setSelectedId(null);
-      }
-  };
-
-  const handleDeleteFromMenu = () => {
-      if (contextMenu) {
-          const newItems = items.filter(i => i.id !== contextMenu.itemId);
-          const newSlides = updateCurrentSlide(newItems, penStrokes);
-          recordHistory(newSlides);
-          setContextMenu(null);
-          setSelectedId(null);
-      }
-  };
-
+  const addSlide = () => { const newSlides = [...slides, { id: Date.now(), items: [], penStrokes: [] }]; setSlides(newSlides); setCurrentSlideIndex(newSlides.length - 1); recordHistory(newSlides); };
+  const deleteSlide = (index: number) => { if (slides.length <= 1) return; if (confirm("Delete this slide?")) { const newSlides = slides.filter((_, i) => i !== index); setSlides(newSlides); setCurrentSlideIndex(prev => Math.min(prev, newSlides.length - 1)); recordHistory(newSlides); } };
+  const clearAll = () => { if(confirm("Clear current slide?")) { const newSlides = updateCurrentSlide([], []); recordHistory(newSlides); } };
+  const clearPenLayer = () => { const newSlides = updateCurrentSlide(items, []); recordHistory(newSlides); };
+  const deleteSelectedItem = () => { if (selectedId) { const newItems = items.filter(i => i.id !== selectedId); const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setSelectedId(null); } };
+  const handleDeleteFromMenu = () => { if (contextMenu) { const newItems = items.filter(i => i.id !== contextMenu.itemId); const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setContextMenu(null); setSelectedId(null); } };
+  
   const moveLayer = (direction: 'up' | 'down') => {
       if (!selectedId) return;
       const idx = items.findIndex(i => i.id === selectedId);
       if (idx === -1) return;
       const newItems = [...items];
-      if (direction === 'up' && idx < items.length - 1) {
-          [newItems[idx], newItems[idx+1]] = [newItems[idx+1], newItems[idx]];
-      } else if (direction === 'down' && idx > 0) {
-          [newItems[idx], newItems[idx-1]] = [newItems[idx-1], newItems[idx]];
-      }
-      const newSlides = updateCurrentSlide(newItems, penStrokes);
-      recordHistory(newSlides);
+      if (direction === 'up' && idx < items.length - 1) { [newItems[idx], newItems[idx+1]] = [newItems[idx+1], newItems[idx]]; } 
+      else if (direction === 'down' && idx > 0) { [newItems[idx], newItems[idx-1]] = [newItems[idx-1], newItems[idx]]; }
+      const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides);
   };
 
   const addImage = (src: string) => {
-      const img = new Image();
-      img.src = src;
+      const img = new Image(); img.src = src;
       img.onload = () => {
-          let w = img.width;
-          let h = img.height;
-          if (w > 400) { const r = 400/w; w = 400; h = h*r; }
-          const newItem: CanvasItem = {
-              id: Date.now(), type: 'image', src, x: 50, y: 50, width: w, height: h, zIndex: items.length
-          };
-          const newItems = [...items, newItem];
-          const newSlides = updateCurrentSlide(newItems, penStrokes);
-          recordHistory(newSlides);
-          setSelectedId(newItem.id);
-          setCurrentTool('select');
+          let w = img.width; let h = img.height; if (w > 400) { const r = 400/w; w = 400; h = h*r; }
+          const newItem: CanvasItem = { id: Date.now(), type: 'image', src, x: 50, y: 50, width: w, height: h, zIndex: items.length };
+          const newItems = [...items, newItem]; const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setSelectedId(newItem.id); setCurrentTool('select');
       };
+  };
+
+  const uploadImageToServer = async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      try {
+          const res = await fetch("/api/upload/image", { method: "POST", body: formData });
+          if (!res.ok) throw new Error("Upload failed");
+          const data = await res.json();
+          addImage(data.url); 
+      } catch (error) {
+          console.error("Image upload error:", error);
+          alert("이미지 업로드에 실패했습니다.");
+      }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-              if (typeof reader.result === 'string') {
-                  addImage(reader.result);
-              }
-          };
-          reader.readAsDataURL(file);
-      }
+      if (file) uploadImageToServer(file);
       e.target.value = "";
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-      e.preventDefault();
-      const file = e.dataTransfer.files?.[0];
-      if (file && file.type.startsWith('image/')) {
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-              if (typeof ev.target?.result === 'string') addImage(ev.target.result);
-          };
-          reader.readAsDataURL(file);
-      }
-  };
+  const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const file = e.dataTransfer.files?.[0]; if (file && file.type.startsWith('image/')) uploadImageToServer(file); };
 
   const confirmText = () => {
       if (!textInput) return;
       const trimmedText = textInput.value.trim();
       let newItems = [...items];
-
-      if (!trimmedText) {
-          if (textInput.id) newItems = newItems.filter(i => i.id !== textInput.id);
-      } else {
-          if (textInput.id) {
-              newItems = newItems.map(i => i.id === textInput.id ? { ...i, text: trimmedText, color: mainColor, size: toolSize, width: textInput.width } : i);
-          } else {
-              const newItem: CanvasItem = {
-                  id: Date.now(), type: 'text', text: trimmedText,
-                  x: textInput.x, y: textInput.y, color: mainColor, size: toolSize, zIndex: items.length,
-                  width: 200, height: toolSize * 1.5
-              };
-              newItems.push(newItem);
-              setSelectedId(newItem.id);
-          }
+      if (!trimmedText) { if (textInput.id) newItems = newItems.filter(i => i.id !== textInput.id); } 
+      else {
+          if (textInput.id) { newItems = newItems.map(i => i.id === textInput.id ? { ...i, text: trimmedText, color: mainColor, size: toolSize, width: textInput.width } : i); } 
+          else { newItems.push({ id: Date.now(), type: 'text', text: trimmedText, x: textInput.x, y: textInput.y, color: mainColor, size: toolSize, zIndex: items.length, width: 200, height: toolSize * 1.5 }); setSelectedId(newItems[newItems.length-1].id); }
       }
-      const newSlides = updateCurrentSlide(newItems, penStrokes);
-      recordHistory(newSlides);
-      setTextInput(null);
-      setCurrentTool('select'); 
+      const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setTextInput(null); setCurrentTool('select'); 
   };
 
   const handleTextDoubleClick = (item: CanvasItem) => {
       if (item.type !== 'text') return;
-      // 텍스트 선택 시, 해당 텍스트의 속성을 'text' 도구 설정으로 불러옴
-      setToolSettings(prev => ({
-          ...prev,
-          text: { color: item.color || "#000", size: item.size || 20 }
-      }));
-      setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width });
-      setCurrentTool('text');
+      setToolSettings(prev => ({ ...prev, text: { color: item.color || "#000", size: item.size || 20 } }));
+      setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width }); setCurrentTool('text');
   };
 
   const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
-      const lines = text.split('\n');
-      let lineCounter = 0;
+      const lines = text.split('\n'); let lineCounter = 0;
       lines.forEach((line) => {
-          const words = line.split(''); 
-          let currentLine = '';
+          const words = line.split(''); let currentLine = '';
           for(let n = 0; n < words.length; n++) {
-              const testLine = currentLine + words[n];
-              const metrics = ctx.measureText(testLine);
-              const testWidth = metrics.width;
-              if (testWidth > maxWidth && n > 0) {
-                  ctx.fillText(currentLine, x, y + (lineCounter * lineHeight));
-                  currentLine = words[n];
-                  lineCounter++;
-              } else { currentLine = testLine; }
+              const testLine = currentLine + words[n]; const metrics = ctx.measureText(testLine);
+              if (metrics.width > maxWidth && n > 0) { ctx.fillText(currentLine, x, y + (lineCounter * lineHeight)); currentLine = words[n]; lineCounter++; } else { currentLine = testLine; }
           }
-          ctx.fillText(currentLine, x, y + (lineCounter * lineHeight));
-          lineCounter++;
+          ctx.fillText(currentLine, x, y + (lineCounter * lineHeight)); lineCounter++;
       });
   };
 
-  // --- 마우스 이벤트 ---
-  const getPos = (e: React.MouseEvent) => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return { x: 0, y: 0 };
-      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  };
+  const getPos = (e: React.MouseEvent) => { const rect = containerRef.current?.getBoundingClientRect(); return rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : { x: 0, y: 0 }; };
 
   const handleMouseDown = (e: React.MouseEvent) => {
       if (contextMenu) { setContextMenu(null); return; }
       const { x, y } = getPos(e);
-
-      if (currentTool === 'draw' || currentTool === 'eraser' || currentTool === 'highlighter') {
-          const newStroke: PenStroke = {
-              points: [{ x, y }], color: mainColor, size: toolSize, tool: currentTool
-          };
-          setSlides(prev => {
-              const clone = [...prev];
-              clone[currentSlideIndex].penStrokes = [...clone[currentSlideIndex].penStrokes, newStroke];
-              return clone;
-          });
-          setDragState({ isDragging: true, action: 'draw_pen', startX: x, startY: y, offsetX: 0, offsetY: 0 });
-          return;
+      if (['draw', 'eraser', 'highlighter'].includes(currentTool)) {
+          const newStroke: PenStroke = { points: [{ x, y }], color: mainColor, size: toolSize, tool: currentTool as any };
+          setSlides(prev => { const clone = [...prev]; clone[currentSlideIndex].penStrokes = [...clone[currentSlideIndex].penStrokes, newStroke]; return clone; });
+          setDragState({ isDragging: true, action: 'draw_pen', startX: x, startY: y, offsetX: 0, offsetY: 0 }); return;
       }
-
       if (currentTool === 'line') {
-          const tempLine: CanvasItem = {
-              id: -1, type: 'line', x: x, y: y, x2: x, y2: y, color: mainColor, size: 3, zIndex: 999
-          };
-          setSlides(prev => {
-              const clone = [...prev];
-              clone[currentSlideIndex].items = [...clone[currentSlideIndex].items, tempLine];
-              return clone;
-          });
-          setDragState({ isDragging: true, action: 'draw_line', startX: x, startY: y, offsetX: 0, offsetY: 0 });
-          return;
+          const tempLine: CanvasItem = { id: -1, type: 'line', x: x, y: y, x2: x, y2: y, color: mainColor, size: 3, zIndex: 999 };
+          setSlides(prev => { const clone = [...prev]; clone[currentSlideIndex].items = [...clone[currentSlideIndex].items, tempLine]; return clone; });
+          setDragState({ isDragging: true, action: 'draw_line', startX: x, startY: y, offsetX: 0, offsetY: 0 }); return;
       }
-
-      if (currentTool === 'text') {
-          e.preventDefault(); 
-          if (textInput) confirmText();
-          else setTextInput({ x, y, value: "" });
-          return;
-      }
-
+      if (currentTool === 'text') { e.preventDefault(); if (textInput) confirmText(); else setTextInput({ x, y, value: "" }); return; }
       if (currentTool === 'select') setSelectedId(null);
   };
 
   const handleItemMouseDown = (e: React.MouseEvent, item: CanvasItem, action: typeof dragState.action) => {
-      if (currentTool !== 'select') return;
-      e.stopPropagation(); 
-      if (e.button === 2) return;
-
-      const { x, y } = getPos(e);
-      setSelectedId(item.id);
-      
-      // 선택 시, 해당 아이템의 속성을 툴바에 반영 (시각적 피드백)
-      if(item.type === 'text' || item.type === 'line') {
-          // Note: 여기서 toolSettings 자체를 바꾸진 않고 mainColor 변수만 item.color로 보여주게 할 수도 있지만,
-          // 사용자가 헷갈리지 않게 'Select' 모드에서의 툴바 상태만 제어하는 것이 좋음.
-          // 현재 구조상 mainColor 변수가 toolSettings를 바라보므로, 업데이트 로직이 필요하다면 handleConfigChange 활용.
-      }
-
-      let offsetX = 0, offsetY = 0;
-      if (action === 'move') {
-          offsetX = x - item.x;
-          offsetY = y - item.y;
-      }
-
+      if (currentTool !== 'select') return; e.stopPropagation(); if (e.button === 2) return;
+      const { x, y } = getPos(e); setSelectedId(item.id);
+      let offsetX = 0, offsetY = 0; if (action === 'move') { offsetX = x - item.x; offsetY = y - item.y; }
       setDragState({ isDragging: true, action: action, startX: x, startY: y, offsetX, offsetY, initialItem: { ...item } });
   };
 
-  const handleResizeMouseDown = (e: React.MouseEvent, item: CanvasItem, handle: string) => {
-      e.stopPropagation();
-      const { x, y } = getPos(e);
-      setDragState({ isDragging: true, action: 'resize', resizeHandle: handle, startX: x, startY: y, offsetX: 0, offsetY: 0, initialItem: { ...item } });
-  };
-
-  const handleItemContextMenu = (e: React.MouseEvent, itemId: number) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const rect = containerRef.current?.getBoundingClientRect();
-      if(rect) {
-          setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, itemId });
-      }
-  };
+  const handleResizeMouseDown = (e: React.MouseEvent, item: CanvasItem, handle: string) => { e.stopPropagation(); const { x, y } = getPos(e); setDragState({ isDragging: true, action: 'resize', resizeHandle: handle, startX: x, startY: y, offsetX: 0, offsetY: 0, initialItem: { ...item } }); };
+  const handleItemContextMenu = (e: React.MouseEvent, itemId: number) => { e.preventDefault(); e.stopPropagation(); const rect = containerRef.current?.getBoundingClientRect(); if(rect) setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, itemId }); };
 
   const handleMouseMove = (e: React.MouseEvent) => {
       const { x, y } = getPos(e);
-
       if (dragState.isDragging && dragState.action === 'draw_pen') {
-          setSlides(prev => {
-              const clone = [...prev];
-              const strokes = clone[currentSlideIndex].penStrokes;
-              const last = strokes[strokes.length - 1];
-              const updated = { ...last, points: [...last.points, { x, y }] };
-              clone[currentSlideIndex].penStrokes = [...strokes.slice(0, -1), updated];
-              return clone;
-          });
-          return;
+          setSlides(prev => { const clone = [...prev]; const strokes = clone[currentSlideIndex].penStrokes; const last = strokes[strokes.length - 1]; const updated = { ...last, points: [...last.points, { x, y }] }; clone[currentSlideIndex].penStrokes = [...strokes.slice(0, -1), updated]; return clone; }); return;
       }
-
       if (dragState.isDragging && dragState.action === 'draw_line') {
-          setSlides(prev => {
-              const clone = [...prev];
-              clone[currentSlideIndex].items = clone[currentSlideIndex].items.map(i => i.id === -1 ? { ...i, x2: x, y2: y } : i);
-              return clone;
-          });
-          return;
+          setSlides(prev => { const clone = [...prev]; clone[currentSlideIndex].items = clone[currentSlideIndex].items.map(i => i.id === -1 ? { ...i, x2: x, y2: y } : i); return clone; }); return;
       }
-
       if (!dragState.isDragging || !selectedId) return;
-
       setSlides(prev => {
           const clone = [...prev];
           const newItems = clone[currentSlideIndex].items.map(item => {
               if (item.id !== selectedId) return item;
-
               if (dragState.action === 'move') {
-                  if (item.type === 'line') {
-                      const dx = x - dragState.offsetX - item.x;
-                      const dy = y - dragState.offsetY - item.y;
-                      return { ...item, x: item.x + dx, y: item.y + dy, x2: (item.x2 || 0) + dx, y2: (item.y2 || 0) + dy };
-                  }
+                  if (item.type === 'line') { const dx = x - dragState.offsetX - item.x; const dy = y - dragState.offsetY - item.y; return { ...item, x: item.x + dx, y: item.y + dy, x2: (item.x2 || 0) + dx, y2: (item.y2 || 0) + dy }; }
                   return { ...item, x: x - dragState.offsetX, y: y - dragState.offsetY };
               } 
               else if (dragState.action === 'resize' && dragState.initialItem) {
-                  const init = dragState.initialItem;
-                  const dx = x - dragState.startX;
-                  const dy = y - dragState.startY;
-                  let newX = init.x, newY = init.y, newW = init.width || 0, newH = init.height || 0;
-
-                  if (item.type === 'line') {
-                      if (dragState.resizeHandle === 'start') return { ...item, x: x, y: y };
-                      if (dragState.resizeHandle === 'end') return { ...item, x2: x, y2: y };
-                      return item;
-                  }
-                  if (item.type === 'text') {
-                      if (dragState.resizeHandle?.includes('e')) newW = Math.max(50, init.width! + dx);
-                      if (dragState.resizeHandle?.includes('w')) { newW = Math.max(50, init.width! - dx); newX = init.x + dx; }
-                      return { ...item, x: newX, width: newW };
-                  }
-                  if (dragState.resizeHandle?.includes('e')) newW = Math.max(20, init.width! + dx);
-                  if (dragState.resizeHandle?.includes('w')) { newW = Math.max(20, init.width! - dx); newX = init.x + dx; }
-                  if (dragState.resizeHandle?.includes('s')) newH = Math.max(20, init.height! + dy);
-                  if (dragState.resizeHandle?.includes('n')) { newH = Math.max(20, init.height! - dy); newY = init.y + dy; }
-                  return { ...item, x: newX, y: newY, width: newW, height: newH };
-              }
-              return item;
-          });
-          clone[currentSlideIndex].items = newItems;
-          return clone;
+                  const init = dragState.initialItem; const dx = x - dragState.startX; const dy = y - dragState.startY; let newX = init.x, newY = init.y, newW = init.width || 0, newH = init.height || 0;
+                  if (item.type === 'line') { if (dragState.resizeHandle === 'start') return { ...item, x: x, y: y }; if (dragState.resizeHandle === 'end') return { ...item, x2: x, y2: y }; return item; }
+                  if (item.type === 'text') { if (dragState.resizeHandle?.includes('e')) newW = Math.max(50, init.width! + dx); if (dragState.resizeHandle?.includes('w')) { newW = Math.max(50, init.width! - dx); newX = init.x + dx; } return { ...item, x: newX, width: newW }; }
+                  if (dragState.resizeHandle?.includes('e')) newW = Math.max(20, init.width! + dx); if (dragState.resizeHandle?.includes('w')) { newW = Math.max(20, init.width! - dx); newX = init.x + dx; } if (dragState.resizeHandle?.includes('s')) newH = Math.max(20, init.height! + dy); if (dragState.resizeHandle?.includes('n')) { newH = Math.max(20, init.height! - dy); newY = init.y + dy; } return { ...item, x: newX, y: newY, width: newW, height: newH };
+              } return item;
+          }); clone[currentSlideIndex].items = newItems; return clone;
       });
   };
 
-  const handleMouseUp = () => {
-      if (!dragState.isDragging) return;
+  const handleMouseUp = () => { if (!dragState.isDragging) return; if (dragState.action === 'draw_line') { const newItems = items.map(i => i.id === -1 ? { ...i, id: Date.now() } : i); const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setCurrentTool('select'); } else { recordHistory(); } setDragState({ ...dragState, isDragging: false, action: null }); };
 
-      if (dragState.action === 'draw_line') {
-          const newItems = items.map(i => i.id === -1 ? { ...i, id: Date.now() } : i);
-          const newSlides = updateCurrentSlide(newItems, penStrokes);
-          recordHistory(newSlides);
-          setCurrentTool('select');
-      } 
-      else {
-          recordHistory();
-      }
-      setDragState({ ...dragState, isDragging: false, action: null });
-  };
-
-  // 키보드 & 붙여넣기
   useEffect(() => {
-      const handleKeyDown = (e: KeyboardEvent) => {
-          if (textInput) return;
-          if (e.key === 'Delete') deleteSelectedItem();
-          if ((e.ctrlKey || e.metaKey)) {
-              if (e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) handleRedo(); else handleUndo(); }
-              else if (e.key.toLowerCase() === 'y') { e.preventDefault(); handleRedo(); }
-          }
-      };
-      
-      const handlePaste = (e: ClipboardEvent) => {
-        const clipboardItems = e.clipboardData?.items;
-        if (!clipboardItems) return;
-        for (let i = 0; i < clipboardItems.length; i++) {
-            if (clipboardItems[i].type.indexOf("image") !== -1) {
-                const blob = clipboardItems[i].getAsFile();
-                if (blob) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
-                        if(typeof ev.target?.result === 'string') addImage(ev.target.result);
-                    };
-                    reader.readAsDataURL(blob);
-                }
-            }
-        }
-      };
-
-      window.addEventListener('keydown', handleKeyDown);
-      window.addEventListener("paste", handlePaste);
-      return () => {
-          window.removeEventListener('keydown', handleKeyDown);
-          window.removeEventListener("paste", handlePaste);
-      };
+      const handleKeyDown = (e: KeyboardEvent) => { if (textInput) return; if (e.key === 'Delete') deleteSelectedItem(); if ((e.ctrlKey || e.metaKey)) { if (e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) handleRedo(); else handleUndo(); } else if (e.key.toLowerCase() === 'y') { e.preventDefault(); handleRedo(); } } };
+      const handlePaste = (e: ClipboardEvent) => { const clipboardItems = e.clipboardData?.items; if (!clipboardItems) return; for (let i = 0; i < clipboardItems.length; i++) { if (clipboardItems[i].type.indexOf("image") !== -1) { const blob = clipboardItems[i].getAsFile(); if (blob) uploadImageToServer(blob); } } };
+      window.addEventListener('keydown', handleKeyDown); window.addEventListener("paste", handlePaste); return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener("paste", handlePaste); };
   }, [selectedId, textInput, historyIndex, history, currentSlideIndex]);
 
-  // 저장 로직
-  const handleSave = async () => {
-      if (!containerRef.current || !canvasRef.current) return;
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = canvasRef.current.width;
-      tempCanvas.height = canvasRef.current.height;
-      const ctx = tempCanvas.getContext('2d');
-      if (!ctx) return;
+  const handleSave = async () => { if (!containerRef.current || !canvasRef.current) return; const tempCanvas = document.createElement('canvas'); tempCanvas.width = canvasRef.current.width; tempCanvas.height = canvasRef.current.height; const ctx = tempCanvas.getContext('2d'); if (!ctx) return; ctx.fillStyle = 'white'; ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height); for (const item of items) { if (item.type === 'image' && item.src) { const img = new Image(); img.src = item.src; img.crossOrigin = 'anonymous'; await new Promise(r => { img.onload = r; img.onerror = r; }); ctx.drawImage(img, item.x, item.y, item.width!, item.height!); } else if (item.type === 'line') { ctx.beginPath(); ctx.moveTo(item.x, item.y); ctx.lineTo(item.x2!, item.y2!); ctx.strokeStyle = item.color!; ctx.lineWidth = item.size!; ctx.stroke(); } else if (item.type === 'text') { ctx.font = `bold ${item.size}px sans-serif`; ctx.fillStyle = item.color!; ctx.textBaseline = 'top'; wrapText(ctx, item.text || '', item.x, item.y, item.width || 200, (item.size || 20) * 1.2); } } ctx.drawImage(canvasRef.current, 0, 0); const finalImage = tempCanvas.toDataURL('image/png'); const saveData = { slides }; await store.saveSummary(patient.id, { image: finalImage, memo: JSON.stringify(saveData) }); alert("Saved with multiple slides!"); };
 
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-
-      for (const item of items) {
-          if (item.type === 'image' && item.src) {
-              const img = new Image();
-              img.src = item.src;
-              img.crossOrigin = 'anonymous';
-              await new Promise(r => { img.onload = r; img.onerror = r; });
-              ctx.drawImage(img, item.x, item.y, item.width!, item.height!);
-          } else if (item.type === 'line') {
-              ctx.beginPath();
-              ctx.moveTo(item.x, item.y);
-              ctx.lineTo(item.x2!, item.y2!);
-              ctx.strokeStyle = item.color!;
-              ctx.lineWidth = item.size!;
-              ctx.stroke();
-          } else if (item.type === 'text') {
-              ctx.font = `bold ${item.size}px sans-serif`;
-              ctx.fillStyle = item.color!;
-              ctx.textBaseline = 'top';
-              wrapText(ctx, item.text || '', item.x, item.y, item.width || 200, (item.size || 20) * 1.2);
-          }
-      }
-
-      ctx.drawImage(canvasRef.current, 0, 0);
-
-      const finalImage = tempCanvas.toDataURL('image/png');
-      const saveData = { slides }; 
-
-      await store.saveSummary(patient.id, { 
-          image: finalImage, 
-          memo: JSON.stringify(saveData) 
-      });
-      alert("Saved with multiple slides!");
-  };
-
-  // --- Rule & Grid 로직 ---
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
-  const handleSaveRules = async () => { 
-    const finalType = selectedType === "기타" ? customType : selectedType;
-    const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t));
-    if (editingRuleId) {
-      await store.updateRule(patient.id, { id: editingRuleId, type: finalType, tooth: teethToSave[0], startStep, endStep, note });
-      setEditingRuleId(null);
-    } else {
-      for (const tooth of teethToSave) {
-        await store.addRule(patient.id, { type: finalType, tooth, startStep, endStep, note });
-      }
-    }
-    setSelectedTeeth([]); setNote(""); if (selectedType === "기타") setCustomType("");
-  };
-  const handleEditClick = (rule: Rule) => { 
-    setEditingRuleId(rule.id);
-    if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } else { setSelectedType("기타"); setCustomType(rule.type); }
-    setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]);
-    setStartStep(rule.startStep); setEndStep(rule.endStep); setNote(rule.note || "");
-  };
+  const handleSaveRules = async () => { const finalType = selectedType === "기타" ? customType : selectedType; const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t)); if (editingRuleId) { await store.updateRule(patient.id, { id: editingRuleId, type: finalType, tooth: teethToSave[0], startStep, endStep, note }); setEditingRuleId(null); } else { for (const tooth of teethToSave) { await store.addRule(patient.id, { type: finalType, tooth, startStep, endStep, note }); } } setSelectedTeeth([]); setNote(""); if (selectedType === "기타") setCustomType(""); };
+  const handleEditClick = (rule: Rule) => { setEditingRuleId(rule.id); if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } else { setSelectedType("기타"); setCustomType(rule.type); } setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]); setStartStep(rule.startStep); setEndStep(rule.endStep); setNote(rule.note || ""); };
   const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
   const handleDeleteRule = async (ruleId: string) => { if (confirm("Delete?")) { await store.deleteRule(patient.id, ruleId); if (editingRuleId === ruleId) cancelEdit(); }};
   const getRulesForStep = (step: number) => (patient.rules || []).filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
-  const getGroupedRules = (step: number) => {
-    const allRules = getRulesForStep(step);
-    const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment");
-    return { 
-        genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)),
-        upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)),
-        lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)),
-        attRules: allRules.filter((r: Rule) => isAtt(r))
-    };
-  };
+  const getGroupedRules = (step: number) => { const allRules = getRulesForStep(step); const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment"); return { genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)), upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)), lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)), attRules: allRules.filter((r: Rule) => isAtt(r)) }; };
   const areRulesCompleted = (rules: Rule[], step: number) => rules.length > 0 && rules.every((r: Rule) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === r.id && s.checked));
-  const renderCard = (rule: Rule, step: number, isTiny = false) => {
-    const checked = patient.checklist_status.some((s: any) => s.step === step && s.ruleId === rule.id && s.checked);
-    const status = (step === rule.startStep) ? "NEW" : (step === rule.endStep ? "REMOVE" : "CHECK");
-    return (
-      <div key={rule.id} onClick={() => store.toggleChecklistItem(patient.id, step, rule.id)} className={cn("rounded cursor-pointer flex flex-col relative border select-none", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-100 text-slate-400 grayscale" : "bg-white hover:ring-2 hover:ring-blue-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}>
-        <div className="flex justify-between items-start"><span className={cn("font-bold", isTiny ? "text-[11px]" : "text-lg")}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}</span><div className={cn("w-4 h-4 border rounded flex items-center justify-center", checked ? "bg-slate-500" : "bg-white")}>{checked && <CheckCheck className="text-white w-3 h-3"/>}</div></div>
-        <div className={cn("font-bold truncate mt-0.5", getTypeColor(rule.type), isTiny && "text-[10px]")}>{rule.type}</div>
-        {rule.note && <div className={cn("text-slate-400 whitespace-pre-wrap break-words leading-tight", isTiny ? "text-[9px]" : "mt-1")}>{rule.note}</div>}
-      </div>
-    );
-  };
-  const renderFullScreenGrid = () => {
-    const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i);
-    let maxGenCount = 0; let maxUpperCount = 0; let maxLowerCount = 0;
-    stepsToShow.forEach(step => {
-        if (step > totalSteps) return;
-        const { genRules, upperRules, lowerRules } = getGroupedRules(step);
-        maxGenCount = Math.max(maxGenCount, genRules.length);
-        maxUpperCount = Math.max(maxUpperCount, upperRules.length);
-        maxLowerCount = Math.max(maxLowerCount, lowerRules.length);
-    });
-    const getFixedStyle = (count: number) => ({ minHeight: `${34 + (count * 64)}px` });
-
-    return (
-      <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in">
-        <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0">
-            <h2 className="text-2xl font-bold flex items-center gap-2"><Layout className="text-blue-600"/> Full Checklist Grid</h2>
-            <div className="flex gap-2"><Button variant="outline" onClick={() => setPageStartStep(Math.max(0, pageStartStep - 10))}>Prev 10</Button><Button variant="outline" onClick={() => setPageStartStep(Math.min(totalSteps, pageStartStep + 10))}>Next 10</Button><Button variant="destructive" onClick={() => setIsGridOpen(false)}>Close</Button></div>
-        </div>
-        <div className="flex-1 p-6 overflow-auto bg-slate-50">
-             <div className="mb-8">
-                 <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
-                     {stepsToShow.map((step) => {
-                        if (step > totalSteps) return <div key={step} className="opacity-0 w-full"/>;
-                        const { genRules, upperRules, lowerRules } = getGroupedRules(step);
-                        return (
-                            <div key={`main-${step}`} className="flex flex-col gap-2">
-                                <div className={cn("p-2 font-bold text-xs text-center rounded-lg border flex justify-between", step===0?"bg-yellow-100":"bg-white")}><span>{step===0?"PRE":`STEP ${step}`}</span>{step<=totalSteps && <button onClick={()=>store.checkAllInStep(patient.id,step)}><CheckSquare className="w-3.5 h-3.5"/></button>}</div>
-                                <div className="space-y-2">
-                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxGenCount)}><div className="text-[9px] font-bold text-slate-400 px-1 mb-1">GENERAL</div>{genRules.map((r: Rule) => renderCard(r, step, true))}</div>
-                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxUpperCount)}><div className="text-[9px] font-bold text-blue-400 px-1 mb-1">MAXILLA</div>{upperRules.map((r: Rule) => renderCard(r, step, true))}</div>
-                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxLowerCount)}><div className="text-[9px] font-bold text-orange-400 px-1 mb-1">MANDIBLE</div>{lowerRules.map((r: Rule) => renderCard(r, step, true))}</div>
-                                </div>
-                            </div>
-                        );
-                     })}
-                 </div>
-             </div>
-             <div className="mb-10 pt-4 border-t-2 border-dashed">
-                 <h3 className="text-xl font-bold text-green-800 mb-3 pl-3 border-l-4 border-green-600">Attachments Only</h3>
-                 <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
-                     {stepsToShow.map(step => {
-                         if(step>totalSteps) return null;
-                         const { attRules } = getGroupedRules(step);
-                         return (
-                             <div key={`att-${step}`} className="rounded-lg bg-white border flex flex-col h-full min-h-[100px]">
-                                 <div className="p-1.5 border-b text-[10px] text-center bg-slate-50">{step===0?"PRE":`STEP ${step}`}</div>
-                                 <div className="p-1 flex-1">{attRules.map((r: Rule) => renderCard(r, step, true))}</div>
-                             </div>
-                         )
-                     })}
-                 </div>
-             </div>
-        </div>
-      </div>
-    );
-  };
+  const renderCard = (rule: Rule, step: number, isTiny = false) => { const checked = patient.checklist_status.some((s: any) => s.step === step && s.ruleId === rule.id && s.checked); const status = (step === rule.startStep) ? "NEW" : (step === rule.endStep ? "REMOVE" : "CHECK"); return ( <div key={rule.id} onClick={() => store.toggleChecklistItem(patient.id, step, rule.id)} className={cn("rounded cursor-pointer flex flex-col relative border select-none", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-100 text-slate-400 grayscale" : "bg-white hover:ring-2 hover:ring-blue-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}> <div className="flex justify-between items-start"><span className={cn("font-bold", isTiny ? "text-[11px]" : "text-lg")}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}</span><div className={cn("w-4 h-4 border rounded flex items-center justify-center", checked ? "bg-slate-500" : "bg-white")}>{checked && <CheckCheck className="text-white w-3 h-3"/>}</div></div> <div className={cn("font-bold truncate mt-0.5", getTypeColor(rule.type), isTiny && "text-[10px]")}>{rule.type}</div> {rule.note && <div className={cn("text-slate-400 whitespace-pre-wrap break-words leading-tight", isTiny ? "text-[9px]" : "mt-1")}>{rule.note}</div>} </div> ); };
+  const renderFullScreenGrid = () => { const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i); let maxGenCount = 0; let maxUpperCount = 0; let maxLowerCount = 0; stepsToShow.forEach(step => { if (step > totalSteps) return; const { genRules, upperRules, lowerRules } = getGroupedRules(step); maxGenCount = Math.max(maxGenCount, genRules.length); maxUpperCount = Math.max(maxUpperCount, upperRules.length); maxLowerCount = Math.max(maxLowerCount, lowerRules.length); }); const getFixedStyle = (count: number) => ({ minHeight: `${34 + (count * 64)}px` }); return ( <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in"> <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0"> <h2 className="text-2xl font-bold flex items-center gap-2"><Layout className="text-blue-600"/> Full Checklist Grid</h2> <div className="flex gap-2"><Button variant="outline" onClick={() => setPageStartStep(Math.max(0, pageStartStep - 10))}>Prev 10</Button><Button variant="outline" onClick={() => setPageStartStep(Math.min(totalSteps, pageStartStep + 10))}>Next 10</Button><Button variant="destructive" onClick={() => setIsGridOpen(false)}>Close</Button></div> </div> <div className="flex-1 p-6 overflow-auto bg-slate-50"> <div className="mb-8"> <div className="grid grid-cols-10 gap-3 min-w-[1400px]"> {stepsToShow.map((step) => { if (step > totalSteps) return <div key={step} className="opacity-0 w-full"/>; const { genRules, upperRules, lowerRules } = getGroupedRules(step); return ( <div key={`main-${step}`} className="flex flex-col gap-2"> <div className={cn("p-2 font-bold text-xs text-center rounded-lg border flex justify-between", step===0?"bg-yellow-100":"bg-white")}><span>{step===0?"PRE":`STEP ${step}`}</span>{step<=totalSteps && <button onClick={()=>store.checkAllInStep(patient.id,step)}><CheckSquare className="w-3.5 h-3.5"/></button>}</div> <div className="space-y-2"> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxGenCount)}><div className="text-[9px] font-bold text-slate-400 px-1 mb-1">GENERAL</div>{genRules.map((r: Rule) => renderCard(r, step, true))}</div> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxUpperCount)}><div className="text-[9px] font-bold text-blue-400 px-1 mb-1">MAXILLA</div>{upperRules.map((r: Rule) => renderCard(r, step, true))}</div> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxLowerCount)}><div className="text-[9px] font-bold text-orange-400 px-1 mb-1">MANDIBLE</div>{lowerRules.map((r: Rule) => renderCard(r, step, true))}</div> </div> </div> ); })} </div> </div> <div className="mb-10 pt-4 border-t-2 border-dashed"> <h3 className="text-xl font-bold text-green-800 mb-3 pl-3 border-l-4 border-green-600">Attachments Only</h3> <div className="grid grid-cols-10 gap-3 min-w-[1400px]"> {stepsToShow.map(step => { if(step>totalSteps) return null; const { attRules } = getGroupedRules(step); return ( <div key={`att-${step}`} className="rounded-lg bg-white border flex flex-col h-full min-h-[100px]"> <div className="p-1.5 border-b text-[10px] text-center bg-slate-50">{step===0?"PRE":`STEP ${step}`}</div> <div className="p-1 flex-1">{attRules.map((r: Rule) => renderCard(r, step, true))}</div> </div> ) })} </div> </div> </div> </div> ); };
 
   return (
     <>
@@ -924,8 +479,23 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
              <div className="flex gap-2">
+                <FolderUploader 
+                    patientId={patient.id} 
+                    onUploadComplete={() => {
+                        if (is3DOpen) {
+                            setIs3DOpen(false);
+                            setTimeout(() => setIs3DOpen(true), 100);
+                        }
+                    }} 
+                />
+
+                <Button onClick={() => setIs3DOpen(true)} className="gap-2 bg-slate-800 hover:bg-slate-700">
+                    <MonitorPlay className="w-4 h-4"/> 3D Viewer
+                </Button>
+                
+                <div className="w-px h-6 bg-slate-300 mx-1"></div>
                 <Button onClick={handleSave} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
-                <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-slate-800 hover:bg-slate-700"><Layout className="w-4 h-4"/> Checklist View</Button>
+                <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-white text-slate-700 border hover:bg-slate-50"><Layout className="w-4 h-4"/> Checklist View</Button>
              </div>
            </div>
            
@@ -938,10 +508,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                           penStrokes={slide.penStrokes}
                           isActive={currentSlideIndex === index}
                           index={index}
-                          onClick={() => {
-                              setCurrentSlideIndex(index);
-                              setHistory([]); setHistoryIndex(-1);
-                          }}
+                          onClick={() => { setCurrentSlideIndex(index); setHistory([]); setHistoryIndex(-1); }}
                           onDelete={(e) => { e.stopPropagation(); deleteSlide(index); }}
                       />
                   ))}
@@ -989,163 +556,60 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                     </div>
                  </div>
 
-                 <div 
-                    className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative select-none", 
-                        currentTool === 'draw' && "cursor-crosshair",
-                        currentTool === 'highlighter' && "cursor-crosshair",
-                        currentTool === 'eraser' && "cursor-cell",
-                        currentTool === 'text' && "cursor-text",
-                        currentTool === 'line' && "cursor-crosshair",
-                        currentTool === 'select' && "cursor-default"
-                    )}
-                    ref={containerRef}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onDragOver={handleDrop}
-                    onDrop={handleDrop}
-                 >
+                 <div className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative select-none", currentTool === 'draw' && "cursor-crosshair", currentTool === 'highlighter' && "cursor-crosshair", currentTool === 'eraser' && "cursor-cell", currentTool === 'text' && "cursor-text", currentTool === 'line' && "cursor-crosshair", currentTool === 'select' && "cursor-default")} ref={containerRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onDragOver={handleDrop} onDrop={handleDrop}>
                     {items.map((item: CanvasItem) => {
                         if (textInput && textInput.id === item.id) return null;
-
                         const isSelected = selectedId === item.id;
-                        const commonStyle: React.CSSProperties = {
-                            left: item.x, top: item.y, zIndex: items.indexOf(item) + 1,
-                            pointerEvents: currentTool === 'select' ? 'auto' : 'none' 
-                        };
-
+                        const commonStyle: React.CSSProperties = { left: item.x, top: item.y, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' };
                         const renderResizeHandles = () => {
                             if (!isSelected || currentTool !== 'select') return null;
-                            const handles = [
-                                { pos: 'nw', style: { top: -4, left: -4, cursor: 'nw-resize' } },
-                                { pos: 'n',  style: { top: -4, left: '50%', transform: 'translateX(-50%)', cursor: 'n-resize' } },
-                                { pos: 'ne', style: { top: -4, right: -4, cursor: 'ne-resize' } },
-                                { pos: 'e',  style: { top: '50%', right: -4, transform: 'translateY(-50%)', cursor: 'e-resize' } },
-                                { pos: 'se', style: { bottom: -4, right: -4, cursor: 'se-resize' } },
-                                { pos: 's',  style: { bottom: -4, left: '50%', transform: 'translateX(-50%)', cursor: 's-resize' } },
-                                { pos: 'sw', style: { bottom: -4, left: -4, cursor: 'sw-resize' } },
-                                { pos: 'w',  style: { top: '50%', left: -4, transform: 'translateY(-50%)', cursor: 'w-resize' } },
-                            ];
-                            return handles.map(h => (
-                                <div key={h.pos} className="absolute w-2.5 h-2.5 bg-white border border-blue-500 z-50"
-                                    style={h.style}
-                                    onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)}
-                                />
-                            ));
+                            const handles = [ { pos: 'nw', style: { top: -4, left: -4, cursor: 'nw-resize' } }, { pos: 'n', style: { top: -4, left: '50%', transform: 'translateX(-50%)', cursor: 'n-resize' } }, { pos: 'ne', style: { top: -4, right: -4, cursor: 'ne-resize' } }, { pos: 'e', style: { top: '50%', right: -4, transform: 'translateY(-50%)', cursor: 'e-resize' } }, { pos: 'se', style: { bottom: -4, right: -4, cursor: 'se-resize' } }, { pos: 's', style: { bottom: -4, left: '50%', transform: 'translateX(-50%)', cursor: 's-resize' } }, { pos: 'sw', style: { bottom: -4, left: -4, cursor: 'sw-resize' } }, { pos: 'w', style: { top: '50%', left: -4, transform: 'translateY(-50%)', cursor: 'w-resize' } }, ];
+                            return handles.map(h => ( <div key={h.pos} className="absolute w-2.5 h-2.5 bg-white border border-blue-500 z-50" style={h.style} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} /> ));
                         };
-
-                        if (item.type === 'image') {
-                            return (
-                                <div key={item.id} className={cn("absolute", isSelected && "ring-1 ring-blue-500")}
-                                    style={{ ...commonStyle, width: item.width, height: item.height }}
-                                    onMouseDown={(e) => handleItemMouseDown(e, item, 'move')}
-                                    onContextMenu={(e) => handleItemContextMenu(e, item.id)}
-                                >
-                                    <img src={item.src} className="w-full h-full object-fill pointer-events-none" />
-                                    {renderResizeHandles()}
-                                </div>
-                            );
-                        } 
-                        
-                        if (item.type === 'text') {
-                            return (
-                                <div key={item.id} className={cn("absolute whitespace-pre-wrap px-1 border border-transparent", isSelected && "border-blue-500")}
-                                    style={{ ...commonStyle, color: item.color, fontSize: item.size, fontWeight: 'bold', width: item.width, lineHeight: '1.2' }}
-                                    onMouseDown={(e) => handleItemMouseDown(e, item, 'move')}
-                                    onContextMenu={(e) => handleItemContextMenu(e, item.id)}
-                                    onDoubleClick={(e) => { e.stopPropagation(); handleTextDoubleClick(item); }}
-                                >
-                                    {item.text}
-                                    {renderResizeHandles()}
-                                </div>
-                            );
-                        }
-
-                        if (item.type === 'line') {
-                            return (
-                                <svg key={item.id} className="absolute overflow-visible" 
-                                    style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}
-                                >
-                                    <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.size || 3, 20)}
-                                        className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")}
-                                        onMouseDown={(e) => handleItemMouseDown(e, item, 'move')}
-                                        onContextMenu={(e) => handleItemContextMenu(e, item.id)}
-                                    />
-                                    <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={item.color} strokeWidth={item.size}
-                                        className={cn(currentTool === 'select' ? "pointer-events-none" : "", isSelected && "opacity-80")}
-                                    />
-                                    {isSelected && currentTool === 'select' && (
-                                        <>
-                                            <circle cx={item.x} cy={item.y} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer"
-                                                onMouseDown={(e) => handleResizeMouseDown(e, item, 'start')} />
-                                            <circle cx={item.x2} cy={item.y2} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer"
-                                                onMouseDown={(e) => handleResizeMouseDown(e, item, 'end')} />
-                                        </>
-                                    )}
-                                </svg>
-                            );
-                        }
+                        if (item.type === 'image') { return ( <div key={item.id} className={cn("absolute", isSelected && "ring-1 ring-blue-500")} style={{ ...commonStyle, width: item.width, height: item.height }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> <img src={item.src} className="w-full h-full object-fill pointer-events-none" /> {renderResizeHandles()} </div> ); } 
+                        if (item.type === 'text') { return ( <div key={item.id} className={cn("absolute whitespace-pre-wrap px-1 border border-transparent", isSelected && "border-blue-500")} style={{ ...commonStyle, color: item.color, fontSize: item.size, fontWeight: 'bold', width: item.width, lineHeight: '1.2' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} onDoubleClick={(e) => { e.stopPropagation(); handleTextDoubleClick(item); }}> {item.text} {renderResizeHandles()} </div> ); }
+                        if (item.type === 'line') { return ( <svg key={item.id} className="absolute overflow-visible" style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}> <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.size || 3, 20)} className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} /> <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={item.color} strokeWidth={item.size} className={cn(currentTool === 'select' ? "pointer-events-none" : "", isSelected && "opacity-80")} /> {isSelected && currentTool === 'select' && ( <> <circle cx={item.x} cy={item.y} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'start')} /> <circle cx={item.x2} cy={item.y2} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'end')} /> </> )} </svg> ); }
                     })}
-
-                    <canvas 
-                        ref={canvasRef} 
-                        className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", 
-                            (currentTool === 'draw' || currentTool === 'eraser' || currentTool === 'highlighter') ? "pointer-events-auto" : "pointer-events-none"
-                        )} 
-                    />
-
-                    {textInput && (
-                        <textarea autoFocus 
-                            className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden"
-                            style={{ 
-                                left: textInput.x, top: textInput.y, 
-                                width: textInput.width ? textInput.width : 'auto', minWidth: '100px',
-                                color: mainColor, fontSize: toolSize, fontWeight: "bold", height: "auto", lineHeight: '1.2' 
-                            }}
-                            value={textInput.value} 
-                            onMouseDown={(e) => e.stopPropagation()} 
-                            onChange={(e) => {
-                                e.target.style.height = 'auto';
-                                e.target.style.height = e.target.scrollHeight + 'px';
-                                setTextInput({ ...textInput, value: e.target.value })
-                            }} 
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) { 
-                                    e.preventDefault();
-                                    confirmText();
-                                }
-                            }}
-                            onBlur={confirmText}
-                        />
-                    )}
-
-                    {contextMenu && (
-                        <div 
-                            className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[100px] animate-in fade-in zoom-in-95 duration-100"
-                            style={{ left: contextMenu.x, top: contextMenu.y }}
-                            onMouseDown={(e) => e.stopPropagation()} 
-                        >
-                            <button 
-                                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                onClick={handleDeleteFromMenu}
-                            >
-                                <Trash2 className="w-4 h-4"/> Delete
-                            </button>
-                        </div>
-                    )}
-
-                    {items.length === 0 && penStrokes.length === 0 && !textInput && (
-                       <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none">
-                           <FileImage className="w-16 h-16 mb-4 opacity-50"/>
-                           <p className="font-bold text-lg">Add Images or Draw</p>
-                       </div>
-                    )}
+                    <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", (currentTool === 'draw' || currentTool === 'eraser' || currentTool === 'highlighter') ? "pointer-events-auto" : "pointer-events-none")} />
+                    {textInput && ( <textarea autoFocus className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden" style={{ left: textInput.x, top: textInput.y, width: textInput.width ? textInput.width : 'auto', minWidth: '100px', color: mainColor, fontSize: toolSize, fontWeight: "bold", height: "auto", lineHeight: '1.2' }} value={textInput.value} onMouseDown={(e) => e.stopPropagation()} onChange={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; setTextInput({ ...textInput, value: e.target.value }) }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmText(); } }} onBlur={confirmText} /> )}
+                    {contextMenu && ( <div className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[100px] animate-in fade-in zoom-in-95 duration-100" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(e) => e.stopPropagation()}> <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2" onClick={handleDeleteFromMenu}> <Trash2 className="w-4 h-4"/> Delete </button> </div> )}
+                    {items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
                  </div>
               </div>
            </div>
         </div>
       </div>
       {isGridOpen && renderFullScreenGrid()}
+      
+      {/* ✨ 3D Viewer 모달 (에러 수정 완료) */}
+      {is3DOpen && (
+          <div className="fixed inset-0 z-[99999] bg-black animate-in fade-in">
+              <div className="w-full h-full">
+                  <DentalSequenceViewer 
+                      steps={[
+                          // 1. 초기 상태
+                          { 
+                            upper: `/models/patient_${patient.id}/1_Malocclusion/Maxillary.stl`, 
+                            lower: `/models/patient_${patient.id}/1_Malocclusion/Mandibular.stl` 
+                          },
+                          
+                          // 2. 중간 단계들 (계산된 subsetCount 사용)
+                          ...Array.from({ length: subsetCount }, (_, i) => ({
+                              upper: `/models/patient_${patient.id}/1_Subsetup${i + 1}/Maxillary.stl`,
+                              lower: `/models/patient_${patient.id}/1_Subsetup${i + 1}/Mandibular.stl`
+                          })),
+
+                          // 3. 최종 상태
+                          { 
+                            upper: `/models/patient_${patient.id}/1/Maxillary.stl`, 
+                            lower: `/models/patient_${patient.id}/1/Mandibular.stl` 
+                          }
+                      ]} 
+                      onClose={() => setIs3DOpen(false)}
+                  />
+              </div>
+          </div>
+      )}
     </>
   );
 }
