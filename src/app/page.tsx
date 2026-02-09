@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+// 👇 1. 주소창의 꼬리표(?patientId=...)를 읽기 위한 도구를 가져옵니다.
+import { useSearchParams } from "next/navigation"; 
 import { usePatientStoreHydrated } from "@/hooks/use-patient-store";
 import { ChecklistPanel } from "@/components/checklist-panel";
 import { PatientSidebar, PatientSidebarHandle } from "@/components/patient-sidebar";
@@ -9,6 +11,8 @@ import { FolderOpen, Home, UserPlus, X } from "lucide-react";
 
 export default function DentalApp() {
   const store = usePatientStoreHydrated();
+  // 👇 2. 주소창 읽기 도구를 사용 준비합니다.
+  const searchParams = useSearchParams();
   const sidebarRef = useRef<PatientSidebarHandle>(null);
   
   // 오버레이 사이드바 열림 상태 (작업 중일 때만 사용)
@@ -17,6 +21,22 @@ export default function DentalApp() {
   useEffect(() => {
     store.fetchPatients();
   }, []);
+
+  // 👇 3. [핵심] 노션 링크를 타고 들어왔을 때 실행되는 코드입니다.
+  useEffect(() => {
+    // 1) 환자 목록이 아직 로딩 안 됐으면 대기
+    if (!store || store.patients.length === 0) return;
+
+    // 2) 주소창에서 'patientId' 파라미터를 찾습니다.
+    const paramId = searchParams.get("patientId");
+
+    // 3) 만약 아이디가 있다면?
+    if (paramId) {
+        // 🚨 [수정 완료] 숫자로 변환(Number())하지 않고 문자열 그대로 넘깁니다!
+        // 에러 원인: store.selectPatient가 string 타입을 원했기 때문
+        store.selectPatient(paramId); 
+    }
+  }, [searchParams, store?.patients]); // 환자 목록이 로딩 완료되면 이 코드가 다시 실행됨
 
   if (!store) return <div className="p-10">Loading...</div>;
 
