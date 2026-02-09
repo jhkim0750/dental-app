@@ -8,7 +8,7 @@ import { PatientSidebar, PatientSidebarHandle } from "@/components/patient-sideb
 import { Button } from "@/components/ui/button";
 import { FolderOpen, Home, UserPlus, Loader2 } from "lucide-react";
 
-// 1. 기존 로직을 담당하는 메인 대시보드 컴포넌트 (내용은 그대로임)
+// 1. 기존의 메인 로직은 별도의 컴포넌트로 분리합니다.
 function PatientDashboard() {
   const store = usePatientStoreHydrated();
   const searchParams = useSearchParams();
@@ -101,14 +101,14 @@ function PatientDashboard() {
   );
 }
 
-// 2. ✨ 최종 Export: Suspense 경계를 설정하여 Vercel 빌드 에러 해결
+// 2. ✨ 최종 Export 지점에서 Suspense로 감싸줍니다. (빌드 에러 해결 포인트)
 export default function DentalApp() {
   return (
     <Suspense fallback={
       <div className="flex h-screen w-screen items-center justify-center bg-white">
-        <div className="flex flex-col items-center gap-2">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-          <p className="text-slate-500 font-medium">Dental System Loading...</p>
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+          <p className="text-slate-500 font-semibold">Dental System Loading...</p>
         </div>
       </div>
     }>
