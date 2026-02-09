@@ -6,7 +6,7 @@ import {
   CheckCheck, ChevronLeft, ChevronRight, 
   Plus, Trash2, Pencil, Save, Layout, FileImage, 
   Upload, Type, Palette, X, Paperclip, Eraser, PenTool, Minus, Undo, Redo, CheckSquare, CheckCircle2,
-  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, GripHorizontal, MoreVertical
+  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter, FilePlus2, Copy
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,14 @@ interface PenStroke {
   points: { x: number, y: number }[];
   color: string;
   size: number;
-  tool: 'draw' | 'eraser';
+  tool: 'draw' | 'eraser' | 'highlighter'; // 형광펜 추가
+}
+
+// ✨ 슬라이드 데이터 구조
+interface SlideData {
+  id: number;
+  items: CanvasItem[];
+  penStrokes: PenStroke[];
 }
 
 const PRESET_TYPES = ["BOS", "Attachment", "Vertical Ridge", "Power Ridge", "Bite Ramp", "IPR", "BC", "TAG", "기타"];
@@ -77,15 +84,24 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ✨ 슬라이드 상태 관리
+  const [slides, setSlides] = useState<SlideData[]>([{ id: 1, items: [], penStrokes: [] }]);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+
+  // 현재 슬라이드의 데이터 (편의용 변수)
+  const currentSlide = slides[currentSlideIndex];
+  const items = currentSlide.items;
+  const penStrokes = currentSlide.penStrokes;
+
   // 상태 관리
-  const [items, setItems] = useState<CanvasItem[]>([]);
-  const [penStrokes, setPenStrokes] = useState<PenStroke[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [history, setHistory] = useState<{items: CanvasItem[], strokes: PenStroke[]}[]>([]);
+  
+  // History (전체 슬라이드 상태 저장)
+  const [history, setHistory] = useState<SlideData[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
   // 툴 설정
-  const [currentTool, setCurrentTool] = useState<"select" | "draw" | "line" | "eraser" | "text">("select");
+  const [currentTool, setCurrentTool] = useState<"select" | "draw" | "line" | "eraser" | "text" | "highlighter">("select");
   const [mainColor, setMainColor] = useState("#334155");
   const [toolSize, setToolSize] = useState<number>(20); 
 
@@ -103,9 +119,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       isDragging: false, action: null, startX: 0, startY: 0, offsetX: 0, offsetY: 0
   });
 
-  // ✨ 텍스트 입력 상태 (수정 모드 포함)
-  // id가 있으면 '기존 텍스트 수정', 없으면 '새 텍스트 생성'
-  const [textInput, setTextInput] = useState<{id?: number, x: number, y: number, value: string, width?: number} | null>(null);
+  const [textInput, setTextInput] = useState<{x: number, y: number, value: string} | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, itemId: number } | null>(null);
 
   if (!store) return null;
@@ -114,8 +128,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   // 1. 초기화 & 데이터 로드
   useEffect(() => {
     setPageStartStep(0);
-    setItems([]);
-    setPenStrokes([]);
+    // 초기화
+    setSlides([{ id: 1, items: [], penStrokes: [] }]);
+    setCurrentSlideIndex(0);
     setHistory([]);
     setHistoryIndex(-1);
     setSelectedId(null);
@@ -125,22 +140,32 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     if (canvas) {
         canvas.width = canvas.parentElement?.offsetWidth || 800;
         canvas.height = canvas.parentElement?.offsetHeight || 600;
-        const ctx = canvas.getContext("2d");
-        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 
     if (patient.summary) {
+       // 1. JSON 데이터 복원
        if (patient.summary.memo && patient.summary.memo.startsWith('{')) {
            try {
                const savedData = JSON.parse(patient.summary.memo);
-               if (savedData.items) setItems(savedData.items);
-               if (savedData.penStrokes) setPenStrokes(savedData.penStrokes);
-               setHistory([{ items: savedData.items || [], strokes: savedData.penStrokes || [] }]);
-               setHistoryIndex(0);
-               return; 
+               
+               // ✨ 멀티 슬라이드 데이터인지 확인
+               if (savedData.slides) {
+                   setSlides(savedData.slides);
+                   setHistory([savedData.slides]); // 초기 히스토리
+                   setHistoryIndex(0);
+               } 
+               // 구버전(단일 페이지) 데이터 호환
+               else if (savedData.items) {
+                   const loadedSlide = { id: 1, items: savedData.items, penStrokes: savedData.penStrokes || [] };
+                   setSlides([loadedSlide]);
+                   setHistory([[loadedSlide]]);
+                   setHistoryIndex(0);
+               }
+               return;
            } catch (e) { console.error("JSON Parse Error", e); }
        }
 
+       // 2. 이미지만 있는 경우 (레거시)
        if (patient.summary.image) {
            const img = new Image();
            img.src = patient.summary.image;
@@ -159,15 +184,16 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                    x: (containerW - w) / 2, y: (containerH - h) / 2,
                    width: w, height: h, zIndex: 0
                };
-               setItems([initialItem]);
-               setHistory([{ items: [initialItem], strokes: [] }]);
+               const newSlide = { id: 1, items: [initialItem], penStrokes: [] };
+               setSlides([newSlide]);
+               setHistory([[newSlide]]);
                setHistoryIndex(0);
            }
        }
     }
   }, [patient.id]);
 
-  // 펜 스트로크 렌더링
+  // 펜/형광펜 스트로크 렌더링
   useEffect(() => {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
@@ -181,9 +207,21 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           ctx.beginPath();
           ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
           for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-          ctx.strokeStyle = stroke.tool === 'eraser' ? 'rgba(255,255,255,1)' : stroke.color;
-          ctx.lineWidth = stroke.size;
-          ctx.globalCompositeOperation = stroke.tool === 'eraser' ? 'destination-out' : 'source-over';
+          
+          if (stroke.tool === 'eraser') {
+              ctx.globalCompositeOperation = 'destination-out';
+              ctx.lineWidth = stroke.size;
+              ctx.strokeStyle = 'rgba(0,0,0,1)';
+          } else if (stroke.tool === 'highlighter') {
+              // ✨ 형광펜 효과
+              ctx.globalCompositeOperation = 'multiply'; // 겹침 효과
+              ctx.strokeStyle = stroke.color + '80'; // 50% 투명도 (Hex + Alpha)
+              ctx.lineWidth = stroke.size * 2; // 형광펜은 좀 더 두껍게
+          } else {
+              ctx.globalCompositeOperation = 'source-over';
+              ctx.strokeStyle = stroke.color;
+              ctx.lineWidth = stroke.size;
+          }
           ctx.stroke();
       });
       ctx.globalCompositeOperation = 'source-over';
@@ -198,23 +236,25 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               if (item.size) setToolSize(item.size);
           }
       }
-  }, [selectedId]);
-
-  // ✨ 텍스트 입력 중일 때 툴바 속성 변경 시 입력창에도 반영
-  useEffect(() => {
-      // 입력 중이 아니라면 무시
-      if (!textInput) return;
-      // 입력 중이라면 색상/크기 변경 시 시각적 업데이트는 렌더링에서 처리됨 (style prop)
-  }, [mainColor, toolSize]);
+  }, [selectedId, items]);
 
 
   // ============================================================
   // 기능 함수들
   // ============================================================
 
-  const recordHistory = (newItems: CanvasItem[], newStrokes: PenStroke[]) => {
+  // ✨ 현재 슬라이드 업데이트 헬퍼
+  const updateCurrentSlide = (newItems: CanvasItem[], newStrokes: PenStroke[]) => {
+      const newSlides = [...slides];
+      newSlides[currentSlideIndex] = { ...newSlides[currentSlideIndex], items: newItems, penStrokes: newStrokes };
+      setSlides(newSlides);
+      return newSlides; // 히스토리 저장을 위해 반환
+  };
+
+  const recordHistory = (newSlides?: SlideData[]) => {
+      const stateToSave = newSlides || slides;
       const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push({ items: newItems, strokes: newStrokes });
+      newHistory.push(JSON.parse(JSON.stringify(stateToSave))); // Deep copy
       setHistory(newHistory);
       setHistoryIndex(newHistory.length - 1);
   };
@@ -222,8 +262,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleUndo = () => {
       if (historyIndex > 0) {
           const prevIndex = historyIndex - 1;
-          setItems(history[prevIndex].items);
-          setPenStrokes(history[prevIndex].strokes);
+          setSlides(history[prevIndex]);
           setHistoryIndex(prevIndex);
           setSelectedId(null); 
       }
@@ -232,31 +271,48 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleRedo = () => {
       if (historyIndex < history.length - 1) {
           const nextIndex = historyIndex + 1;
-          setItems(history[nextIndex].items);
-          setPenStrokes(history[nextIndex].strokes);
+          setSlides(history[nextIndex]);
           setHistoryIndex(nextIndex);
           setSelectedId(null);
       }
   };
 
+  // --- 슬라이드 관리 ---
+  const addSlide = () => {
+      const newSlide = { id: Date.now(), items: [], penStrokes: [] };
+      const newSlides = [...slides, newSlide];
+      setSlides(newSlides);
+      setCurrentSlideIndex(newSlides.length - 1);
+      recordHistory(newSlides);
+  };
+
+  const deleteSlide = (index: number) => {
+      if (slides.length <= 1) return; // 최소 1개 유지
+      if (confirm("Delete this slide?")) {
+          const newSlides = slides.filter((_, i) => i !== index);
+          setSlides(newSlides);
+          setCurrentSlideIndex(Math.max(0, index - 1));
+          recordHistory(newSlides);
+      }
+  };
+
   const clearAll = () => {
-      if(confirm("Clear all content?")) {
-          setItems([]);
-          setPenStrokes([]);
-          recordHistory([], []);
+      if(confirm("Clear current slide content?")) {
+          const newSlides = updateCurrentSlide([], []);
+          recordHistory(newSlides);
       }
   };
 
   const clearPenLayer = () => {
-      setPenStrokes([]);
-      recordHistory(items, []);
+      const newSlides = updateCurrentSlide(items, []);
+      recordHistory(newSlides);
   };
 
   const deleteSelectedItem = () => {
       if (selectedId) {
           const newItems = items.filter(i => i.id !== selectedId);
-          setItems(newItems);
-          recordHistory(newItems, penStrokes);
+          const newSlides = updateCurrentSlide(newItems, penStrokes);
+          recordHistory(newSlides);
           setSelectedId(null);
       }
   };
@@ -264,8 +320,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleDeleteFromMenu = () => {
       if (contextMenu) {
           const newItems = items.filter(i => i.id !== contextMenu.itemId);
-          setItems(newItems);
-          recordHistory(newItems, penStrokes);
+          const newSlides = updateCurrentSlide(newItems, penStrokes);
+          recordHistory(newSlides);
           setContextMenu(null);
           setSelectedId(null);
       }
@@ -281,15 +337,14 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       } else if (direction === 'down' && idx > 0) {
           [newItems[idx], newItems[idx-1]] = [newItems[idx-1], newItems[idx]];
       }
-      setItems(newItems);
-      recordHistory(newItems, penStrokes);
+      const newSlides = updateCurrentSlide(newItems, penStrokes);
+      recordHistory(newSlides);
   };
 
   const handlePropertyChange = (type: 'color' | 'size', value: string | number) => {
       if (type === 'color') setMainColor(value as string);
       else setToolSize(value as number);
 
-      // 선택된 아이템이 있으면 즉시 변경
       if (selectedId) {
           const newItems = items.map(item => {
               if (item.id === selectedId) {
@@ -297,8 +352,12 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               }
               return item;
           });
-          setItems(newItems);
-          if (!dragState.isDragging) recordHistory(newItems, penStrokes);
+          // 상태 업데이트만 하고 히스토리는 드래그 끝날 때나 나중에
+          setSlides(prev => {
+              const clone = [...prev];
+              clone[currentSlideIndex].items = newItems;
+              return clone;
+          });
       }
   };
 
@@ -313,8 +372,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               id: Date.now(), type: 'image', src, x: 50, y: 50, width: w, height: h, zIndex: items.length
           };
           const newItems = [...items, newItem];
-          setItems(newItems);
-          recordHistory(newItems, penStrokes);
+          const newSlides = updateCurrentSlide(newItems, penStrokes);
+          recordHistory(newSlides);
           setSelectedId(newItem.id);
           setCurrentTool('select');
       };
@@ -334,51 +393,40 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       e.target.value = "";
   };
 
-  // ✨ 텍스트 완료 (생성 또는 수정)
   const confirmText = () => {
-      // 내용이 없으면 취소 (단, 수정 중이었다면 삭제할지 말지 결정 - 여기선 삭제)
       if (!textInput) return;
       
       const trimmedText = textInput.value.trim();
       let newItems = [...items];
 
       if (!trimmedText) {
-          // 내용 비었으면 항목 삭제 (기존 수정 중이었으면 제거)
           if (textInput.id) {
               newItems = newItems.filter(i => i.id !== textInput.id);
           }
       } else {
           if (textInput.id) {
-              // ✨ 기존 텍스트 수정
               newItems = newItems.map(i => i.id === textInput.id ? { ...i, text: trimmedText, color: mainColor, size: toolSize, width: textInput.width } : i);
           } else {
-              // ✨ 새 텍스트 생성
               const newItem: CanvasItem = {
                   id: Date.now(), type: 'text', text: trimmedText,
                   x: textInput.x, y: textInput.y, color: mainColor, size: toolSize, zIndex: items.length,
-                  width: 200, // 기본 너비
-                  height: toolSize * 1.5
+                  width: 200, height: toolSize * 1.5
               };
               newItems.push(newItem);
               setSelectedId(newItem.id);
           }
       }
 
-      setItems(newItems);
-      recordHistory(newItems, penStrokes);
+      const newSlides = updateCurrentSlide(newItems, penStrokes);
+      recordHistory(newSlides);
       setTextInput(null);
       setCurrentTool('select'); 
   };
 
-  // ✨ 텍스트 더블 클릭 -> 수정 모드 진입
   const handleTextDoubleClick = (item: CanvasItem) => {
       if (item.type !== 'text') return;
-      
-      // 해당 텍스트의 속성을 툴바에 반영
       setMainColor(item.color || "#000");
       setToolSize(item.size || 20);
-      
-      // 입력창 열기 (기존 내용 포함)
       setTextInput({
           id: item.id,
           x: item.x,
@@ -386,8 +434,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           value: item.text || "",
           width: item.width
       });
-      
-      // 현재 툴을 텍스트로 변경 (선택사항)
       setCurrentTool('text');
   };
 
@@ -425,12 +471,13 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       if (contextMenu) { setContextMenu(null); return; }
       const { x, y } = getPos(e);
 
-      if (currentTool === 'draw' || currentTool === 'eraser') {
+      // 그리기 (펜, 지우개, 형광펜)
+      if (currentTool === 'draw' || currentTool === 'eraser' || currentTool === 'highlighter') {
           const newStroke: PenStroke = {
               points: [{ x, y }],
               color: mainColor,
               size: toolSize,
-              tool: currentTool === 'eraser' ? 'eraser' : 'draw'
+              tool: currentTool
           };
           setPenStrokes(prev => [...prev, newStroke]);
           setDragState({ isDragging: true, action: 'draw_pen', startX: x, startY: y, offsetX: 0, offsetY: 0 });
@@ -516,6 +563,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
       if (!dragState.isDragging || !selectedId) return;
 
+      // React 상태 업데이트 (로컬 items)
       setItems(prevItems => prevItems.map(item => {
           if (item.id !== selectedId) return item;
 
@@ -559,22 +607,26 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleMouseUp = () => {
       if (!dragState.isDragging) return;
 
+      // 드래그 종료 시 글로벌 상태(Slides)에 반영 및 히스토리 저장
       if (dragState.action === 'draw_pen') {
-          recordHistory(items, penStrokes);
+          // 펜은 이미 상태가 반영되어 있음, 히스토리만 저장
+          recordHistory(updateCurrentSlide(items, penStrokes));
       }
       else if (dragState.action === 'draw_line') {
           const newItems = items.map(i => i.id === -1 ? { ...i, id: Date.now() } : i);
           setItems(newItems);
-          recordHistory(newItems, penStrokes);
+          recordHistory(updateCurrentSlide(newItems, penStrokes));
           setCurrentTool('select');
       } 
       else if (dragState.action) {
-          recordHistory(items, penStrokes);
+          // 이동/리사이즈 끝
+          recordHistory(updateCurrentSlide(items, penStrokes));
       }
 
       setDragState({ ...dragState, isDragging: false, action: null });
   };
 
+  // 키보드 & 붙여넣기
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if (textInput) return;
@@ -623,6 +675,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
   };
 
+  // 저장 (현재 슬라이드만 이미지화 + 전체 슬라이드 JSON 저장)
   const handleSave = async () => {
       if (!containerRef.current || !canvasRef.current) return;
       const tempCanvas = document.createElement('canvas');
@@ -634,6 +687,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
 
+      // 현재 슬라이드의 아이템 그리기
       for (const item of items) {
           if (item.type === 'image' && item.src) {
               const img = new Image();
@@ -656,19 +710,25 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           }
       }
 
+      // 펜 레이어 합치기 (현재 캔버스에 그려진 그대로)
       ctx.drawImage(canvasRef.current, 0, 0);
 
       const finalImage = tempCanvas.toDataURL('image/png');
-      const saveData = { items, penStrokes }; 
+      
+      // ✨ 전체 슬라이드 데이터 저장
+      // 현재 편집중인 상태를 slides에 최신화
+      const updatedSlides = [...slides];
+      updatedSlides[currentSlideIndex] = { ...updatedSlides[currentSlideIndex], items, penStrokes };
+      const saveData = { slides: updatedSlides }; 
 
       await store.saveSummary(patient.id, { 
           image: finalImage, 
           memo: JSON.stringify(saveData) 
       });
-      alert("Saved! (Editable data preserved)");
+      alert("Saved with multiple slides!");
   };
 
-  // Rule 로직
+  // ... (기존 Rule 관련 로직 - renderFullScreenGrid 등 포함) ...
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const handleSaveRules = async () => { 
     const finalType = selectedType === "기타" ? customType : selectedType;
@@ -695,12 +755,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const getGroupedRules = (step: number) => {
     const allRules = getRulesForStep(step);
     const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment");
-    return { 
-        genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)),
-        upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)),
-        lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)),
-        attRules: allRules.filter((r: Rule) => isAtt(r))
-    };
+    return { genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)), upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)), lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)), attRules: allRules.filter((r: Rule) => isAtt(r)) };
   };
   const isChecked = (ruleId: string, step: number) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === ruleId && s.checked);
   const areRulesCompleted = (rules: Rule[], step: number) => rules.length > 0 && rules.every((r: Rule) => isChecked(r.id, step));
@@ -727,26 +782,27 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
             <div className="flex gap-2"><Button variant="outline" onClick={() => setPageStartStep(Math.max(0, pageStartStep - 10))}>Prev 10</Button><Button variant="outline" onClick={() => setPageStartStep(Math.min(totalSteps, pageStartStep + 10))}>Next 10</Button><Button variant="destructive" onClick={() => setIsGridOpen(false)}>Close</Button></div>
         </div>
         <div className="flex-1 p-6 overflow-auto bg-slate-50">
+             {/* ... Grid Content ... */}
              <div className="mb-8">
                  <h3 className="text-xl font-bold text-blue-800 mb-3 pl-3 border-l-4 border-blue-600">Main Rules</h3>
                  <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
                      {stepsToShow.map((step) => {
                         if (step > totalSteps) return <div key={step} className="opacity-0 w-full"/>;
                         const { genRules, upperRules, lowerRules } = getGroupedRules(step);
-                        const isAllDone = areRulesCompleted([...genRules, ...upperRules, ...lowerRules], step);
                         return (
                             <div key={`main-${step}`} className="flex flex-col gap-2">
-                                <div className={cn("p-2 font-bold text-xs text-center rounded-lg border flex justify-between", step===0?"bg-yellow-100":isAllDone?"bg-blue-600 text-white":"bg-white")}><span>{step===0?"PRE":`STEP ${step}`}</span>{step<=totalSteps && <button onClick={()=>store.checkAllInStep(patient.id,step)}><CheckSquare className="w-3.5 h-3.5"/></button>}</div>
+                                <div className={cn("p-2 font-bold text-xs text-center rounded-lg border flex justify-between", step===0?"bg-yellow-100":"bg-white")}><span>{step===0?"PRE":`STEP ${step}`}</span>{step<=totalSteps && <button onClick={()=>store.checkAllInStep(patient.id,step)}><CheckSquare className="w-3.5 h-3.5"/></button>}</div>
                                 <div className="space-y-2">
-                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col", areRulesCompleted(genRules, step) && genRules.length>0 && "ring-2 ring-green-500 border-transparent")} style={getFixedStyle(maxGenCount)}><div className="text-[9px] font-bold text-slate-400 px-1 mb-1">GENERAL</div>{genRules.map((r: Rule) => renderCard(r, step, true))}</div>
-                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col", areRulesCompleted(upperRules, step) && upperRules.length>0 && "ring-2 ring-green-500 border-transparent")} style={getFixedStyle(maxUpperCount)}><div className="text-[9px] font-bold text-blue-400 px-1 mb-1">MAXILLA</div>{upperRules.map((r: Rule) => renderCard(r, step, true))}</div>
-                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col", areRulesCompleted(lowerRules, step) && lowerRules.length>0 && "ring-2 ring-green-500 border-transparent")} style={getFixedStyle(maxLowerCount)}><div className="text-[9px] font-bold text-orange-400 px-1 mb-1">MANDIBLE</div>{lowerRules.map((r: Rule) => renderCard(r, step, true))}</div>
+                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxGenCount)}><div className="text-[9px] font-bold text-slate-400 px-1 mb-1">GENERAL</div>{genRules.map((r: Rule) => renderCard(r, step, true))}</div>
+                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxUpperCount)}><div className="text-[9px] font-bold text-blue-400 px-1 mb-1">MAXILLA</div>{upperRules.map((r: Rule) => renderCard(r, step, true))}</div>
+                                    <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxLowerCount)}><div className="text-[9px] font-bold text-orange-400 px-1 mb-1">MANDIBLE</div>{lowerRules.map((r: Rule) => renderCard(r, step, true))}</div>
                                 </div>
                             </div>
                         );
                      })}
                  </div>
              </div>
+             {/* ... Attachments ... */}
              <div className="mb-10 pt-4 border-t-2 border-dashed">
                  <h3 className="text-xl font-bold text-green-800 mb-3 pl-3 border-l-4 border-green-600">Attachments Only</h3>
                  <div className="grid grid-cols-10 gap-3 min-w-[1400px]">
@@ -754,7 +810,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                          if(step>totalSteps) return null;
                          const { attRules } = getGroupedRules(step);
                          return (
-                             <div key={`att-${step}`} className={cn("rounded-lg bg-white border flex flex-col h-full min-h-[100px]", areRulesCompleted(attRules, step) && attRules.length>0 && "ring-2 ring-green-500 border-transparent")}>
+                             <div key={`att-${step}`} className="rounded-lg bg-white border flex flex-col h-full min-h-[100px]">
                                  <div className="p-1.5 border-b text-[10px] text-center bg-slate-50">{step===0?"PRE":`STEP ${step}`}</div>
                                  <div className="p-1 flex-1">{attRules.map((r: Rule) => renderCard(r, step, true))}</div>
                              </div>
@@ -816,8 +872,34 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
              </div>
            </div>
            
-           <div className="flex-1 p-6 flex flex-col bg-slate-100 overflow-auto">
-              <div className="bg-white p-4 rounded-lg shadow-sm flex flex-col h-full min-h-[600px] relative">
+           <div className="flex-1 p-6 flex flex-row gap-4 bg-slate-100 overflow-hidden">
+              
+              {/* ✨ 슬라이드 썸네일 바 (좌측) */}
+              <div className="w-28 flex flex-col gap-2 overflow-y-auto pr-2">
+                  {slides.map((slide, index) => (
+                      <div key={slide.id} 
+                          className={cn("w-full aspect-[4/3] bg-white border-2 rounded cursor-pointer relative group", currentSlideIndex === index ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-300 hover:border-slate-400")}
+                          onClick={() => {
+                              // 현재 상태 저장 후 이동
+                              updateCurrentSlide(items, penStrokes);
+                              setCurrentSlideIndex(index);
+                              setItems(slide.items);
+                              setPenStrokes(slide.penStrokes);
+                              // 히스토리 초기화 (슬라이드 이동 시)
+                              setHistory([]); setHistoryIndex(-1);
+                          }}
+                      >
+                          <div className="absolute top-1 left-1 bg-slate-200 text-[10px] w-4 h-4 flex items-center justify-center rounded-full">{index + 1}</div>
+                          <div className="w-full h-full flex items-center justify-center text-slate-200 text-xs">Slide {index+1}</div>
+                          {/* 삭제 버튼 */}
+                          <button onClick={(e) => { e.stopPropagation(); deleteSlide(index); }} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded opacity-0 group-hover:opacity-100 hover:bg-red-600"><Trash2 className="w-3 h-3"/></button>
+                      </div>
+                  ))}
+                  <Button variant="outline" className="w-full border-dashed" onClick={addSlide}><Plus className="w-4 h-4 mr-1"/> Add</Button>
+              </div>
+
+              {/* 메인 캔버스 영역 */}
+              <div className="flex-1 bg-white p-4 rounded-lg shadow-sm flex flex-col h-full min-h-[600px] relative">
                  
                  {/* 툴바 */}
                  <div className="flex justify-between items-center mb-4 flex-wrap gap-2 sticky top-0 z-50 bg-white/90 backdrop-blur-sm p-2 border-b">
@@ -825,6 +907,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('select')} className={cn(currentTool === 'select' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Select"><MousePointer2 className="w-4 h-4"/></Button>
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
                         <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('draw')} className={cn(currentTool === 'draw' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Pen"><PenTool className="w-4 h-4"/></Button>
+                        <Button variant={currentTool === 'highlighter' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('highlighter')} className={cn(currentTool === 'highlighter' && "bg-yellow-100 text-yellow-600 ring-2 ring-yellow-500")} title="Highlighter"><Highlighter className="w-4 h-4"/></Button>
                         <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('line')} className={cn(currentTool === 'line' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
                         <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('text')} className={cn(currentTool === 'text' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Text"><Type className="w-4 h-4"/></Button>
                         <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" onClick={() => setCurrentTool('eraser')} className={cn(currentTool === 'eraser' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Eraser"><Eraser className="w-4 h-4"/></Button>
@@ -863,6 +946,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                  <div 
                     className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative select-none", 
                         currentTool === 'draw' && "cursor-crosshair",
+                        currentTool === 'highlighter' && "cursor-crosshair",
                         currentTool === 'eraser' && "cursor-cell",
                         currentTool === 'text' && "cursor-text",
                         currentTool === 'line' && "cursor-crosshair",
@@ -877,8 +961,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                  >
                     {/* (1) 아이템 렌더링 */}
                     {items.map((item) => {
-                        // 수정 중인 아이템은 화면에서 숨김 (입력창이 대체)
-                        if (textInput && textInput.id === item.id) return null;
+                        if (textInput && textInput.id === item.id) return null; // 수정 중 숨김
 
                         const isSelected = selectedId === item.id;
                         const commonStyle: React.CSSProperties = {
@@ -925,7 +1008,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                     style={{ ...commonStyle, color: item.color, fontSize: item.size, fontWeight: 'bold', width: item.width, lineHeight: '1.2' }}
                                     onMouseDown={(e) => handleItemMouseDown(e, item, 'move')}
                                     onContextMenu={(e) => handleItemContextMenu(e, item.id)}
-                                    // ✨ 더블 클릭 시 수정 모드 진입
                                     onDoubleClick={(e) => { e.stopPropagation(); handleTextDoubleClick(item); }}
                                 >
                                     {item.text}
@@ -960,15 +1042,15 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         }
                     })}
 
-                    {/* (2) 펜 그리기 레이어 */}
+                    {/* (2) 펜/형광펜 그리기 레이어 */}
                     <canvas 
                         ref={canvasRef} 
                         className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", 
-                            (currentTool === 'draw' || currentTool === 'eraser') ? "pointer-events-auto" : "pointer-events-none"
+                            (currentTool === 'draw' || currentTool === 'eraser' || currentTool === 'highlighter') ? "pointer-events-auto" : "pointer-events-none"
                         )} 
                     />
 
-                    {/* (3) 텍스트 입력창 (생성 및 수정용) */}
+                    {/* (3) 텍스트 입력창 */}
                     {textInput && (
                         <textarea autoFocus 
                             className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden"
