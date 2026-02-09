@@ -585,28 +585,30 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       {is3DOpen && (
           <div className="fixed inset-0 z-[99999] bg-black animate-in fade-in">
               <div className="w-full h-full">
-                  <DentalSequenceViewer 
-                      steps={[
-                          // 1. 초기 상태
-                          { 
-                            upper: `/models/patient_${patient.id}/1_Malocclusion/Maxillary.stl`, 
-                            lower: `/models/patient_${patient.id}/1_Malocclusion/Mandibular.stl` 
-                          },
-                          
-                          // 2. 중간 단계들 (계산된 subsetCount 사용)
-                          ...Array.from({ length: subsetCount }, (_, i) => ({
-                              upper: `/models/patient_${patient.id}/1_Subsetup${i + 1}/Maxillary.stl`,
-                              lower: `/models/patient_${patient.id}/1_Subsetup${i + 1}/Mandibular.stl`
-                          })),
+              <DentalSequenceViewer 
+  steps={[
+      // 1. 초기 상태 (현재 에러 지점)
+      { 
+        step: 0, 
+        upper: `/models/patient_${patient.id}/1_Malocclusion/Maxillary.stl`, 
+        lower: `/models/patient_${patient.id}/1_Malocclusion/Mandibular.stl` 
+      },
 
-                          // 3. 최종 상태
-                          { 
-                            upper: `/models/patient_${patient.id}/1/Maxillary.stl`, 
-                            lower: `/models/patient_${patient.id}/1/Mandibular.stl` 
-                          }
-                      ]} 
-                      onClose={() => setIs3DOpen(false)}
-                  />
+      // 2. 중간 단계들 (문법 수정 완료)
+      ...Array.from({ length: 10 }, (_, i) => ({
+        step: i + 1,
+        upper: `/models/patient_${patient.id}/1_Subsetup$${i + 1}/Maxillary.stl`, 
+        lower: `/models/patient_${patient.id}/1_Subsetup$${i + 1}/Mandibular.stl` 
+      })),
+
+      // 3. 최종 상태
+      {
+        step: 11,
+        upper: `/models/patient_${patient.id}/1_Final/Maxillary.stl`,
+        lower: `/models/patient_${patient.id}/1_Final/Mandibular.stl`
+      }
+  ]} 
+/>
               </div>
           </div>
       )}
