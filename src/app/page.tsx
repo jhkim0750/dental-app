@@ -8,11 +8,11 @@ import { PatientSidebar, PatientSidebarHandle } from "@/components/patient-sideb
 import { Button } from "@/components/ui/button";
 import { FolderOpen, Home, UserPlus, Loader2 } from "lucide-react";
 
-// 1. 기존의 메인 로직은 별도의 컴포넌트로 분리합니다.
 function PatientDashboard() {
   const store = usePatientStoreHydrated();
   const searchParams = useSearchParams();
   const sidebarRef = useRef<PatientSidebarHandle>(null);
+  
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
 
   useEffect(() => {
@@ -43,6 +43,7 @@ function PatientDashboard() {
         </aside>
       )}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+          {/* 헤더 시작: 버튼들이 여기 없어야 합니다! */}
           <header className="flex items-center justify-between px-6 py-3 bg-white border-b shadow-sm shrink-0 z-10">
             <div className="flex items-center gap-4">
               <div className="flex flex-col">
@@ -57,10 +58,12 @@ function PatientDashboard() {
                 )}
               </div>
             </div>
+
             <div className="flex items-center gap-2">
               <Button variant="ghost" size="icon" onClick={() => store.selectPatient(null)} title="Go Home">
                 <Home className="w-5 h-5 text-slate-600" />
               </Button>
+              
               {activePatient && (
                 <Button variant="outline" className="gap-2" onClick={() => setIsOverlayOpen(true)}>
                   <FolderOpen className="w-4 h-4" />
@@ -69,6 +72,8 @@ function PatientDashboard() {
               )}
             </div>
           </header>
+          {/* 헤더 끝 */}
+
           <main className="flex-1 overflow-hidden relative bg-slate-100">
             {activePatient ? (
               <ChecklistPanel patient={activePatient} />
@@ -88,6 +93,7 @@ function PatientDashboard() {
               </div>
             )}
           </main>
+
           {activePatient && isOverlayOpen && (
             <div className="absolute inset-0 z-50 flex">
               <div className="absolute inset-0 bg-black/50" onClick={() => setIsOverlayOpen(false)} />
@@ -101,7 +107,6 @@ function PatientDashboard() {
   );
 }
 
-// 2. ✨ 최종 Export 지점에서 Suspense로 감싸줍니다. (빌드 에러 해결 포인트)
 export default function DentalApp() {
   return (
     <Suspense fallback={

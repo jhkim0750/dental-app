@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { db } from "@/lib/firebase"; // ✨ Supabase 대신 Firebase DB 가져오기
+import { db, storage } from "@/lib/firebase"; 
 import { 
   collection, 
   getDocs, 
@@ -13,8 +13,9 @@ import {
   orderBy,
   serverTimestamp 
 } from "firebase/firestore";
+import { ref, uploadString, getDownloadURL } from "firebase/storage"; 
 
-// --- 타입 정의 (기존과 동일) ---
+// --- 타입 정의 ---
 export type ToothNumber = number;
 
 export interface Rule {
@@ -34,7 +35,7 @@ export interface ChecklistItemStatus {
 
 export interface Patient {
   id: string;
-  created_at: any; // Firebase Timestamp 대응
+  created_at: any;
   name: string;
   case_number: string; 
   total_steps: number;
@@ -70,7 +71,7 @@ export const usePatientStore = create<PatientState>((set, get) => ({
   selectedPatientId: null,
   isLoading: false,
 
-  // 1. 데이터 불러오기 (Firebase Firestore)
+  // 1. 데이터 불러오기
   fetchPatients: async () => {
     set({ isLoading: true });
     try {
@@ -89,7 +90,7 @@ export const usePatientStore = create<PatientState>((set, get) => ({
     }
   },
 
-  // 2. 환자 추가 (Firebase)
+  // 2. 환자 추가
   addPatient: async (name, caseNumber, totalSteps, clinicName) => {
     try {
       const docRef = await addDoc(collection(db, "patients"), {
@@ -98,8 +99,8 @@ export const usePatientStore = create<PatientState>((set, get) => ({
         total_steps: totalSteps,
         clinic_name: clinicName || "",
         rules: [],
-        checklist_status: [],
-        created_at: serverTimestamp(), // 서버 시간 저장
+        checklist_status: [], 
+        created_at: serverTimestamp(),
       });
 
       const newPatient: Patient = {
@@ -123,7 +124,7 @@ export const usePatientStore = create<PatientState>((set, get) => ({
     }
   },
 
-  // 3. 환자 정보 수정
+  // 3. 환자 수정
   updatePatient: async (id, name, caseNumber, totalSteps, clinicName) => {
     try {
       const patientRef = doc(db, "patients", id);
@@ -148,6 +149,7 @@ export const usePatientStore = create<PatientState>((set, get) => ({
 
   // 4. 환자 삭제
   deletePatient: async (id) => {
+    if (!confirm("정말 삭제하시겠습니까?")) return;
     try {
       await deleteDoc(doc(db, "patients", id));
       set((state) => ({
@@ -166,7 +168,7 @@ export const usePatientStore = create<PatientState>((set, get) => ({
     if (!patient) return;
 
     const newRule = { ...ruleData, id: crypto.randomUUID() };
-    const updatedRules = [...patient.rules, newRule];
+    const updatedRules = [...(patient.rules || []), newRule];
 
     try {
       await updateDoc(doc(db, "patients", patientId), { rules: updatedRules });
@@ -209,7 +211,7 @@ export const usePatientStore = create<PatientState>((set, get) => ({
     if (!patient) return;
 
     const updatedRules = patient.rules.filter((r) => r.id !== ruleId);
-    const updatedStatus = patient.checklist_status.filter((s) => s.ruleId !== ruleId);
+    const updatedStatus = (patient.checklist_status || []).filter((s) => s.ruleId !== ruleId);
 
     try {
       await updateDoc(doc(db, "patients", patientId), { 
@@ -226,15 +228,31 @@ export const usePatientStore = create<PatientState>((set, get) => ({
     }
   },
 
-  // 8. 요약 저장 (Work Summary)
+  // 8. 요약 저장 (이미지 포함)
   saveSummary: async (patientId, data) => {
     try {
-      await updateDoc(doc(db, "patients", patientId), { summary: data });
+      let imageUrl = data.image;
+
+      if (imageUrl && imageUrl.startsWith("data:image")) {
+        const imageRef = ref(storage, `summaries/${patientId}/${Date.now()}.png`);
+        await uploadString(imageRef, imageUrl, 'data_url');
+        imageUrl = await getDownloadURL(imageRef);
+      }
+
+      const summaryData = {
+        image: imageUrl || "",
+        memo: data.memo || ""
+      };
+
+      await updateDoc(doc(db, "patients", patientId), { summary: summaryData });
+      
       set((state) => ({
         patients: state.patients.map((p) =>
-          p.id === patientId ? { ...p, summary: data } : p
+          p.id === patientId ? { ...p, summary: summaryData } : p
         ),
       }));
+      
+      alert("저장되었습니다!");
     } catch (error) {
       console.error("Error saving summary:", error);
       alert("저장 중 오류가 발생했습니다.");
@@ -247,10 +265,12 @@ export const usePatientStore = create<PatientState>((set, get) => ({
     const patient = state.patients.find((p) => p.id === patientId);
     if (!patient) return;
 
-    const existingIndex = patient.checklist_status.findIndex(
+    const currentStatus = patient.checklist_status || [];
+    const existingIndex = currentStatus.findIndex(
       (s) => s.step === step && s.ruleId === ruleId
     );
-    let newStatus = [...patient.checklist_status];
+    
+    let newStatus = [...currentStatus];
 
     if (existingIndex >= 0) {
       newStatus[existingIndex] = {
@@ -274,25 +294,27 @@ export const usePatientStore = create<PatientState>((set, get) => ({
     }
   },
 
-  // 10. 전체 체크/해제 기능
+  // 10. 전체 체크/해제
   checkAllInStep: async (patientId, step) => {
     const state = get();
     const patient = state.patients.find((p) => p.id === patientId);
     if (!patient) return;
 
-    const rulesInStep = patient.rules.filter((r) => step >= r.startStep && step <= r.endStep);
+    const rulesInStep = (patient.rules || []).filter((r) => step >= r.startStep && step <= r.endStep);
     if (rulesInStep.length === 0) return;
 
-    const currentStepStatus = patient.checklist_status.filter((s) => s.step === step);
+    const currentStatus = patient.checklist_status || [];
+    const currentStepStatus = currentStatus.filter((s) => s.step === step);
+    
     const allChecked = rulesInStep.every((r) => 
       currentStepStatus.some((s) => s.ruleId === r.id && s.checked)
     );
 
     let newStatus;
     if (allChecked) {
-      newStatus = patient.checklist_status.filter((s) => s.step !== step);
+      newStatus = currentStatus.filter((s) => s.step !== step);
     } else {
-      const otherSteps = patient.checklist_status.filter((s) => s.step !== step);
+      const otherSteps = currentStatus.filter((s) => s.step !== step);
       const newStepStatus = rulesInStep.map((r) => ({
         step,
         ruleId: r.id,
@@ -314,6 +336,7 @@ export const usePatientStore = create<PatientState>((set, get) => ({
   },
 }));
 
+// ✨ [중요] 기존 코드와 호환성을 위해 이 부분을 꼭 넣어줘야 합니다!
 export const usePatientStoreHydrated = () => {
   return usePatientStore();
 };

@@ -2,16 +2,20 @@ import { initializeApp } from "firebase/app";
 import { getStorage } from "firebase/storage";
 import { getFirestore } from "firebase/firestore";
 
-// ✨ Firebase 콘솔 -> 프로젝트 설정에서 복사한 값을 여기에 붙여넣으세요.
+// ✨ 선생님이 보내주신 바로 그 설정값입니다!
 const firebaseConfig = {
-  apiKey: "AIzaSy...", 
-  authDomain: "your-project.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project-id.appspot.com",
-  messagingSenderId: "...",
-  appId: "..."
+  apiKey: "AIzaSyABDSZ7w5vkWiIowQ-o4xxRUwRH3YC2XLs",
+  authDomain: "dental-app-ods.firebaseapp.com",
+  projectId: "dental-app-ods",
+  storageBucket: "dental-app-ods.firebasestorage.app",
+  messagingSenderId: "726377600009",
+  appId: "1:726377600009:web:aefb012a6efd52375ed4d8",
+  measurementId: "G-RXSPNRSL6Z"
 };
 
 const app = initializeApp(firebaseConfig);
-export const storage = getStorage(app); // 파일 저장용
-export const db = getFirestore(app);      // 환자 정보 저장용
+
+// 파일 저장 창고 (STL 파일용)
+export const storage = getStorage(app);
+// 데이터베이스 (환자 정보 텍스트용)
+export const db = getFirestore(app);

@@ -5,14 +5,11 @@ import { usePatientStoreHydrated, Rule } from "@/hooks/use-patient-store";
 import { 
   CheckCheck, Plus, Trash2, Pencil, Save, Layout, FileImage, 
   Type, Eraser, PenTool, Minus, Undo, Redo, CheckSquare,
-  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter, 
-  MonitorPlay, X 
+  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ToothGrid } from "@/components/tooth-grid";
-import DentalSequenceViewer from "@/components/dental-sequence-viewer";
-import FolderUploader from "@/components/folder-uploader";
 
 const Label = ({ children, className }: any) => <label className={className}>{children}</label>;
 
@@ -140,7 +137,6 @@ const getTypeColor = (type: string) => {
 export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const store = usePatientStoreHydrated();
   const [isGridOpen, setIsGridOpen] = useState(false);
-  const [is3DOpen, setIs3DOpen] = useState(false); 
   const [pageStartStep, setPageStartStep] = useState(0);
 
   // --- Rule 입력 상태 ---
@@ -197,9 +193,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   if (!store) return null;
   
-  // ✨ 여기서 총 스텝 수 계산을 미리 해둡니다.
   const totalSteps = patient.total_steps || 21;
-  const subsetCount = Math.max(0, totalSteps - 2); // 시작과 끝을 뺀 중간 단계 개수
 
   useEffect(() => {
     setPageStartStep(0);
@@ -245,7 +239,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       ctx.globalCompositeOperation = 'source-over';
   }, [penStrokes, currentSlideIndex]);
 
-  // --- 헬퍼 함수들 ---
+  // --- 헬퍼 함수들 (기존 유지) ---
   const changeTool = (tool: typeof currentTool) => {
       setCurrentTool(tool);
       if (tool === 'select') setSelectedId(null);
@@ -479,21 +473,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
              <div className="flex gap-2">
-                <FolderUploader 
-                    patientId={patient.id} 
-                    onUploadComplete={() => {
-                        if (is3DOpen) {
-                            setIs3DOpen(false);
-                            setTimeout(() => setIs3DOpen(true), 100);
-                        }
-                    }} 
-                />
-
-                <Button onClick={() => setIs3DOpen(true)} className="gap-2 bg-slate-800 hover:bg-slate-700">
-                    <MonitorPlay className="w-4 h-4"/> 3D Viewer
-                </Button>
-                
-                <div className="w-px h-6 bg-slate-300 mx-1"></div>
                 <Button onClick={handleSave} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
                 <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-white text-slate-700 border hover:bg-slate-50"><Layout className="w-4 h-4"/> Checklist View</Button>
              </div>
@@ -580,38 +559,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         </div>
       </div>
       {isGridOpen && renderFullScreenGrid()}
-      
-      {/* ✨ 3D Viewer 모달 (에러 수정 완료) */}
-      {is3DOpen && (
-          <div className="fixed inset-0 z-[99999] bg-black animate-in fade-in">
-              <div className="w-full h-full">
-              <DentalSequenceViewer 
-  steps={[
-      // 1. 초기 상태 (현재 에러 지점)
-      { 
-        step: 0, 
-        upper: `/models/patient_${patient.id}/1_Malocclusion/Maxillary.stl`, 
-        lower: `/models/patient_${patient.id}/1_Malocclusion/Mandibular.stl` 
-      },
-
-      // 2. 중간 단계들 (문법 수정 완료)
-      ...Array.from({ length: 10 }, (_, i) => ({
-        step: i + 1,
-        upper: `/models/patient_${patient.id}/1_Subsetup$${i + 1}/Maxillary.stl`, 
-        lower: `/models/patient_${patient.id}/1_Subsetup$${i + 1}/Mandibular.stl` 
-      })),
-
-      // 3. 최종 상태
-      {
-        step: 11,
-        upper: `/models/patient_${patient.id}/1_Final/Maxillary.stl`,
-        lower: `/models/patient_${patient.id}/1_Final/Mandibular.stl`
-      }
-  ]} 
-/>
-              </div>
-          </div>
-      )}
     </>
   );
 }
