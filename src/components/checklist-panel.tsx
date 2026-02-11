@@ -20,40 +20,102 @@ interface ChecklistPanelProps {
   patient: any;
 }
 
-// --- 타입 정의 (변경 없음) ---
+// --- 타입 정의 ---
 type ItemType = 'image' | 'text' | 'line';
-interface CanvasItem { id: number; type: ItemType; x: number; y: number; zIndex: number; color?: string; size?: number; src?: string; width?: number; height?: number; text?: string; x2?: number; y2?: number; }
-interface PenStroke { points: { x: number, y: number }[]; color: string; size: number; tool: 'draw' | 'eraser' | 'highlighter'; }
-interface SlideData { id: number; items: CanvasItem[]; penStrokes: PenStroke[]; }
 
-// ... (SlideThumbnail 컴포넌트는 그대로 유지) ...
-const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete }: { items: CanvasItem[], penStrokes: PenStroke[], isActive: boolean, index: number, onClick: () => void, onDelete: (e: React.MouseEvent) => void }) => {
+interface CanvasItem {
+  id: number;
+  type: ItemType;
+  x: number;
+  y: number;
+  zIndex: number;
+  color?: string;
+  size?: number; 
+  src?: string;
+  width?: number;
+  height?: number;
+  text?: string;
+  x2?: number;
+  y2?: number;
+}
+
+interface PenStroke {
+  points: { x: number, y: number }[];
+  color: string;
+  size: number;
+  tool: 'draw' | 'eraser' | 'highlighter';
+}
+
+interface SlideData {
+  id: number;
+  items: CanvasItem[];
+  penStrokes: PenStroke[];
+}
+
+const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete }: { 
+    items: CanvasItem[], penStrokes: PenStroke[], isActive: boolean, index: number, onClick: () => void, onDelete: (e: React.MouseEvent) => void 
+}) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+
     useEffect(() => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (!canvas || !ctx) return;
+
         const scale = 0.15;
-        canvas.width = 150; canvas.height = 110; 
+        canvas.width = 150; 
+        canvas.height = 110; 
+        
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "white"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.save(); ctx.scale(scale, scale); 
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.save();
+        ctx.scale(scale, scale); 
+
         items.forEach(item => {
-            if (item.type === 'image' && item.src) { const img = new Image(); img.src = item.src; img.crossOrigin = "anonymous"; ctx.drawImage(img, item.x, item.y, item.width!, item.height!); } 
-            else if (item.type === 'line') { ctx.beginPath(); ctx.moveTo(item.x, item.y); ctx.lineTo(item.x2!, item.y2!); ctx.strokeStyle = item.color!; ctx.lineWidth = item.size!; ctx.stroke(); } 
-            else if (item.type === 'text') { ctx.font = `bold ${item.size}px sans-serif`; ctx.fillStyle = item.color!; ctx.fillText(item.text || '', item.x, item.y + (item.size || 20)); }
+            if (item.type === 'image' && item.src) {
+                const img = new Image();
+                img.src = item.src;
+                img.crossOrigin = "anonymous"; 
+                ctx.drawImage(img, item.x, item.y, item.width!, item.height!);
+            } else if (item.type === 'line') {
+                ctx.beginPath();
+                ctx.moveTo(item.x, item.y);
+                ctx.lineTo(item.x2!, item.y2!);
+                ctx.strokeStyle = item.color!;
+                ctx.lineWidth = item.size!;
+                ctx.stroke();
+            } else if (item.type === 'text') {
+                ctx.font = `bold ${item.size}px sans-serif`;
+                ctx.fillStyle = item.color!;
+                ctx.fillText(item.text || '', item.x, item.y + (item.size || 20));
+            }
         });
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         penStrokes.forEach(stroke => {
             if (stroke.points.length < 2) return;
-            ctx.beginPath(); ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+            ctx.beginPath();
+            ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
             for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-            if (stroke.tool === 'highlighter') { ctx.globalCompositeOperation = 'multiply'; ctx.strokeStyle = stroke.color + '40'; ctx.lineWidth = stroke.size * 2; } 
-            else { ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = stroke.color; ctx.lineWidth = stroke.size; }
+            
+            if (stroke.tool === 'highlighter') {
+                ctx.globalCompositeOperation = 'multiply';
+                ctx.strokeStyle = stroke.color + '40'; 
+                ctx.lineWidth = stroke.size * 2;
+            } else {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = stroke.color;
+                ctx.lineWidth = stroke.size;
+            }
             if (stroke.tool !== 'eraser') ctx.stroke();
         });
+
         ctx.restore();
     }, [items, penStrokes]);
+
     return (
         <div className={cn("w-full aspect-[4/3] bg-white border-2 rounded cursor-pointer relative group shadow-sm transition-all overflow-hidden", isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200 hover:border-slate-400")} onClick={onClick}>
             <canvas ref={canvasRef} className="w-full h-full object-contain pointer-events-none" />
@@ -91,7 +153,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [endStep, setEndStep] = useState(10);
   const [note, setNote] = useState("");
   
-  // ✨ [추가] 규칙 삭제 확인 상태 (작은 모달용)
+  // ✨ 규칙 삭제 확인 상태 (작은 모달용)
   const [ruleToDelete, setRuleToDelete] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -155,14 +217,15 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       ctx.globalCompositeOperation = 'source-over';
   }, [penStrokes, currentSlideIndex]);
 
-  // ✨ [추가] 규칙 삭제용 엔터 키 감지
+  // ✨ [수정 완료] 엔터키 삭제 + 붙여넣기(Paste) 기능 부활!
   useEffect(() => {
+      // 1. 키보드 핸들러
       const handleKeyDown = (e: KeyboardEvent) => {
           if (ruleToDelete) {
               if (e.key === 'Enter') confirmDeleteRule();
               if (e.key === 'Escape') setRuleToDelete(null);
+              return;
           }
-          // 기존 캔버스 단축키
           if (textInput) return;
           if (e.key === 'Delete') deleteSelectedItem();
           if ((e.ctrlKey || e.metaKey)) {
@@ -170,8 +233,26 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               else if (e.key.toLowerCase() === 'y') { e.preventDefault(); handleRedo(); }
           }
       };
+
+      // 2. ✨ 붙여넣기 핸들러 (이게 빠져있었습니다!)
+      const handlePaste = (e: ClipboardEvent) => {
+          const clipboardItems = e.clipboardData?.items;
+          if (!clipboardItems) return;
+          for (let i = 0; i < clipboardItems.length; i++) {
+              if (clipboardItems[i].type.indexOf("image") !== -1) {
+                  const blob = clipboardItems[i].getAsFile();
+                  if (blob) uploadImageToFirebase(blob);
+              }
+          }
+      };
+
       window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
+      window.addEventListener('paste', handlePaste); // ✨ 리스너 다시 부착
+
+      return () => {
+          window.removeEventListener('keydown', handleKeyDown);
+          window.removeEventListener('paste', handlePaste); // ✨ 클린업
+      };
   }, [selectedId, textInput, historyIndex, history, currentSlideIndex, ruleToDelete]);
 
   const changeTool = (tool: typeof currentTool) => { setCurrentTool(tool); if (tool === 'select') setSelectedId(null); };
@@ -215,10 +296,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleEditClick = (rule: Rule) => { setEditingRuleId(rule.id); if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } else { setSelectedType("기타"); setCustomType(rule.type); } setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]); setStartStep(rule.startStep); setEndStep(rule.endStep); setNote(rule.note || ""); };
   const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
   
-  // ✨ [수정] 규칙 삭제 요청 (즉시 삭제 X, 확인 상태로 변경)
+  // 규칙 삭제 요청
   const handleDeleteRule = (ruleId: string) => { setRuleToDelete(ruleId); };
   
-  // ✨ [추가] 규칙 삭제 확정 (작은 모달에서 호출)
+  // 규칙 삭제 확정
   const confirmDeleteRule = async () => {
       if (ruleToDelete) {
           if (store) await store.deleteRule(patient.id, ruleToDelete);
