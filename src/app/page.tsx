@@ -13,21 +13,41 @@ function PatientDashboard() {
   const searchParams = useSearchParams();
   const sidebarRef = useRef<PatientSidebarHandle>(null);
   
+  // ✨ [추가] "이미 데이터 가져왔음"을 표시하는 깃발(Ref)
+  const isFetched = useRef(false);
+  
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
 
+  // ✨ [수정] 깃발(isFetched)을 확인해서 딱 한 번만 실행하게 만듦!
   useEffect(() => {
-    store.fetchPatients();
-  }, []);
+    // 1. 스토어가 준비되었고(store exists)
+    // 2. 아직 데이터를 안 가져왔다면(!isFetched.current)
+    if (store && !isFetched.current) {
+        store.fetchPatients();
+        isFetched.current = true; // "가져왔음!" 하고 깃발 꽂기
+    }
+  }, [store]);
 
+  // URL로 환자 선택하는 부분
   useEffect(() => {
     if (!store || store.patients.length === 0) return;
     const paramId = searchParams.get("patientId");
     if (paramId) {
       store.selectPatient(paramId); 
     }
-  }, [searchParams, store?.patients]); 
+  }, [searchParams, store]); 
 
-  if (!store) return <div className="p-10">Loading...</div>;
+  // 로딩 중 표시
+  if (!store) {
+    return (
+        <div className="flex h-screen w-screen items-center justify-center bg-white">
+            <div className="flex flex-col items-center gap-3">
+                <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+                <p className="text-slate-500 font-semibold">System Loading...</p>
+            </div>
+        </div>
+    );
+  }
 
   const activePatient = store.patients.find((p) => p.id === store.selectedPatientId);
 
@@ -43,7 +63,7 @@ function PatientDashboard() {
         </aside>
       )}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-          {/* 헤더 시작: 버튼들이 여기 없어야 합니다! */}
+          {/* 헤더 */}
           <header className="flex items-center justify-between px-6 py-3 bg-white border-b shadow-sm shrink-0 z-10">
             <div className="flex items-center gap-4">
               <div className="flex flex-col">
@@ -72,7 +92,6 @@ function PatientDashboard() {
               )}
             </div>
           </header>
-          {/* 헤더 끝 */}
 
           <main className="flex-1 overflow-hidden relative bg-slate-100">
             {activePatient ? (

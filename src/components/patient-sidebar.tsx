@@ -1,222 +1,248 @@
 "use client";
 
-import React, { useState, forwardRef, useImperativeHandle } from "react";
-import { usePatientStoreHydrated } from "@/hooks/use-patient-store";
-import { Plus, User, Trash2, X, Search, Pencil, Hospital } from "lucide-react";
+import React, { useState, forwardRef, useImperativeHandle, useEffect } from "react";
+import { usePatientStoreHydrated, Patient } from "@/hooks/use-patient-store";
+import { 
+  Search, Plus, User, Trash2, ChevronRight, X, AlertTriangle, RotateCcw, Archive 
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export interface PatientSidebarHandle {
   openAddModal: () => void;
 }
 
 interface PatientSidebarProps {
-  onClose?: () => void; // onClose가 있으면 '닫기 버튼'이 보임
+  onClose?: () => void;
 }
 
-export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarProps>(({ onClose }, ref) => {
-  const store = usePatientStoreHydrated();
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  
-  const [searchTerm, setSearchTerm] = useState("");
-  const [name, setName] = useState("");
-  const [caseNum, setCaseNum] = useState("");
-  const [clinicName, setClinicName] = useState("");
-  const [totalSteps, setTotalSteps] = useState(20);
-
-  // 부모 컴포넌트에서 openAddModal 함수를 호출할 수 있게 연결
-  useImperativeHandle(ref, () => ({
-    openAddModal: () => {
-      openAddModal();
-    }
-  }));
-
-  if (!store) return null;
-
-  const filteredPatients = store.patients.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.case_number.includes(searchTerm)
-  );
-
-  const openAddModal = () => {
-    setIsEditMode(false);
-    setEditingId(null);
-    setName("");
-    setCaseNum("");
-    setClinicName("");
-    setTotalSteps(20);
-    setIsModalOpen(true);
-  };
-
-  const openEditModal = (e: React.MouseEvent, patient: any) => {
-    e.stopPropagation();
-    setIsEditMode(true);
-    setEditingId(patient.id);
-    setName(patient.name);
-    setCaseNum(patient.case_number);
-    setClinicName(patient.clinic_name || "");
-    setTotalSteps(patient.total_steps);
-    setIsModalOpen(true);
-  };
-
-  const handleSave = async () => {
-    if (!name || !caseNum) return alert("이름과 케이스 번호는 필수입니다.");
-
-    if (isEditMode && editingId) {
-      if (store.updatePatient) {
-        await store.updatePatient(editingId, name, caseNum, totalSteps, clinicName);
-      }
-    } else {
-      await store.addPatient(name, caseNum, totalSteps, clinicName);
-    }
+export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarProps>(
+  ({ onClose }, ref) => {
+    const store = usePatientStoreHydrated();
+    const [searchTerm, setSearchTerm] = useState("");
     
-    setIsModalOpen(false);
-    // 오버레이 모드일 때만 저장 후 닫을지 결정 (보통 유지하는 게 편함)
-    // if (onClose) onClose(); 
-  };
+    const [viewMode, setViewMode] = useState<'active' | 'trash'>('active');
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+    const [confirmHardDeleteId, setConfirmHardDeleteId] = useState<string | null>(null);
 
-  const handleDelete = async (e: React.MouseEvent, id: string, name: string) => {
-    e.stopPropagation();
-    if (confirm(`Are you sure you want to delete ${name}?`)) {
-      await store.deletePatient(id);
-    }
-  };
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [newPatientName, setNewPatientName] = useState("");
+    const [newCaseNumber, setNewCaseNumber] = useState("");
+    const [newTotalSteps, setNewTotalSteps] = useState(21);
 
-  return (
-    <div className="flex flex-col h-full bg-white border-r w-full">
-      {/* 헤더 */}
-      <div className="p-4 border-b flex items-center justify-between bg-slate-50 shrink-0">
-        <h2 className="font-bold text-lg text-slate-800">Patients List</h2>
-        <div className="flex items-center gap-2">
-            <Button size="sm" onClick={openAddModal} className="h-8 px-2 text-xs">
-              <Plus className="w-3.5 h-3.5 mr-1" /> New
-            </Button>
-            {/* ✨ onClose가 있을 때만(즉, 오버레이 모드일 때만) 닫기 버튼 표시 */}
-            {onClose && (
-                <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 text-slate-400 hover:text-slate-600">
-                    <X className="w-5 h-5" />
+    useImperativeHandle(ref, () => ({
+      openAddModal: () => setIsAddModalOpen(true),
+    }));
+
+    // ✨ [추가] 엔터키(Enter) 및 ESC 키 감지 (환자 삭제용)
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (confirmDeleteId) {
+                if (e.key === 'Enter') handleSoftDelete();
+                if (e.key === 'Escape') setConfirmDeleteId(null);
+            }
+            if (confirmHardDeleteId) {
+                if (e.key === 'Enter') handleHardDelete();
+                if (e.key === 'Escape') setConfirmHardDeleteId(null);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [confirmDeleteId, confirmHardDeleteId]);
+
+    if (!store) return null;
+
+    const filteredPatients = store.patients.filter((p) => {
+      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            p.case_number.includes(searchTerm);
+      if (viewMode === 'active') return matchesSearch && !p.isDeleted;
+      else return matchesSearch && p.isDeleted;
+    });
+
+    const handleAddPatient = async () => {
+      if (!newPatientName || !newCaseNumber) return alert("Please fill in all fields");
+      await store.addPatient(newPatientName, newCaseNumber, newTotalSteps);
+      setIsAddModalOpen(false);
+      setNewPatientName("");
+      setNewCaseNumber("");
+      setNewTotalSteps(21);
+    };
+
+    const handleSoftDelete = async () => {
+        if (confirmDeleteId) {
+            await store.softDeletePatient(confirmDeleteId);
+            setConfirmDeleteId(null);
+        }
+    };
+
+    const handleHardDelete = async () => {
+        if (confirmHardDeleteId) {
+            await store.hardDeletePatient(confirmHardDeleteId);
+            setConfirmHardDeleteId(null);
+        }
+    };
+
+    return (
+      <div className="flex flex-col h-full bg-white relative">
+        <div className="p-4 border-b shrink-0 flex items-center justify-between bg-slate-50">
+           <div className="flex flex-col">
+              <h2 className="font-bold text-lg flex items-center gap-2">
+                 {viewMode === 'active' ? 'Patients List' : '🗑️ Trash Can'}
+              </h2>
+              <span className="text-xs text-slate-500">
+                {filteredPatients.length} {viewMode === 'active' ? 'Active' : 'Deleted'} cases
+              </span>
+           </div>
+           <div className="flex gap-1">
+               {viewMode === 'active' ? (
+                   <Button variant="ghost" size="icon" onClick={() => setViewMode('trash')} title="Go to Trash" className="text-slate-400 hover:text-red-500">
+                       <Trash2 className="w-4 h-4" />
+                   </Button>
+               ) : (
+                   <Button variant="ghost" size="icon" onClick={() => setViewMode('active')} title="Back to List" className="text-green-600 bg-green-50 hover:bg-green-100">
+                       <Archive className="w-4 h-4" />
+                   </Button>
+               )}
+               {onClose && <Button variant="ghost" size="icon" onClick={onClose}><X className="w-5 h-5"/></Button>}
+           </div>
+        </div>
+
+        {viewMode === 'active' && (
+            <div className="p-3 border-b space-y-2 shrink-0 bg-white">
+                <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                    <input
+                    className="w-full pl-9 pr-4 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+                    placeholder="Search name or case..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+                <Button className="w-full gap-2 bg-blue-600 hover:bg-blue-700 shadow-sm" onClick={() => setIsAddModalOpen(true)}>
+                    <Plus className="w-4 h-4" /> Add Patient
                 </Button>
-            )}
-        </div>
-      </div>
-
-      {/* 검색창 */}
-      <div className="p-3 border-b bg-white shrink-0">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400" />
-          <input 
-            className="w-full border rounded-lg pl-9 pr-3 py-2 text-sm bg-slate-50 focus:bg-white transition-all outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 placeholder:text-slate-400"
-            placeholder="Search name or case..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* 목록 */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {store.isLoading ? (
-          <div className="text-center text-slate-400 py-10 text-sm">Loading...</div>
-        ) : filteredPatients.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-slate-400 space-y-2">
-            <Search className="w-8 h-8 opacity-20" />
-            <span className="text-sm">{searchTerm ? "No results found." : "No patients yet."}</span>
-          </div>
-        ) : (
-          filteredPatients.map((patient) => (
-            <div
-              key={patient.id}
-              onClick={() => {
-                store.selectPatient(patient.id);
-                // 오버레이 모드라면 선택 시 닫아줌 (선택사항)
-                if (onClose) onClose();
-              }}
-              className={`
-                group flex items-center justify-between p-3 rounded-lg cursor-pointer border transition-all
-                ${store.selectedPatientId === patient.id 
-                  ? "bg-blue-50 border-blue-200 shadow-sm" 
-                  : "bg-white border-transparent hover:bg-slate-50 hover:border-slate-200"}
-              `}
-            >
-              <div className="flex items-center gap-3 overflow-hidden">
-                <div className={`
-                  w-9 h-9 rounded-full flex items-center justify-center shrink-0 border
-                  ${store.selectedPatientId === patient.id ? "bg-white border-blue-100 text-blue-600" : "bg-slate-50 border-slate-100 text-slate-400"}
-                `}>
-                  <User className="w-4 h-4" />
-                </div>
-                <div className="flex flex-col overflow-hidden">
-                  <span className="font-bold text-sm truncate text-slate-800">{patient.name}</span>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
-                    <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-medium">#{patient.case_number}</span>
-                    {(patient as any).clinic_name && (
-                      <span className="text-blue-600 flex items-center gap-0.5 truncate max-w-[80px]">
-                         <Hospital size={10} /> {(patient as any).clinic_name}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={(e) => openEditModal(e, patient)}
-                  className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                  title="Edit"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={(e) => handleDelete(e, patient.id, patient.name)}
-                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-                  title="Delete"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
             </div>
-          ))
+        )}
+
+        <div className="flex-1 overflow-y-auto p-2 space-y-2 relative">
+           {store.isLoading ? (
+               <div className="text-center p-10 text-slate-400 animate-pulse">Loading...</div>
+           ) : filteredPatients.length === 0 ? (
+               <div className="text-center p-10 text-slate-400 text-sm">
+                   {viewMode === 'active' ? "No patients found." : "Trash is empty."}
+               </div>
+           ) : (
+               filteredPatients.map((patient) => (
+                <div
+                    key={patient.id}
+                    onClick={() => viewMode === 'active' && store.selectPatient(patient.id)}
+                    className={cn(
+                    "group relative p-3 rounded-lg border transition-all hover:shadow-md cursor-pointer flex justify-between items-center",
+                    store.selectedPatientId === patient.id && viewMode === 'active'
+                        ? "bg-blue-50 border-blue-500 ring-1 ring-blue-500"
+                        : "bg-white border-slate-200 hover:border-blue-300",
+                    viewMode === 'trash' && "opacity-75 bg-slate-50"
+                    )}
+                >
+                    <div className="flex items-center gap-3 overflow-hidden">
+                        <div className={cn("w-10 h-10 rounded-full flex items-center justify-center shrink-0", viewMode === 'active' ? "bg-blue-100 text-blue-600" : "bg-red-100 text-red-500")}>
+                            {viewMode === 'active' ? <User className="w-5 h-5" /> : <Trash2 className="w-5 h-5"/>}
+                        </div>
+                        <div className="flex flex-col truncate">
+                            <span className="font-bold text-slate-800 truncate">{patient.name}</span>
+                            <span className="text-xs text-slate-500 truncate">#{patient.case_number}</span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                        {viewMode === 'active' ? (
+                            <>
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
+                                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(patient.id); }}
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </Button>
+                                <ChevronRight className="w-4 h-4 text-slate-300" />
+                            </>
+                        ) : (
+                            <>
+                                <Button size="sm" variant="outline" className="text-green-600 hover:bg-green-50 h-8 px-2" onClick={(e) => { e.stopPropagation(); store.restorePatient(patient.id); }} title="Restore">
+                                    <RotateCcw className="w-3.5 h-3.5 mr-1"/> Restore
+                                </Button>
+                                <Button size="sm" variant="destructive" className="h-8 px-2" onClick={(e) => { e.stopPropagation(); setConfirmHardDeleteId(patient.id); }} title="Delete Forever">
+                                    <X className="w-3.5 h-3.5"/>
+                                </Button>
+                            </>
+                        )}
+                    </div>
+                </div>
+               ))
+           )}
+        </div>
+
+        {confirmDeleteId && (
+            <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+                <div className="bg-white border-2 border-red-100 shadow-xl rounded-xl p-5 w-full max-w-[300px] text-center">
+                    <div className="w-12 h-12 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Trash2 className="w-6 h-6"/>
+                    </div>
+                    <h3 className="font-bold text-lg text-slate-800">Move to Trash?</h3>
+                    <p className="text-sm text-slate-500 mb-4">You can restore this patient later.</p>
+                    <div className="flex gap-2">
+                        <Button variant="outline" className="flex-1" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
+                        <Button variant="destructive" className="flex-1" onClick={handleSoftDelete} autoFocus>Delete (Enter)</Button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {confirmHardDeleteId && (
+            <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+                <div className="bg-white border-2 border-red-500 shadow-xl rounded-xl p-5 w-full max-w-[300px] text-center">
+                    <div className="w-12 h-12 bg-red-600 text-white rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+                        <AlertTriangle className="w-6 h-6"/>
+                    </div>
+                    <h3 className="font-bold text-lg text-red-600">Delete Forever?</h3>
+                    <p className="text-sm text-slate-500 mb-4">This action cannot be undone.</p>
+                    <div className="flex gap-2">
+                        <Button variant="outline" className="flex-1" onClick={() => setConfirmHardDeleteId(null)}>Cancel</Button>
+                        <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={handleHardDelete} autoFocus>Delete!</Button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {isAddModalOpen && (
+            <div className="absolute inset-0 z-50 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+                        <h3 className="font-bold">Add New Patient</h3>
+                        <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
+                    </div>
+                    <div className="p-4 space-y-3">
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 block mb-1">Patient Name</label>
+                            <input className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. John Doe" autoFocus value={newPatientName} onChange={e => setNewPatientName(e.target.value)} />
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 block mb-1">Case Number</label>
+                            <input className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. 2024-001" value={newCaseNumber} onChange={e => setNewCaseNumber(e.target.value)} />
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label>
+                            <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={newTotalSteps} onChange={e => setNewTotalSteps(Number(e.target.value))} />
+                        </div>
+                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700" onClick={handleAddPatient}>Create Case</Button>
+                    </div>
+                </div>
+            </div>
         )}
       </div>
-
-      {/* 모달 */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="px-4 py-3 border-b flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-lg">{isEditMode ? "Edit Patient" : "Add New Patient"}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Name</label>
-                <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. Kim" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Case Number</label>
-                <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 1221" value={caseNum} onChange={(e) => setCaseNum(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Clinic Name (Optional)</label>
-                <input className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. Seoul Dental" value={clinicName} onChange={(e) => setClinicName(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Total Steps</label>
-                <input type="number" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value={totalSteps} onChange={(e) => setTotalSteps(Number(e.target.value))} />
-              </div>
-            </div>
-            <div className="px-4 py-3 bg-slate-50 flex justify-end gap-2 border-t">
-              <Button variant="ghost" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">{isEditMode ? "Save Changes" : "Create Patient"}</Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-});
+    );
+  }
+);
 
 PatientSidebar.displayName = "PatientSidebar";
