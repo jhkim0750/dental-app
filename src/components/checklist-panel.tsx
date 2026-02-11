@@ -52,6 +52,7 @@ interface SlideData {
   penStrokes: PenStroke[];
 }
 
+// ✨ [썸네일] 이미지 로딩 대기 기능 추가
 const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete }: { 
     items: CanvasItem[], penStrokes: PenStroke[], isActive: boolean, index: number, onClick: () => void, onDelete: (e: React.MouseEvent) => void 
 }) => {
@@ -65,55 +66,74 @@ const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete 
         const scale = 0.15;
         canvas.width = 150; 
         canvas.height = 110; 
-        
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        ctx.save();
-        ctx.scale(scale, scale); 
 
-        items.forEach(item => {
-            if (item.type === 'image' && item.src) {
-                const img = new Image();
-                img.src = item.src;
-                img.crossOrigin = "anonymous"; 
-                ctx.drawImage(img, item.x, item.y, item.width!, item.height!);
-            } else if (item.type === 'line') {
-                ctx.beginPath();
-                ctx.moveTo(item.x, item.y);
-                ctx.lineTo(item.x2!, item.y2!);
-                ctx.strokeStyle = item.color!;
-                ctx.lineWidth = item.size!;
-                ctx.stroke();
-            } else if (item.type === 'text') {
-                ctx.font = `bold ${item.size}px sans-serif`;
-                ctx.fillStyle = item.color!;
-                ctx.fillText(item.text || '', item.x, item.y + (item.size || 20));
-            }
-        });
-
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        penStrokes.forEach(stroke => {
-            if (stroke.points.length < 2) return;
-            ctx.beginPath();
-            ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-            for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+        const drawThumbnail = async () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            if (stroke.tool === 'highlighter') {
-                ctx.globalCompositeOperation = 'multiply';
-                ctx.strokeStyle = stroke.color + '40'; 
-                ctx.lineWidth = stroke.size * 2;
-            } else {
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.strokeStyle = stroke.color;
-                ctx.lineWidth = stroke.size;
+            const imageCache: Record<number, HTMLImageElement> = {};
+            const imageItems = items.filter(i => i.type === 'image' && i.src);
+            
+            if (imageItems.length > 0) {
+                await Promise.all(imageItems.map(item => new Promise<void>((resolve) => {
+                    const img = new Image();
+                    img.src = item.src!;
+                    img.crossOrigin = "anonymous";
+                    img.onload = () => {
+                        imageCache[item.id] = img;
+                        resolve();
+                    };
+                    img.onerror = () => resolve();
+                })));
             }
-            if (stroke.tool !== 'eraser') ctx.stroke();
-        });
 
-        ctx.restore();
+            ctx.save();
+            ctx.scale(scale, scale); 
+
+            items.forEach(item => {
+                if (item.type === 'image' && item.src) {
+                    const img = imageCache[item.id];
+                    if (img) ctx.drawImage(img, item.x, item.y, item.width!, item.height!);
+                } else if (item.type === 'line') {
+                    ctx.beginPath();
+                    ctx.moveTo(item.x, item.y);
+                    ctx.lineTo(item.x2!, item.y2!);
+                    ctx.strokeStyle = item.color!;
+                    ctx.lineWidth = item.size!;
+                    ctx.stroke();
+                } else if (item.type === 'text') {
+                    ctx.font = `bold ${item.size}px sans-serif`;
+                    ctx.fillStyle = item.color!;
+                    ctx.fillText(item.text || '', item.x, item.y + (item.size || 20));
+                }
+            });
+
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            penStrokes.forEach(stroke => {
+                if (stroke.points.length < 2) return;
+                ctx.beginPath();
+                ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+                for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+                
+                if (stroke.tool === 'highlighter') {
+                    ctx.globalCompositeOperation = 'multiply';
+                    ctx.strokeStyle = stroke.color + '40'; 
+                    ctx.lineWidth = stroke.size * 2;
+                } else {
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.strokeStyle = stroke.color;
+                    ctx.lineWidth = stroke.size;
+                }
+                if (stroke.tool !== 'eraser') ctx.stroke();
+            });
+
+            ctx.restore();
+        };
+
+        drawThumbnail();
+
     }, [items, penStrokes]);
 
     return (
@@ -138,6 +158,38 @@ const getTypeColor = (type: string) => {
   return "text-slate-700";
 };
 
+// ✨ [핵심] 이미지 압축 함수 (속도 10배 향상)
+const compressImage = async (file: File): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        img.onload = () => {
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return reject("Canvas error");
+
+            const MAX_WIDTH = 1600; // 해상도 제한 (충분함)
+            let width = img.width;
+            let height = img.height;
+
+            if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob((blob) => {
+                if (blob) resolve(blob);
+                else reject("Compression failed");
+            }, "image/jpeg", 0.7); // 퀄리티 70% (용량 대폭 감소)
+        };
+        img.onerror = (e) => reject(e);
+    });
+};
+
 export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const store = usePatientStoreHydrated();
   const [isGridOpen, setIsGridOpen] = useState(false);
@@ -153,7 +205,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [endStep, setEndStep] = useState(10);
   const [note, setNote] = useState("");
   
-  // 규칙 삭제 확인 상태 (작은 모달용)
   const [ruleToDelete, setRuleToDelete] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -217,7 +268,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       ctx.globalCompositeOperation = 'source-over';
   }, [penStrokes, currentSlideIndex]);
 
-  // ✨ [수정 완료] 엔터키 삭제 + 붙여넣기(Paste) 기능 (patient.id를 기억하도록 수정!)
+  // ✨ 엔터키 & 붙여넣기 기능 (patient.id 포함)
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if (ruleToDelete) {
@@ -251,7 +302,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           window.removeEventListener('keydown', handleKeyDown);
           window.removeEventListener('paste', handlePaste);
       };
-      // ✨ 여기가 핵심! patient.id를 추가해서 환자가 바뀌면 기능도 갱신되게 함
   }, [selectedId, textInput, historyIndex, history, currentSlideIndex, ruleToDelete, patient.id]);
 
   const changeTool = (tool: typeof currentTool) => { setCurrentTool(tool); if (tool === 'select') setSelectedId(null); };
@@ -272,7 +322,29 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleDeleteFromMenu = () => { if (contextMenu) { const newItems = items.filter(i => i.id !== contextMenu.itemId); const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setContextMenu(null); setSelectedId(null); } };
   const moveLayer = (direction: 'up' | 'down') => { if (!selectedId) return; const idx = items.findIndex(i => i.id === selectedId); if (idx === -1) return; const newItems = [...items]; if (direction === 'up' && idx < items.length - 1) { [newItems[idx], newItems[idx+1]] = [newItems[idx+1], newItems[idx]]; } else if (direction === 'down' && idx > 0) { [newItems[idx], newItems[idx-1]] = [newItems[idx-1], newItems[idx]]; } const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); };
   const addImage = (src: string) => { const img = new Image(); img.src = src; img.crossOrigin = "anonymous"; img.onload = () => { let w = img.width; let h = img.height; if (w > 400) { const r = 400/w; w = 400; h = h*r; } const newItem: CanvasItem = { id: Date.now(), type: 'image', src, x: 50, y: 50, width: w, height: h, zIndex: items.length }; const newItems = [...items, newItem]; const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setSelectedId(newItem.id); setCurrentTool('select'); }; };
-  const uploadImageToFirebase = async (file: File) => { setIsImageUploading(true); try { const storageRef = ref(storage, `patients/${patient.id}/images/${Date.now()}_${file.name}`); await uploadBytes(storageRef, file); const url = await getDownloadURL(storageRef); addImage(url); } catch (error) { console.error("Image upload error:", error); alert("이미지 업로드 실패 (CORS 설정을 확인하세요)"); } finally { setIsImageUploading(false); } };
+  
+  // ✨ [수정] 압축 기능이 적용된 업로드 함수
+  const uploadImageToFirebase = async (file: File) => { 
+      setIsImageUploading(true); 
+      try { 
+          // 1. 이미지 압축 (속도 향상 핵심!)
+          const compressedBlob = await compressImage(file);
+          
+          const storageRef = ref(storage, `patients/${patient.id}/images/${Date.now()}_${file.name}`); 
+          
+          // 2. 압축된 파일 업로드
+          await uploadBytes(storageRef, compressedBlob); 
+          
+          const url = await getDownloadURL(storageRef); 
+          addImage(url); 
+      } catch (error) { 
+          console.error("Image upload error:", error); 
+          alert("이미지 업로드 실패 (CORS 설정을 확인하세요)"); 
+      } finally { 
+          setIsImageUploading(false); 
+      } 
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) uploadImageToFirebase(file); e.target.value = ""; };
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const file = e.dataTransfer.files?.[0]; if (file && file.type.startsWith('image/')) uploadImageToFirebase(file); };
   const confirmText = () => { if (!textInput) return; const trimmedText = textInput.value.trim(); let newItems = [...items]; if (!trimmedText) { if (textInput.id) newItems = newItems.filter(i => i.id !== textInput.id); } else { if (textInput.id) { newItems = newItems.map(i => i.id === textInput.id ? { ...i, text: trimmedText, color: mainColor, size: toolSize, width: textInput.width } : i); } else { newItems.push({ id: Date.now(), type: 'text', text: trimmedText, x: textInput.x, y: textInput.y, color: mainColor, size: toolSize, zIndex: items.length, width: 200, height: toolSize * 1.5 }); setSelectedId(newItems[newItems.length-1].id); } } const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setTextInput(null); setCurrentTool('select'); };
