@@ -3,7 +3,7 @@
 import React, { useState, forwardRef, useImperativeHandle, useEffect } from "react";
 import { usePatientStoreHydrated, Patient } from "@/hooks/use-patient-store";
 import { 
-  Search, Plus, User, Trash2, ChevronRight, X, AlertTriangle, RotateCcw, Archive 
+  Search, Plus, User, Trash2, ChevronRight, X, AlertTriangle, RotateCcw, Archive, Pencil
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,33 +22,42 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
     const [searchTerm, setSearchTerm] = useState("");
     
     const [viewMode, setViewMode] = useState<'active' | 'trash'>('active');
+    
+    // 삭제 관련 상태
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
     const [confirmHardDeleteId, setConfirmHardDeleteId] = useState<string | null>(null);
 
+    // 추가 모달 상태
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [newPatientName, setNewPatientName] = useState("");
     const [newCaseNumber, setNewCaseNumber] = useState("");
     const [newTotalSteps, setNewTotalSteps] = useState(21);
 
+    // ✨ [추가] 수정 모달 상태
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editId, setEditId] = useState<string | null>(null);
+    const [editName, setEditName] = useState("");
+    const [editCaseNumber, setEditCaseNumber] = useState("");
+    const [editTotalSteps, setEditTotalSteps] = useState(0);
+
     useImperativeHandle(ref, () => ({
       openAddModal: () => setIsAddModalOpen(true),
     }));
 
-    // ✨ [추가] 엔터키(Enter) 및 ESC 키 감지 (환자 삭제용)
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (confirmDeleteId) {
-                if (e.key === 'Enter') handleSoftDelete();
-                if (e.key === 'Escape') setConfirmDeleteId(null);
-            }
-            if (confirmHardDeleteId) {
-                if (e.key === 'Enter') handleHardDelete();
-                if (e.key === 'Escape') setConfirmHardDeleteId(null);
-            }
+            if (confirmDeleteId && e.key === 'Enter') handleSoftDelete();
+            if (confirmDeleteId && e.key === 'Escape') setConfirmDeleteId(null);
+            
+            if (confirmHardDeleteId && e.key === 'Enter') handleHardDelete();
+            if (confirmHardDeleteId && e.key === 'Escape') setConfirmHardDeleteId(null);
+            
+            if (isAddModalOpen && e.key === 'Escape') setIsAddModalOpen(false);
+            if (isEditModalOpen && e.key === 'Escape') setIsEditModalOpen(false);
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [confirmDeleteId, confirmHardDeleteId]);
+    }, [confirmDeleteId, confirmHardDeleteId, isAddModalOpen, isEditModalOpen]);
 
     if (!store) return null;
 
@@ -59,6 +68,7 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
       else return matchesSearch && p.isDeleted;
     });
 
+    // 환자 추가
     const handleAddPatient = async () => {
       if (!newPatientName || !newCaseNumber) return alert("Please fill in all fields");
       await store.addPatient(newPatientName, newCaseNumber, newTotalSteps);
@@ -66,6 +76,29 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
       setNewPatientName("");
       setNewCaseNumber("");
       setNewTotalSteps(21);
+    };
+
+    // ✨ [추가] 환자 수정 모달 열기
+    const openEditModal = (e: React.MouseEvent, patient: Patient) => {
+        e.stopPropagation(); // 리스트 클릭 방지
+        setEditId(patient.id);
+        setEditName(patient.name);
+        setEditCaseNumber(patient.case_number);
+        setEditTotalSteps(patient.total_steps || 21);
+        setIsEditModalOpen(true);
+    };
+
+    // ✨ [추가] 환자 수정 저장
+    const handleUpdatePatient = async () => {
+        if (editId) {
+            await store.updatePatient(editId, {
+                name: editName,
+                case_number: editCaseNumber,
+                total_steps: editTotalSteps
+            });
+            setIsEditModalOpen(false);
+            setEditId(null);
+        }
     };
 
     const handleSoftDelete = async () => {
@@ -84,6 +117,7 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
 
     return (
       <div className="flex flex-col h-full bg-white relative">
+        {/* 헤더 */}
         <div className="p-4 border-b shrink-0 flex items-center justify-between bg-slate-50">
            <div className="flex flex-col">
               <h2 className="font-bold text-lg flex items-center gap-2">
@@ -107,6 +141,7 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
            </div>
         </div>
 
+        {/* 검색 & 추가 버튼 */}
         {viewMode === 'active' && (
             <div className="p-3 border-b space-y-2 shrink-0 bg-white">
                 <div className="relative">
@@ -124,6 +159,7 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
             </div>
         )}
 
+        {/* 리스트 영역 */}
         <div className="flex-1 overflow-y-auto p-2 space-y-2 relative">
            {store.isLoading ? (
                <div className="text-center p-10 text-slate-400 animate-pulse">Loading...</div>
@@ -154,14 +190,27 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
                         </div>
                     </div>
 
+                    {/* 액션 버튼들 */}
                     <div className="flex items-center gap-1">
                         {viewMode === 'active' ? (
                             <>
+                                {/* ✨ 수정 버튼 (연필) */}
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-blue-500 transition-opacity"
+                                    onClick={(e) => openEditModal(e, patient)}
+                                    title="Edit Info"
+                                >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                {/* 삭제 버튼 */}
                                 <Button 
                                     variant="ghost" 
                                     size="icon" 
                                     className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
                                     onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(patient.id); }}
+                                    title="Move to Trash"
                                 >
                                     <Trash2 className="w-4 h-4" />
                                 </Button>
@@ -183,59 +232,68 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
            )}
         </div>
 
+        {/* 삭제 경고창들 (생략 가능하지만 안전을 위해 포함) */}
         {confirmDeleteId && (
-            <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-                <div className="bg-white border-2 border-red-100 shadow-xl rounded-xl p-5 w-full max-w-[300px] text-center">
+            <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={e => e.stopPropagation()}>
+                <div className="bg-white border-2 border-red-100 shadow-xl rounded-xl p-5 w-full max-w-[300px] text-center" onClick={e => e.stopPropagation()}>
                     <div className="w-12 h-12 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-3">
                         <Trash2 className="w-6 h-6"/>
                     </div>
                     <h3 className="font-bold text-lg text-slate-800">Move to Trash?</h3>
-                    <p className="text-sm text-slate-500 mb-4">You can restore this patient later.</p>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 mt-4">
                         <Button variant="outline" className="flex-1" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
-                        <Button variant="destructive" className="flex-1" onClick={handleSoftDelete} autoFocus>Delete (Enter)</Button>
+                        <Button variant="destructive" className="flex-1" onClick={handleSoftDelete}>Delete</Button>
                     </div>
                 </div>
             </div>
         )}
 
         {confirmHardDeleteId && (
-            <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-                <div className="bg-white border-2 border-red-500 shadow-xl rounded-xl p-5 w-full max-w-[300px] text-center">
+            <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={e => e.stopPropagation()}>
+                <div className="bg-white border-2 border-red-500 shadow-xl rounded-xl p-5 w-full max-w-[300px] text-center" onClick={e => e.stopPropagation()}>
                     <div className="w-12 h-12 bg-red-600 text-white rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
                         <AlertTriangle className="w-6 h-6"/>
                     </div>
                     <h3 className="font-bold text-lg text-red-600">Delete Forever?</h3>
-                    <p className="text-sm text-slate-500 mb-4">This action cannot be undone.</p>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 mt-4">
                         <Button variant="outline" className="flex-1" onClick={() => setConfirmHardDeleteId(null)}>Cancel</Button>
-                        <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={handleHardDelete} autoFocus>Delete!</Button>
+                        <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={handleHardDelete}>Delete!</Button>
                     </div>
                 </div>
             </div>
         )}
 
+        {/* 환자 추가 모달 */}
         {isAddModalOpen && (
-            <div className="absolute inset-0 z-50 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-in fade-in">
-                <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsAddModalOpen(false)}>
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
                     <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
-                        <h3 className="font-bold">Add New Patient</h3>
+                        <h3 className="font-bold text-lg">Add New Patient</h3>
                         <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
                     </div>
-                    <div className="p-4 space-y-3">
-                        <div>
-                            <label className="text-xs font-bold text-slate-500 block mb-1">Patient Name</label>
-                            <input className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. John Doe" autoFocus value={newPatientName} onChange={e => setNewPatientName(e.target.value)} />
-                        </div>
-                        <div>
-                            <label className="text-xs font-bold text-slate-500 block mb-1">Case Number</label>
-                            <input className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. 2024-001" value={newCaseNumber} onChange={e => setNewCaseNumber(e.target.value)} />
-                        </div>
-                        <div>
-                            <label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label>
-                            <input type="number" className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={newTotalSteps} onChange={e => setNewTotalSteps(Number(e.target.value))} />
-                        </div>
-                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700" onClick={handleAddPatient}>Create Case</Button>
+                    <div className="p-5 space-y-4">
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" placeholder="Name" autoFocus value={newPatientName} onChange={e => setNewPatientName(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" placeholder="Case Number" value={newCaseNumber} onChange={e => setNewCaseNumber(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded" value={newTotalSteps} onChange={e => setNewTotalSteps(Number(e.target.value))} /></div>
+                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-6 text-lg" onClick={handleAddPatient}>Create Case</Button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* ✨ [추가] 환자 수정 모달 */}
+        {isEditModalOpen && (
+            <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsEditModalOpen(false)}>
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+                    <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+                        <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Patient Info</h3>
+                        <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
+                    </div>
+                    <div className="p-5 space-y-4">
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" value={editName} onChange={e => setEditName(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={editCaseNumber} onChange={e => setEditCaseNumber(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded" value={editTotalSteps} onChange={e => setEditTotalSteps(Number(e.target.value))} /></div>
+                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-6 text-lg" onClick={handleUpdatePatient}>Save Changes</Button>
                     </div>
                 </div>
             </div>

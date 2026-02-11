@@ -31,7 +31,6 @@ export interface Patient {
   checklist_status: ChecklistStatus[];
   rules: Rule[];
   summary?: { image: string; memo: string };
-  // ✨ [추가] 휴지통 기능용 플래그
   isDeleted?: boolean; 
   deletedAt?: any;
 }
@@ -45,10 +44,12 @@ interface PatientStore {
   selectPatient: (id: string | null) => void;
   addPatient: (name: string, case_number: string, total_steps: number) => Promise<void>;
   
-  // ✨ [수정] 삭제 관련 기능 3단 분리
-  softDeletePatient: (id: string) => Promise<void>; // 휴지통으로
-  restorePatient: (id: string) => Promise<void>;    // 복구
-  hardDeletePatient: (id: string) => Promise<void>; // 영구 삭제
+  // ✨ [추가] 환자 정보 수정 (총 스텝 등)
+  updatePatient: (id: string, data: Partial<Patient>) => Promise<void>;
+
+  softDeletePatient: (id: string) => Promise<void>;
+  restorePatient: (id: string) => Promise<void>;
+  hardDeletePatient: (id: string) => Promise<void>;
 
   addRule: (patientId: string, rule: Omit<Rule, "id">) => Promise<void>;
   updateRule: (patientId: string, rule: Rule) => Promise<void>;
@@ -68,7 +69,6 @@ export const usePatientStore = create<PatientStore>()(
       fetchPatients: async () => {
         set({ isLoading: true });
         try {
-          // 생성일 역순(최신순)으로 정렬
           const q = query(collection(db, "patients"), orderBy("created_at", "desc"));
           const snapshot = await getDocs(q);
           const loadedPatients = snapshot.docs.map((doc) => ({
@@ -94,7 +94,7 @@ export const usePatientStore = create<PatientStore>()(
             created_at: Timestamp.now(),
             checklist_status: [],
             rules: [],
-            isDeleted: false // 생성 시 기본은 '삭제 안 됨'
+            isDeleted: false
           };
           const docRef = await addDoc(collection(db, "patients"), newPatient);
           const patientWithId = { id: docRef.id, ...newPatient } as Patient;
@@ -108,47 +108,40 @@ export const usePatientStore = create<PatientStore>()(
         }
       },
 
-      // ✨ [추가 1] 휴지통으로 보내기 (Soft Delete)
+      // ✨ [구현] 환자 정보 수정 기능
+      updatePatient: async (id, data) => {
+        try {
+            const patientRef = doc(db, "patients", id);
+            await updateDoc(patientRef, data);
+            set((state) => ({
+                patients: state.patients.map(p => p.id === id ? { ...p, ...data } : p)
+            }));
+        } catch (error) {
+            console.error("Error updating patient:", error);
+        }
+      },
+
       softDeletePatient: async (id) => {
         try {
           const patientRef = doc(db, "patients", id);
-          await updateDoc(patientRef, { 
-            isDeleted: true,
-            deletedAt: Timestamp.now()
-          });
-          
+          await updateDoc(patientRef, { isDeleted: true, deletedAt: Timestamp.now() });
           set((state) => ({
-            patients: state.patients.map(p => 
-              p.id === id ? { ...p, isDeleted: true, deletedAt: new Date() } : p
-            ),
-            // 만약 현재 보고 있던 환자라면 선택 해제
+            patients: state.patients.map(p => p.id === id ? { ...p, isDeleted: true, deletedAt: new Date() } : p),
             selectedPatientId: state.selectedPatientId === id ? null : state.selectedPatientId
           }));
-        } catch (error) {
-          console.error("Error moving to trash:", error);
-        }
+        } catch (error) { console.error("Error moving to trash:", error); }
       },
 
-      // ✨ [추가 2] 휴지통에서 복구하기 (Restore)
       restorePatient: async (id) => {
         try {
           const patientRef = doc(db, "patients", id);
-          await updateDoc(patientRef, { 
-            isDeleted: false,
-            deletedAt: null
-          });
-          
+          await updateDoc(patientRef, { isDeleted: false, deletedAt: null });
           set((state) => ({
-            patients: state.patients.map(p => 
-              p.id === id ? { ...p, isDeleted: false, deletedAt: null } : p
-            )
+            patients: state.patients.map(p => p.id === id ? { ...p, isDeleted: false, deletedAt: null } : p)
           }));
-        } catch (error) {
-          console.error("Error restoring patient:", error);
-        }
+        } catch (error) { console.error("Error restoring patient:", error); }
       },
 
-      // ✨ [추가 3] 영구 삭제 (Hard Delete - 기존 deletePatient)
       hardDeletePatient: async (id) => {
         try {
           await deleteDoc(doc(db, "patients", id));
@@ -156,12 +149,9 @@ export const usePatientStore = create<PatientStore>()(
             patients: state.patients.filter((p) => p.id !== id),
             selectedPatientId: state.selectedPatientId === id ? null : state.selectedPatientId,
           }));
-        } catch (error) {
-          console.error("Error deleting patient permanently:", error);
-        }
+        } catch (error) { console.error("Error deleting patient permanently:", error); }
       },
 
-      // --- 이하 기존 Rule 및 체크리스트 로직 유지 ---
       addRule: async (patientId, ruleData) => {
         const newRule = { ...ruleData, id: Date.now().toString() };
         const state = get();
@@ -221,10 +211,8 @@ export const usePatientStore = create<PatientStore>()(
         );
 
         if (allChecked) {
-          // Uncheck all
           newStatus = newStatus.map(s => (s.step === step ? { ...s, checked: false } : s));
         } else {
-          // Check all
           rulesInStep.forEach(r => {
              const idx = newStatus.findIndex(s => s.step === step && s.ruleId === r.id);
              if (idx >= 0) newStatus[idx].checked = true;
@@ -250,7 +238,6 @@ export const usePatientStore = create<PatientStore>()(
   )
 );
 
-// 컴포넌트에서 쓸 때는 hydration 문제 방지용 훅 사용
 import { useState, useEffect } from "react";
 export function usePatientStoreHydrated() {
   const [hydrated, setHydrated] = useState(false);

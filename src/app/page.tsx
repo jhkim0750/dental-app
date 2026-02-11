@@ -6,38 +6,35 @@ import { usePatientStoreHydrated } from "@/hooks/use-patient-store";
 import { ChecklistPanel } from "@/components/checklist-panel";
 import { PatientSidebar, PatientSidebarHandle } from "@/components/patient-sidebar";
 import { Button } from "@/components/ui/button";
-import { FolderOpen, Home, UserPlus, Loader2 } from "lucide-react";
+import { FolderOpen, Home, UserPlus, Loader2, Pencil, X } from "lucide-react";
 
 function PatientDashboard() {
   const store = usePatientStoreHydrated();
   const searchParams = useSearchParams();
   const sidebarRef = useRef<PatientSidebarHandle>(null);
-  
-  // ✨ [추가] "이미 데이터 가져왔음"을 표시하는 깃발(Ref)
   const isFetched = useRef(false);
   
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
+  
+  // 환자 정보 수정 모달 상태
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editCaseNumber, setEditCaseNumber] = useState("");
+  const [editTotalSteps, setEditTotalSteps] = useState(0);
 
-  // ✨ [수정] 깃발(isFetched)을 확인해서 딱 한 번만 실행하게 만듦!
   useEffect(() => {
-    // 1. 스토어가 준비되었고(store exists)
-    // 2. 아직 데이터를 안 가져왔다면(!isFetched.current)
     if (store && !isFetched.current) {
         store.fetchPatients();
-        isFetched.current = true; // "가져왔음!" 하고 깃발 꽂기
+        isFetched.current = true;
     }
   }, [store]);
 
-  // URL로 환자 선택하는 부분
   useEffect(() => {
     if (!store || store.patients.length === 0) return;
     const paramId = searchParams.get("patientId");
-    if (paramId) {
-      store.selectPatient(paramId); 
-    }
+    if (paramId) store.selectPatient(paramId); 
   }, [searchParams, store]); 
 
-  // 로딩 중 표시
   if (!store) {
     return (
         <div className="flex h-screen w-screen items-center justify-center bg-white">
@@ -55,6 +52,27 @@ function PatientDashboard() {
     if (sidebarRef.current) sidebarRef.current.openAddModal();
   };
 
+  // 수정 버튼 클릭
+  const openEditModal = () => {
+      if (activePatient) {
+          setEditName(activePatient.name);
+          setEditCaseNumber(activePatient.case_number);
+          setEditTotalSteps(activePatient.total_steps || 21);
+          setIsEditModalOpen(true);
+      }
+  };
+
+  // 수정 저장
+  const handleUpdatePatient = async () => {
+      if (!activePatient) return;
+      await store.updatePatient(activePatient.id, {
+          name: editName,
+          case_number: editCaseNumber,
+          total_steps: editTotalSteps
+      });
+      setIsEditModalOpen(false);
+  };
+
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden">
       {!activePatient && (
@@ -69,9 +87,11 @@ function PatientDashboard() {
               <div className="flex flex-col">
                 <h1 className="text-xl font-extrabold text-blue-600 tracking-tight">Dental Work Note</h1>
                 {activePatient ? (
-                   <div className="flex items-center gap-2 text-sm text-slate-500">
+                   // ✨ 여기 아이콘을 Pencil(연필)로 변경
+                   <div className="flex items-center gap-2 text-sm text-slate-500 group cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors" onClick={openEditModal} title="Click to Edit Info">
                      <span className="font-bold text-slate-800">{activePatient.name}</span>
                      <span>(#{activePatient.case_number})</span>
+                     <Pencil className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors" />
                    </div>
                 ) : (
                    <span className="text-xs text-slate-400">Select or create a patient</span>
@@ -95,7 +115,7 @@ function PatientDashboard() {
 
           <main className="flex-1 overflow-hidden relative bg-slate-100">
             {activePatient ? (
-              <ChecklistPanel patient={activePatient} />
+              <ChecklistPanel key={activePatient.id} patient={activePatient} />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center p-10 space-y-6">
                 <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm border border-slate-100">
@@ -113,12 +133,31 @@ function PatientDashboard() {
             )}
           </main>
 
+          {/* 환자 리스트 오버레이 */}
           {activePatient && isOverlayOpen && (
             <div className="absolute inset-0 z-50 flex">
               <div className="absolute inset-0 bg-black/50" onClick={() => setIsOverlayOpen(false)} />
               <div className="relative w-[340px] h-full bg-white shadow-xl flex flex-col animate-in slide-in-from-left">
                 <PatientSidebar onClose={() => setIsOverlayOpen(false)} />
               </div>
+            </div>
+          )}
+
+          {/* 헤더에서 띄우는 수정 모달 */}
+          {isEditModalOpen && (
+            <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsEditModalOpen(false)}>
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                    <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+                        <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Patient Info</h3>
+                        <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
+                    </div>
+                    <div className="p-5 space-y-4">
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" value={editName} onChange={e => setEditName(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={editCaseNumber} onChange={e => setEditCaseNumber(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded" value={editTotalSteps} onChange={e => setEditTotalSteps(Number(e.target.value))} /></div>
+                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-6 text-lg" onClick={handleUpdatePatient}>Save Changes</Button>
+                    </div>
+                </div>
             </div>
           )}
       </div>

@@ -6,7 +6,7 @@ import {
   CheckCheck, Plus, Trash2, Pencil, Save, Layout, FileImage, 
   Type, Eraser, PenTool, Minus, Undo, Redo, CheckSquare,
   Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter,
-  Loader2
+  Loader2, Square, Circle, Triangle, Palette, Copy, Clipboard
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -20,8 +20,7 @@ interface ChecklistPanelProps {
   patient: any;
 }
 
-// --- 타입 정의 ---
-type ItemType = 'image' | 'text' | 'line';
+type ItemType = 'image' | 'text' | 'line' | 'rect' | 'circle' | 'triangle';
 
 interface CanvasItem {
   id: number;
@@ -29,14 +28,17 @@ interface CanvasItem {
   x: number;
   y: number;
   zIndex: number;
-  color?: string;
-  size?: number; 
-  src?: string;
   width?: number;
   height?: number;
   text?: string;
-  x2?: number;
+  x2?: number; 
   y2?: number;
+  strokeColor?: string; 
+  fillColor?: string;   
+  strokeWidth?: number; 
+  color?: string; 
+  size?: number;
+  src?: string;
 }
 
 interface PenStroke {
@@ -52,7 +54,6 @@ interface SlideData {
   penStrokes: PenStroke[];
 }
 
-// ✨ [썸네일] 이미지 로딩 대기 기능 추가
 const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete }: { 
     items: CanvasItem[], penStrokes: PenStroke[], isActive: boolean, index: number, onClick: () => void, onDelete: (e: React.MouseEvent) => void 
 }) => {
@@ -80,10 +81,7 @@ const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete 
                     const img = new Image();
                     img.src = item.src!;
                     img.crossOrigin = "anonymous";
-                    img.onload = () => {
-                        imageCache[item.id] = img;
-                        resolve();
-                    };
+                    img.onload = () => { imageCache[item.id] = img; resolve(); };
                     img.onerror = () => resolve();
                 })));
             }
@@ -92,6 +90,10 @@ const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete 
             ctx.scale(scale, scale); 
 
             items.forEach(item => {
+                ctx.lineWidth = item.strokeWidth || item.size || 2;
+                ctx.strokeStyle = item.strokeColor || item.color || "#000";
+                ctx.fillStyle = item.fillColor || "transparent";
+
                 if (item.type === 'image' && item.src) {
                     const img = imageCache[item.id];
                     if (img) ctx.drawImage(img, item.x, item.y, item.width!, item.height!);
@@ -99,13 +101,29 @@ const SlideThumbnail = ({ items, penStrokes, isActive, index, onClick, onDelete 
                     ctx.beginPath();
                     ctx.moveTo(item.x, item.y);
                     ctx.lineTo(item.x2!, item.y2!);
-                    ctx.strokeStyle = item.color!;
-                    ctx.lineWidth = item.size!;
                     ctx.stroke();
                 } else if (item.type === 'text') {
-                    ctx.font = `bold ${item.size}px sans-serif`;
-                    ctx.fillStyle = item.color!;
+                    ctx.font = `bold ${item.size || 20}px sans-serif`;
+                    ctx.fillStyle = item.color || "#000";
                     ctx.fillText(item.text || '', item.x, item.y + (item.size || 20));
+                } else if (item.type === 'rect') {
+                    ctx.beginPath();
+                    ctx.rect(item.x, item.y, item.width!, item.height!);
+                    if (item.fillColor && item.fillColor !== 'transparent') ctx.fill();
+                    ctx.stroke();
+                } else if (item.type === 'circle') {
+                    ctx.beginPath();
+                    ctx.ellipse(item.x + item.width!/2, item.y + item.height!/2, Math.abs(item.width!)/2, Math.abs(item.height!)/2, 0, 0, 2 * Math.PI);
+                    if (item.fillColor && item.fillColor !== 'transparent') ctx.fill();
+                    ctx.stroke();
+                } else if (item.type === 'triangle') {
+                    ctx.beginPath();
+                    ctx.moveTo(item.x + item.width! / 2, item.y); 
+                    ctx.lineTo(item.x, item.y + item.height!);   
+                    ctx.lineTo(item.x + item.width!, item.y + item.height!); 
+                    ctx.closePath();
+                    if (item.fillColor && item.fillColor !== 'transparent') ctx.fill();
+                    ctx.stroke();
                 }
             });
 
@@ -158,35 +176,16 @@ const getTypeColor = (type: string) => {
   return "text-slate-700";
 };
 
-// ✨ [핵심] 이미지 압축 함수 (속도 10배 향상)
 const compressImage = async (file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.src = URL.createObjectURL(file);
+        const img = new Image(); img.src = URL.createObjectURL(file);
         img.onload = () => {
-            const canvas = document.createElement("canvas");
-            const ctx = canvas.getContext("2d");
-            if (!ctx) return reject("Canvas error");
-
-            const MAX_WIDTH = 1600; // 해상도 제한 (충분함)
-            let width = img.width;
-            let height = img.height;
-
-            if (width > MAX_WIDTH) {
-                height *= MAX_WIDTH / width;
-                width = MAX_WIDTH;
-            }
-
-            canvas.width = width;
-            canvas.height = height;
-            ctx.drawImage(img, 0, 0, width, height);
-
-            canvas.toBlob((blob) => {
-                if (blob) resolve(blob);
-                else reject("Compression failed");
-            }, "image/jpeg", 0.7); // 퀄리티 70% (용량 대폭 감소)
-        };
-        img.onerror = (e) => reject(e);
+            const canvas = document.createElement("canvas"); const ctx = canvas.getContext("2d"); if (!ctx) return reject("Canvas error");
+            const MAX_WIDTH = 1600; let width = img.width; let height = img.height;
+            if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+            canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob((blob) => { if (blob) resolve(blob); else reject("Compression failed"); }, "image/jpeg", 0.7);
+        }; img.onerror = (e) => reject(e);
     });
 };
 
@@ -196,7 +195,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [pageStartStep, setPageStartStep] = useState(0);
   const [isImageUploading, setIsImageUploading] = useState(false);
 
-  // --- Rule 입력 상태 ---
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState("BOS");
   const [customType, setCustomType] = useState("");
@@ -204,7 +202,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [startStep, setStartStep] = useState(1);
   const [endStep, setEndStep] = useState(10);
   const [note, setNote] = useState("");
-  
   const [ruleToDelete, setRuleToDelete] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -213,152 +210,553 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   const [slides, setSlides] = useState<SlideData[]>([{ id: 1, items: [], penStrokes: [] }]);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-
   const currentSlide = slides[currentSlideIndex] || { items: [], penStrokes: [] };
   const items = currentSlide.items || [];
   const penStrokes = currentSlide.penStrokes || [];
 
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]); 
+  const [clipboard, setClipboard] = useState<CanvasItem[]>([]);
+  
+  const [selectionBox, setSelectionBox] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
+
   const [history, setHistory] = useState<SlideData[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
-  const [currentTool, setCurrentTool] = useState<"select" | "draw" | "line" | "eraser" | "text" | "highlighter">("select");
+  const [currentTool, setCurrentTool] = useState<"select" | "draw" | "line" | "eraser" | "text" | "highlighter" | "rect" | "circle" | "triangle">("select");
   
-  const [toolSettings, setToolSettings] = useState({
-      draw: { color: "#000000", size: 3 },
-      line: { color: "#000000", size: 3 },
-      text: { color: "#000000", size: 20 },
-      highlighter: { color: "#FFFF00", size: 15 }, 
-      eraser: { color: "#ffffff", size: 20 },
-      select: { color: "#000000", size: 0 } 
+  const [styleSettings, setStyleSettings] = useState({
+      strokeColor: "#000000",
+      fillColor: "transparent",
+      strokeWidth: 3,
+      fontSize: 20
   });
 
-  const activeSettingKey = currentTool === 'select' ? 'draw' : currentTool;
-  const mainColor = toolSettings[activeSettingKey]?.color || "#000000";
-  const toolSize = toolSettings[activeSettingKey]?.size || 20;
+  const [dragState, setDragState] = useState<{ 
+      isDragging: boolean; 
+      action: "move" | "resize" | "draw_pen" | "draw_line" | "draw_shape" | "box_select" | null; 
+      resizeHandle?: string; 
+      startX: number; 
+      startY: number; 
+      offsetX: number; 
+      offsetY: number; 
+      initialItem?: CanvasItem;
+      initialItemsMap?: Record<number, { x: number, y: number }>;
+      lockedAxis?: 'x' | 'y' | null;
+      isCloning?: boolean;
+  }>({ isDragging: false, action: null, startX: 0, startY: 0, offsetX: 0, offsetY: 0 });
 
-  const [dragState, setDragState] = useState<{ isDragging: boolean; action: "move" | "resize" | "draw_pen" | "draw_line" | null; resizeHandle?: string; startX: number; startY: number; offsetX: number; offsetY: number; initialItem?: CanvasItem; }>({ isDragging: false, action: null, startX: 0, startY: 0, offsetX: 0, offsetY: 0 });
   const [textInput, setTextInput] = useState<{id?: number, x: number, y: number, value: string, width?: number} | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, itemId: number } | null>(null);
 
   const totalSteps = patient.total_steps || 21;
 
-  useEffect(() => {
-    setPageStartStep(0);
-    const canvas = canvasRef.current;
-    if (canvas) { canvas.width = canvas.parentElement?.offsetWidth || 800; canvas.height = canvas.parentElement?.offsetHeight || 600; }
-    if (patient.summary && patient.summary.memo && patient.summary.memo.startsWith('{')) {
-       try {
-           const savedData = JSON.parse(patient.summary.memo);
-           if (savedData.slides) { setSlides(savedData.slides); setHistory([savedData.slides]); setHistoryIndex(0); }
-       } catch (e) { console.error("JSON Error", e); }
-    }
-  }, [patient.id]);
-
-  useEffect(() => {
-      const canvas = canvasRef.current; const ctx = canvas?.getContext("2d"); if (!canvas || !ctx) return;
-      ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      penStrokes.forEach(stroke => {
-          if (stroke.points.length < 2) return;
-          ctx.beginPath(); ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-          for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-          if (stroke.tool === 'eraser') { ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = stroke.size; ctx.strokeStyle = 'rgba(0,0,0,1)'; } else if (stroke.tool === 'highlighter') { ctx.globalCompositeOperation = 'multiply'; ctx.strokeStyle = stroke.color + '40'; ctx.lineWidth = stroke.size * 2; } else { ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = stroke.color; ctx.lineWidth = stroke.size; }
-          ctx.stroke();
-      });
-      ctx.globalCompositeOperation = 'source-over';
-  }, [penStrokes, currentSlideIndex]);
-
-  // ✨ 엔터키 & 붙여넣기 기능 (patient.id 포함)
-  useEffect(() => {
-      const handleKeyDown = (e: KeyboardEvent) => {
-          if (ruleToDelete) {
-              if (e.key === 'Enter') confirmDeleteRule();
-              if (e.key === 'Escape') setRuleToDelete(null);
-              return;
+  useEffect(() => { setPageStartStep(0); const canvas = canvasRef.current; if (canvas) { canvas.width = canvas.parentElement?.offsetWidth || 800; canvas.height = canvas.parentElement?.offsetHeight || 600; } if (patient.summary && patient.summary.memo && patient.summary.memo.startsWith('{')) { try { const savedData = JSON.parse(patient.summary.memo); if (savedData.slides) { setSlides(savedData.slides); setHistory([savedData.slides]); setHistoryIndex(0); } } catch (e) { console.error("JSON Error", e); } } }, [patient.id]);
+  useEffect(() => { const canvas = canvasRef.current; const ctx = canvas?.getContext("2d"); if (!canvas || !ctx) return; ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; penStrokes.forEach(stroke => { if (stroke.points.length < 2) return; ctx.beginPath(); ctx.moveTo(stroke.points[0].x, stroke.points[0].y); for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y); if (stroke.tool === 'eraser') { ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = stroke.size; ctx.strokeStyle = 'rgba(0,0,0,1)'; } else if (stroke.tool === 'highlighter') { ctx.globalCompositeOperation = 'multiply'; ctx.strokeStyle = stroke.color + '40'; ctx.lineWidth = stroke.size * 2; } else { ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = stroke.color; ctx.lineWidth = stroke.size; } ctx.stroke(); }); ctx.globalCompositeOperation = 'source-over'; }, [penStrokes, currentSlideIndex]);
+  
+  // 키보드 & 붙여넣기 이벤트
+  useEffect(() => { 
+      const handleKeyDown = (e: KeyboardEvent) => { 
+          if (textInput) return; 
+          
+          if (ruleToDelete) { 
+              if (e.key === 'Enter') confirmDeleteRule(); 
+              if (e.key === 'Escape') setRuleToDelete(null); 
+              return; 
+          } 
+          
+          // 삭제
+          if (e.key === 'Delete') deleteSelectedItems(); 
+          
+          // Ctrl + C (복사)
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+              e.preventDefault();
+              handleCopy();
           }
-          if (textInput) return;
-          if (e.key === 'Delete') deleteSelectedItem();
-          if ((e.ctrlKey || e.metaKey)) {
-              if (e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) handleRedo(); else handleUndo(); }
-              else if (e.key.toLowerCase() === 'y') { e.preventDefault(); handleRedo(); }
+          // Ctrl + V (붙여넣기)
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+              e.preventDefault();
+              handlePaste();
           }
-      };
-
-      const handlePaste = (e: ClipboardEvent) => {
-          const clipboardItems = e.clipboardData?.items;
-          if (!clipboardItems) return;
-          for (let i = 0; i < clipboardItems.length; i++) {
-              if (clipboardItems[i].type.indexOf("image") !== -1) {
-                  const blob = clipboardItems[i].getAsFile();
-                  if (blob) uploadImageToFirebase(blob);
-              }
+          // Ctrl + D (Duplicate)
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+              e.preventDefault();
+              handleDuplicate();
           }
-      };
 
-      window.addEventListener('keydown', handleKeyDown);
-      window.addEventListener('paste', handlePaste);
+          // 방향키 이동
+          if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+              e.preventDefault();
+              const step = e.shiftKey ? 10 : 1; 
+              let dx = 0, dy = 0;
+              if (e.key === 'ArrowUp') dy = -step;
+              if (e.key === 'ArrowDown') dy = step;
+              if (e.key === 'ArrowLeft') dx = -step;
+              if (e.key === 'ArrowRight') dx = step;
+              moveSelectedItems(dx, dy);
+          }
 
-      return () => {
-          window.removeEventListener('keydown', handleKeyDown);
-          window.removeEventListener('paste', handlePaste);
-      };
-  }, [selectedId, textInput, historyIndex, history, currentSlideIndex, ruleToDelete, patient.id]);
+          // 실행 취소/다시 실행
+          if ((e.ctrlKey || e.metaKey)) { 
+              if (e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) handleRedo(); else handleUndo(); } 
+              else if (e.key.toLowerCase() === 'y') { e.preventDefault(); handleRedo(); } 
+          } 
+      }; 
+      const handlePasteEvent = (e: ClipboardEvent) => { 
+          const clipboardItems = e.clipboardData?.items; 
+          if (!clipboardItems) return; 
+          for (let i = 0; i < clipboardItems.length; i++) { 
+              if (clipboardItems[i].type.indexOf("image") !== -1) { 
+                  const blob = clipboardItems[i].getAsFile(); 
+                  if (blob) uploadImageToFirebase(blob); 
+              } 
+          } 
+      }; 
+      window.addEventListener('keydown', handleKeyDown); 
+      window.addEventListener('paste', handlePasteEvent); 
+      return () => { 
+          window.removeEventListener('keydown', handleKeyDown); 
+          window.removeEventListener('paste', handlePasteEvent); 
+      }; 
+  }, [selectedIds, textInput, historyIndex, history, currentSlideIndex, ruleToDelete, patient.id, clipboard]);
 
-  const changeTool = (tool: typeof currentTool) => { setCurrentTool(tool); if (tool === 'select') setSelectedId(null); };
-  const handleConfigChange = (key: 'color' | 'size', value: string | number) => {
-      const targetTool = currentTool === 'select' ? 'draw' : currentTool;
-      setToolSettings(prev => ({ ...prev, [targetTool]: { ...prev[targetTool as keyof typeof prev], [key]: value } }));
-      if (selectedId) { const newItems = items.map(item => item.id === selectedId ? { ...item, [key]: value } : item); updateCurrentSlide(newItems, penStrokes); }
+  const changeTool = (tool: typeof currentTool) => { setCurrentTool(tool); if (tool === 'select') setSelectedIds([]); };
+  
+  const handleStyleChange = (key: keyof typeof styleSettings, value: string | number) => {
+      setStyleSettings(prev => ({ ...prev, [key]: value }));
+      if (selectedIds.length > 0) {
+          const newItems = items.map(item => {
+              if (!selectedIds.includes(item.id)) return item; 
+              const updates: any = { [key]: value };
+              if (key === 'strokeColor') updates.color = value;
+              if (key === 'strokeWidth') updates.size = value;
+              if (key === 'fontSize') updates.size = value;
+              return { ...item, ...updates };
+          });
+          updateCurrentSlide(newItems, penStrokes);
+      }
   };
-  const updateCurrentSlide = (newItems: CanvasItem[], newStrokes: PenStroke[]) => { const newSlides = [...slides]; newSlides[currentSlideIndex] = { ...newSlides[currentSlideIndex], items: newItems, penStrokes: newStrokes }; setSlides(newSlides); return newSlides; };
+
+  const updateCurrentSlide = (newItems: CanvasItem[], newStrokes: PenStroke[]) => { 
+      setSlides(prev => {
+          const newSlides = [...prev];
+          newSlides[currentSlideIndex] = {
+              ...newSlides[currentSlideIndex],
+              items: newItems,
+              penStrokes: newStrokes
+          };
+          return newSlides;
+      });
+      return newItems;
+  };
+
   const recordHistory = (newSlides?: SlideData[]) => { const stateToSave = newSlides || slides; const newHistory = history.slice(0, historyIndex + 1); newHistory.push(JSON.parse(JSON.stringify(stateToSave))); setHistory(newHistory); setHistoryIndex(newHistory.length - 1); };
-  const handleUndo = () => { if (historyIndex > 0) { const prevIndex = historyIndex - 1; setSlides(history[prevIndex]); setHistoryIndex(prevIndex); setSelectedId(null); } };
-  const handleRedo = () => { if (historyIndex < history.length - 1) { const nextIndex = historyIndex + 1; setSlides(history[nextIndex]); setHistoryIndex(nextIndex); setSelectedId(null); } };
+  const handleUndo = () => { if (historyIndex > 0) { const prevIndex = historyIndex - 1; setSlides(history[prevIndex]); setHistoryIndex(prevIndex); setSelectedIds([]); } };
+  const handleRedo = () => { if (historyIndex < history.length - 1) { const nextIndex = historyIndex + 1; setSlides(history[nextIndex]); setHistoryIndex(nextIndex); setSelectedIds([]); } };
   const addSlide = () => { const newSlides = [...slides, { id: Date.now(), items: [], penStrokes: [] }]; setSlides(newSlides); setCurrentSlideIndex(newSlides.length - 1); recordHistory(newSlides); };
   const deleteSlide = (index: number) => { if (slides.length <= 1) return; if (confirm("Delete this slide?")) { const newSlides = slides.filter((_, i) => i !== index); setSlides(newSlides); setCurrentSlideIndex(prev => Math.min(prev, newSlides.length - 1)); recordHistory(newSlides); } };
-  const clearAll = () => { if(confirm("Clear current slide?")) { const newSlides = updateCurrentSlide([], []); recordHistory(newSlides); } };
-  const clearPenLayer = () => { const newSlides = updateCurrentSlide(items, []); recordHistory(newSlides); };
-  const deleteSelectedItem = () => { if (selectedId) { const newItems = items.filter(i => i.id !== selectedId); const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setSelectedId(null); } };
-  const handleDeleteFromMenu = () => { if (contextMenu) { const newItems = items.filter(i => i.id !== contextMenu.itemId); const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setContextMenu(null); setSelectedId(null); } };
-  const moveLayer = (direction: 'up' | 'down') => { if (!selectedId) return; const idx = items.findIndex(i => i.id === selectedId); if (idx === -1) return; const newItems = [...items]; if (direction === 'up' && idx < items.length - 1) { [newItems[idx], newItems[idx+1]] = [newItems[idx+1], newItems[idx]]; } else if (direction === 'down' && idx > 0) { [newItems[idx], newItems[idx-1]] = [newItems[idx-1], newItems[idx]]; } const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); };
-  const addImage = (src: string) => { const img = new Image(); img.src = src; img.crossOrigin = "anonymous"; img.onload = () => { let w = img.width; let h = img.height; if (w > 400) { const r = 400/w; w = 400; h = h*r; } const newItem: CanvasItem = { id: Date.now(), type: 'image', src, x: 50, y: 50, width: w, height: h, zIndex: items.length }; const newItems = [...items, newItem]; const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setSelectedId(newItem.id); setCurrentTool('select'); }; };
+  const clearAll = () => { if(confirm("Clear current slide?")) { updateCurrentSlide([], []); recordHistory(); } };
+  const clearPenLayer = () => { updateCurrentSlide(items, []); recordHistory(); };
   
-  // ✨ [수정] 압축 기능이 적용된 업로드 함수
-  const uploadImageToFirebase = async (file: File) => { 
-      setIsImageUploading(true); 
-      try { 
-          // 1. 이미지 압축 (속도 향상 핵심!)
-          const compressedBlob = await compressImage(file);
-          
-          const storageRef = ref(storage, `patients/${patient.id}/images/${Date.now()}_${file.name}`); 
-          
-          // 2. 압축된 파일 업로드
-          await uploadBytes(storageRef, compressedBlob); 
-          
-          const url = await getDownloadURL(storageRef); 
-          addImage(url); 
-      } catch (error) { 
-          console.error("Image upload error:", error); 
-          alert("이미지 업로드 실패 (CORS 설정을 확인하세요)"); 
-      } finally { 
-          setIsImageUploading(false); 
+  const deleteSelectedItems = () => { 
+      if (selectedIds.length > 0) { 
+          const newItems = items.filter(i => !selectedIds.includes(i.id)); 
+          updateCurrentSlide(newItems, penStrokes); 
+          recordHistory(); 
+          setSelectedIds([]); 
       } 
   };
+  
+  const handleDeleteFromMenu = () => { 
+      if (contextMenu) { 
+          const newItems = items.filter(i => i.id !== contextMenu.itemId); 
+          updateCurrentSlide(newItems, penStrokes); 
+          recordHistory(); 
+          setContextMenu(null); 
+          setSelectedIds([]); 
+      } 
+  };
+  
+  const moveLayer = (direction: 'up' | 'down') => { 
+      if (selectedIds.length === 0) return; 
+      const lastSelectedId = selectedIds[selectedIds.length - 1];
+      const idx = items.findIndex(i => i.id === lastSelectedId); 
+      if (idx === -1) return; 
+      const newItems = [...items]; 
+      if (direction === 'up' && idx < items.length - 1) { [newItems[idx], newItems[idx+1]] = [newItems[idx+1], newItems[idx]]; } 
+      else if (direction === 'down' && idx > 0) { [newItems[idx], newItems[idx-1]] = [newItems[idx-1], newItems[idx]]; } 
+      updateCurrentSlide(newItems, penStrokes); 
+      recordHistory(); 
+  };
 
+  const addImage = (src: string) => { const img = new Image(); img.src = src; img.crossOrigin = "anonymous"; img.onload = () => { let w = img.width; let h = img.height; if (w > 400) { const r = 400/w; w = 400; h = h*r; } const newItem: CanvasItem = { id: Date.now(), type: 'image', src, x: 50, y: 50, width: w, height: h, zIndex: items.length }; const newItems = [...items, newItem]; updateCurrentSlide(newItems, penStrokes); recordHistory(); setSelectedIds([newItem.id]); setCurrentTool('select'); }; };
+  const uploadImageToFirebase = async (file: File) => { setIsImageUploading(true); try { const compressedBlob = await compressImage(file); const storageRef = ref(storage, `patients/${patient.id}/images/${Date.now()}_${file.name}`); await uploadBytes(storageRef, compressedBlob); const url = await getDownloadURL(storageRef); addImage(url); } catch (error) { console.error("Image upload error:", error); alert("이미지 업로드 실패 (CORS 설정을 확인하세요)"); } finally { setIsImageUploading(false); } };
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) uploadImageToFirebase(file); e.target.value = ""; };
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const file = e.dataTransfer.files?.[0]; if (file && file.type.startsWith('image/')) uploadImageToFirebase(file); };
-  const confirmText = () => { if (!textInput) return; const trimmedText = textInput.value.trim(); let newItems = [...items]; if (!trimmedText) { if (textInput.id) newItems = newItems.filter(i => i.id !== textInput.id); } else { if (textInput.id) { newItems = newItems.map(i => i.id === textInput.id ? { ...i, text: trimmedText, color: mainColor, size: toolSize, width: textInput.width } : i); } else { newItems.push({ id: Date.now(), type: 'text', text: trimmedText, x: textInput.x, y: textInput.y, color: mainColor, size: toolSize, zIndex: items.length, width: 200, height: toolSize * 1.5 }); setSelectedId(newItems[newItems.length-1].id); } } const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setTextInput(null); setCurrentTool('select'); };
-  const handleTextDoubleClick = (item: CanvasItem) => { if (item.type !== 'text') return; setToolSettings(prev => ({ ...prev, text: { color: item.color || "#000", size: item.size || 20 } })); setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width }); setCurrentTool('text'); };
+  
+  const confirmText = () => { if (!textInput) return; const trimmedText = textInput.value.trim(); let newItems = [...items]; if (!trimmedText) { if (textInput.id) newItems = newItems.filter(i => i.id !== textInput.id); } else { if (textInput.id) { newItems = newItems.map(i => i.id === textInput.id ? { ...i, text: trimmedText, color: styleSettings.strokeColor, size: styleSettings.fontSize, width: textInput.width } : i); } else { newItems.push({ id: Date.now(), type: 'text', text: trimmedText, x: textInput.x, y: textInput.y, color: styleSettings.strokeColor, size: styleSettings.fontSize, zIndex: items.length, width: 200, height: styleSettings.fontSize * 1.5 }); setSelectedIds([newItems[newItems.length-1].id]); } } updateCurrentSlide(newItems, penStrokes); recordHistory(); setTextInput(null); setCurrentTool('select'); };
+  const handleTextDoubleClick = (item: CanvasItem) => { if (item.type !== 'text') return; setStyleSettings(prev => ({ ...prev, strokeColor: item.color || "#000", fontSize: item.size || 20 })); setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width }); setCurrentTool('text'); };
   const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => { const lines = text.split('\n'); let lineCounter = 0; lines.forEach((line) => { const words = line.split(''); let currentLine = ''; for(let n = 0; n < words.length; n++) { const testLine = currentLine + words[n]; const metrics = ctx.measureText(testLine); if (metrics.width > maxWidth && n > 0) { ctx.fillText(currentLine, x, y + (lineCounter * lineHeight)); currentLine = words[n]; lineCounter++; } else { currentLine = testLine; } } ctx.fillText(currentLine, x, y + (lineCounter * lineHeight)); lineCounter++; }); };
   const getPos = (e: React.MouseEvent) => { const rect = containerRef.current?.getBoundingClientRect(); return rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : { x: 0, y: 0 }; };
   
-  // 캔버스 이벤트 핸들러들
-  const handleMouseDown = (e: React.MouseEvent) => { if (contextMenu) { setContextMenu(null); return; } const { x, y } = getPos(e); if (['draw', 'eraser', 'highlighter'].includes(currentTool)) { const newStroke: PenStroke = { points: [{ x, y }], color: mainColor, size: toolSize, tool: currentTool as any }; setSlides(prev => { const clone = [...prev]; clone[currentSlideIndex].penStrokes = [...clone[currentSlideIndex].penStrokes, newStroke]; return clone; }); setDragState({ isDragging: true, action: 'draw_pen', startX: x, startY: y, offsetX: 0, offsetY: 0 }); return; } if (currentTool === 'line') { const tempLine: CanvasItem = { id: -1, type: 'line', x: x, y: y, x2: x, y2: y, color: mainColor, size: 3, zIndex: 999 }; setSlides(prev => { const clone = [...prev]; clone[currentSlideIndex].items = [...clone[currentSlideIndex].items, tempLine]; return clone; }); setDragState({ isDragging: true, action: 'draw_line', startX: x, startY: y, offsetX: 0, offsetY: 0 }); return; } if (currentTool === 'text') { e.preventDefault(); if (textInput) confirmText(); else setTextInput({ x, y, value: "" }); return; } if (currentTool === 'select') setSelectedId(null); };
-  const handleItemMouseDown = (e: React.MouseEvent, item: CanvasItem, action: typeof dragState.action) => { if (currentTool !== 'select') return; e.stopPropagation(); if (e.button === 2) return; const { x, y } = getPos(e); setSelectedId(item.id); let offsetX = 0, offsetY = 0; if (action === 'move') { offsetX = x - item.x; offsetY = y - item.y; } setDragState({ isDragging: true, action: action, startX: x, startY: y, offsetX, offsetY, initialItem: { ...item } }); };
+  // 복사 기능
+  const handleCopy = () => {
+      const selectedItems = items.filter(i => selectedIds.includes(i.id));
+      if (selectedItems.length > 0) {
+          setClipboard(selectedItems);
+      }
+  };
+
+  // 붙여넣기 기능
+  const handlePaste = () => {
+      if (clipboard.length === 0) return;
+      const newItems = [...items];
+      const newSelectedIds: number[] = [];
+      
+      clipboard.forEach((clipItem, index) => {
+          const newItem = {
+              ...clipItem,
+              id: Date.now() + index, 
+              x: clipItem.x + 20, 
+              y: clipItem.y + 20
+          };
+          newItems.push(newItem);
+          newSelectedIds.push(newItem.id);
+      });
+      
+      updateCurrentSlide(newItems, penStrokes);
+      setSelectedIds(newSelectedIds);
+      recordHistory();
+  };
+
+  // 복제 기능 (Ctrl+D)
+  const handleDuplicate = () => {
+      const selectedItems = items.filter(i => selectedIds.includes(i.id));
+      if (selectedItems.length === 0) return;
+      
+      const newItems = [...items];
+      const newSelectedIds: number[] = [];
+      
+      selectedItems.forEach((item, index) => {
+          const newItem = {
+              ...item,
+              id: Date.now() + index,
+              x: item.x + 20,
+              y: item.y + 20
+          };
+          newItems.push(newItem);
+          newSelectedIds.push(newItem.id);
+      });
+      
+      updateCurrentSlide(newItems, penStrokes);
+      setSelectedIds(newSelectedIds);
+      recordHistory();
+  };
+
+  // 방향키 이동
+  const moveSelectedItems = (dx: number, dy: number) => {
+      if (selectedIds.length === 0) return;
+      const newItems = items.map(item => {
+          if (selectedIds.includes(item.id)) {
+              return { ...item, x: item.x + dx, y: item.y + dy };
+          }
+          return item;
+      });
+      updateCurrentSlide(newItems, penStrokes);
+  };
+
+  // --- Mouse Handlers ---
+  const handleMouseDown = (e: React.MouseEvent) => { 
+      if (contextMenu) { setContextMenu(null); return; } 
+      const { x, y } = getPos(e); 
+      
+      if (['draw', 'eraser', 'highlighter'].includes(currentTool)) { 
+          const newStroke: PenStroke = { points: [{ x, y }], color: styleSettings.strokeColor, size: styleSettings.strokeWidth, tool: currentTool as any }; 
+          setSlides(prev => { 
+              const newSlides = [...prev]; const current = { ...newSlides[currentSlideIndex] };
+              current.penStrokes = [...current.penStrokes, newStroke]; newSlides[currentSlideIndex] = current; return newSlides; 
+          }); 
+          setDragState({ isDragging: true, action: 'draw_pen', startX: x, startY: y, offsetX: 0, offsetY: 0 }); 
+          return; 
+      } 
+      if (currentTool === 'line') { 
+          const tempLine: CanvasItem = { id: -1, type: 'line', x: x, y: y, x2: x, y2: y, strokeColor: styleSettings.strokeColor, color: styleSettings.strokeColor, strokeWidth: styleSettings.strokeWidth, size: styleSettings.strokeWidth, zIndex: 999 }; 
+          setSlides(prev => { 
+              const newSlides = [...prev]; const current = { ...newSlides[currentSlideIndex] };
+              current.items = [...current.items, tempLine]; newSlides[currentSlideIndex] = current; return newSlides;
+          }); 
+          setDragState({ isDragging: true, action: 'draw_line', startX: x, startY: y, offsetX: 0, offsetY: 0 }); 
+          return; 
+      } 
+      if (['rect', 'circle', 'triangle'].includes(currentTool)) {
+          const tempShape: CanvasItem = { 
+              id: -1, type: currentTool as ItemType, x: x, y: y, width: 0, height: 0, 
+              strokeColor: styleSettings.strokeColor, fillColor: styleSettings.fillColor, strokeWidth: styleSettings.strokeWidth, zIndex: 999 
+          };
+          setSlides(prev => { 
+              const newSlides = [...prev]; const current = { ...newSlides[currentSlideIndex] };
+              current.items = [...current.items, tempShape]; newSlides[currentSlideIndex] = current; return newSlides;
+          });
+          setDragState({ isDragging: true, action: 'draw_shape', startX: x, startY: y, offsetX: 0, offsetY: 0 });
+          return;
+      }
+      if (currentTool === 'text') { e.preventDefault(); if (textInput) confirmText(); else setTextInput({ x, y, value: "" }); return; } 
+      
+      if (currentTool === 'select') {
+          if (!e.ctrlKey && !e.shiftKey) {
+              setSelectedIds([]); 
+          }
+          setSelectionBox({ x, y, w: 0, h: 0 }); 
+          setDragState({ isDragging: true, action: 'box_select', startX: x, startY: y, offsetX: 0, offsetY: 0 });
+      }
+  };
+
+  const handleItemMouseDown = (e: React.MouseEvent, item: CanvasItem, action: typeof dragState.action) => { 
+      if (currentTool !== 'select') return; 
+      e.stopPropagation(); if (e.button === 2) return; 
+      const { x, y } = getPos(e); 
+      
+      let newSelectedIds = [...selectedIds];
+      const isAlreadySelected = newSelectedIds.includes(item.id);
+
+      let isCloning = false;
+      if (e.ctrlKey && action === 'move') {
+          isCloning = true;
+          if (!isAlreadySelected) newSelectedIds = [item.id]; 
+      } else if (e.ctrlKey) {
+          if (isAlreadySelected) newSelectedIds = newSelectedIds.filter(id => id !== item.id);
+          else newSelectedIds.push(item.id);
+      } else if (e.shiftKey) {
+          if (!isAlreadySelected) newSelectedIds.push(item.id);
+      } else {
+          if (!isAlreadySelected) newSelectedIds = [item.id];
+      }
+      setSelectedIds(newSelectedIds);
+      
+      const initialItemsMap: Record<number, { x: number, y: number }> = {};
+      newSelectedIds.forEach(id => {
+          const it = items.find(i => i.id === id);
+          if (it) initialItemsMap[id] = { x: it.x, y: it.y };
+      });
+
+      setStyleSettings(prev => ({
+          ...prev,
+          strokeColor: item.strokeColor || item.color || "#000",
+          fillColor: item.fillColor || "transparent",
+          strokeWidth: item.strokeWidth || item.size || 3,
+          fontSize: item.size || 20
+      }));
+
+      let offsetX = 0, offsetY = 0; 
+      if (action === 'move') { offsetX = x - item.x; offsetY = y - item.y; } 
+      
+      setDragState({ isDragging: true, action: action, startX: x, startY: y, offsetX, offsetY, initialItem: { ...item }, initialItemsMap, lockedAxis: null, isCloning }); 
+  };
+
   const handleResizeMouseDown = (e: React.MouseEvent, item: CanvasItem, handle: string) => { e.stopPropagation(); const { x, y } = getPos(e); setDragState({ isDragging: true, action: 'resize', resizeHandle: handle, startX: x, startY: y, offsetX: 0, offsetY: 0, initialItem: { ...item } }); };
   const handleItemContextMenu = (e: React.MouseEvent, itemId: number) => { e.preventDefault(); e.stopPropagation(); const rect = containerRef.current?.getBoundingClientRect(); if(rect) setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, itemId }); };
-  const handleMouseMove = (e: React.MouseEvent) => { const { x, y } = getPos(e); if (dragState.isDragging && dragState.action === 'draw_pen') { setSlides(prev => { const clone = [...prev]; const strokes = clone[currentSlideIndex].penStrokes; const last = strokes[strokes.length - 1]; const updated = { ...last, points: [...last.points, { x, y }] }; clone[currentSlideIndex].penStrokes = [...strokes.slice(0, -1), updated]; return clone; }); return; } if (dragState.isDragging && dragState.action === 'draw_line') { setSlides(prev => { const clone = [...prev]; clone[currentSlideIndex].items = clone[currentSlideIndex].items.map(i => i.id === -1 ? { ...i, x2: x, y2: y } : i); return clone; }); return; } if (!dragState.isDragging || !selectedId) return; setSlides(prev => { const clone = [...prev]; const newItems = clone[currentSlideIndex].items.map(item => { if (item.id !== selectedId) return item; if (dragState.action === 'move') { if (item.type === 'line') { const dx = x - dragState.offsetX - item.x; const dy = y - dragState.offsetY - item.y; return { ...item, x: item.x + dx, y: item.y + dy, x2: (item.x2 || 0) + dx, y2: (item.y2 || 0) + dy }; } return { ...item, x: x - dragState.offsetX, y: y - dragState.offsetY }; } else if (dragState.action === 'resize' && dragState.initialItem) { const init = dragState.initialItem; const dx = x - dragState.startX; const dy = y - dragState.startY; let newX = init.x, newY = init.y, newW = init.width || 0, newH = init.height || 0; if (item.type === 'line') { if (dragState.resizeHandle === 'start') return { ...item, x: x, y: y }; if (dragState.resizeHandle === 'end') return { ...item, x2: x, y2: y }; return item; } if (item.type === 'text') { if (dragState.resizeHandle?.includes('e')) newW = Math.max(50, init.width! + dx); if (dragState.resizeHandle?.includes('w')) { newW = Math.max(50, init.width! - dx); newX = init.x + dx; } return { ...item, x: newX, width: newW }; } if (dragState.resizeHandle?.includes('e')) newW = Math.max(20, init.width! + dx); if (dragState.resizeHandle?.includes('w')) { newW = Math.max(20, init.width! - dx); newX = init.x + dx; } if (dragState.resizeHandle?.includes('s')) newH = Math.max(20, init.height! + dy); if (dragState.resizeHandle?.includes('n')) { newH = Math.max(20, init.height! - dy); newY = init.y + dy; } return { ...item, x: newX, y: newY, width: newW, height: newH }; } return item; }); clone[currentSlideIndex].items = newItems; return clone; }); };
-  const handleMouseUp = () => { if (!dragState.isDragging) return; if (dragState.action === 'draw_line') { const newItems = items.map(i => i.id === -1 ? { ...i, id: Date.now() } : i); const newSlides = updateCurrentSlide(newItems, penStrokes); recordHistory(newSlides); setCurrentTool('select'); } else { recordHistory(); } setDragState({ ...dragState, isDragging: false, action: null }); };
+  
+  const handleMouseMove = (e: React.MouseEvent) => { 
+      const { x, y } = getPos(e); 
+      if (dragState.isDragging && dragState.action === 'draw_pen') { setSlides(prev => { const clone = [...prev]; const current = { ...clone[currentSlideIndex] }; const strokes = [...current.penStrokes]; const lastStroke = { ...strokes[strokes.length - 1] }; lastStroke.points = [...lastStroke.points, { x, y }]; strokes[strokes.length - 1] = lastStroke; current.penStrokes = strokes; clone[currentSlideIndex] = current; return clone; }); return; } 
+      if (dragState.isDragging && dragState.action === 'draw_line') { 
+          setSlides(prev => { const clone = [...prev]; const current = { ...clone[currentSlideIndex] }; current.items = current.items.map(i => { if (i.id !== -1) return i; let newX2 = x; let newY2 = y; if (e.shiftKey) { const dx = Math.abs(x - i.x); const dy = Math.abs(y - i.y); if (dx > dy) newY2 = i.y; else newX2 = i.x; } return { ...i, x2: newX2, y2: newY2 }; }); clone[currentSlideIndex] = current; return clone; }); return; 
+      } 
+      if (dragState.isDragging && dragState.action === 'draw_shape') {
+          setSlides(prev => { const clone = [...prev]; const current = { ...clone[currentSlideIndex] }; current.items = current.items.map(i => { if (i.id !== -1) return i; let newW = x - dragState.startX; let newH = y - dragState.startY; if (e.shiftKey) { const max = Math.max(Math.abs(newW), Math.abs(newH)); newW = newW < 0 ? -max : max; newH = newH < 0 ? -max : max; } return { ...i, width: newW, height: newH }; }); clone[currentSlideIndex] = current; return clone; }); return;
+      }
+
+      // ✨ [수정] 드래그 선택 로직 개선 (완전히 포함 -> 살짝만 닿아도 선택)
+      if (dragState.isDragging && dragState.action === 'box_select') {
+          const w = x - dragState.startX;
+          const h = y - dragState.startY;
+          setSelectionBox({ x: w > 0 ? dragState.startX : x, y: h > 0 ? dragState.startY : y, w: Math.abs(w), h: Math.abs(h) });
+          
+          const boxLeft = Math.min(dragState.startX, x);
+          const boxRight = Math.max(dragState.startX, x);
+          const boxTop = Math.min(dragState.startY, y);
+          const boxBottom = Math.max(dragState.startY, y);
+
+          const insideIds = items.filter(i => {
+              // Line
+              if (i.type === 'line') {
+                  const minX = Math.min(i.x, i.x2!) - 5; 
+                  const maxX = Math.max(i.x, i.x2!) + 5;
+                  const minY = Math.min(i.y, i.y2!) - 5; 
+                  const maxY = Math.max(i.y, i.y2!) + 5;
+                  // Intersection logic (교집합 확인)
+                  return minX < boxRight && maxX > boxLeft && minY < boxBottom && maxY > boxTop;
+              }
+              // Rect/Circle/Triangle/Image
+              const itemRight = i.x + (i.width || 0);
+              const itemBottom = i.y + (i.height || 0);
+              const minIX = Math.min(i.x, itemRight); 
+              const maxIX = Math.max(i.x, itemRight);
+              const minIY = Math.min(i.y, itemBottom); 
+              const maxIY = Math.max(i.y, itemBottom);
+              
+              // Intersection logic
+              return minIX < boxRight && maxIX > boxLeft && minIY < boxBottom && maxIY > boxTop;
+          }).map(i => i.id);
+          
+          setSelectedIds(insideIds);
+          return;
+      }
+
+      if (!dragState.isDragging || selectedIds.length === 0) return; 
+      
+      let currentLockedAxis = dragState.lockedAxis;
+      if (dragState.isDragging && dragState.action === 'move' && e.shiftKey && !currentLockedAxis) {
+          const dx = Math.abs(x - dragState.startX);
+          const dy = Math.abs(y - dragState.startY);
+          if (dx > 5 || dy > 5) { 
+              currentLockedAxis = dx > dy ? 'x' : 'y';
+              setDragState(prev => ({ ...prev, lockedAxis: currentLockedAxis }));
+          }
+      }
+
+      // Ctrl+드래그 복제 로직
+      if (dragState.isDragging && dragState.action === 'move' && dragState.isCloning) {
+          const dx = Math.abs(x - dragState.startX);
+          const dy = Math.abs(y - dragState.startY);
+          if (dx > 5 || dy > 5) { 
+              const newItems = [...items];
+              const newSelectedIds: number[] = [];
+              const newInitialMap: Record<number, {x: number, y: number}> = {};
+              
+              const selectedItems = items.filter(i => selectedIds.includes(i.id));
+              selectedItems.forEach((item, idx) => {
+                  const newItem = { ...item, id: Date.now() + idx };
+                  newItems.push(newItem);
+                  newSelectedIds.push(newItem.id);
+                  newInitialMap[newItem.id] = { x: item.x, y: item.y };
+              });
+              
+              updateCurrentSlide(newItems, penStrokes);
+              setSelectedIds(newSelectedIds);
+              setDragState(prev => ({ 
+                  ...prev, 
+                  isCloning: false, 
+                  initialItemsMap: newInitialMap 
+              }));
+              return; 
+          }
+      }
+
+      setSlides(prev => { 
+          const clone = [...prev]; 
+          const current = { ...clone[currentSlideIndex] };
+          
+          current.items = current.items.map(item => { 
+              if (selectedIds.includes(item.id)) {
+                  if (dragState.action === 'move') { 
+                      if (item.type === 'line') { 
+                          const dx = x - dragState.offsetX - item.x; const dy = y - dragState.offsetY - item.y; return { ...item, x: item.x + dx, y: item.y + dy, x2: (item.x2 || 0) + dx, y2: (item.y2 || 0) + dy }; 
+                      } 
+                      
+                      const dx = x - dragState.startX;
+                      const dy = y - dragState.startY;
+                      
+                      const initialPos = dragState.initialItemsMap?.[item.id];
+                      if (!initialPos) return item;
+
+                      let nextX = initialPos.x + dx;
+                      let nextY = initialPos.y + dy;
+                      
+                      if (e.shiftKey && currentLockedAxis) {
+                          if (currentLockedAxis === 'x') nextY = initialPos.y; 
+                          else if (currentLockedAxis === 'y') nextX = initialPos.x;
+                      }
+                      
+                      return { ...item, x: nextX, y: nextY }; 
+
+                  } else if (dragState.action === 'resize' && dragState.initialItem && item.id === dragState.initialItem.id) { 
+                      const init = dragState.initialItem; 
+                      const dx = x - dragState.startX; 
+                      const dy = y - dragState.startY; 
+                      let newX = init.x, newY = init.y, newW = init.width || 0, newH = init.height || 0; 
+                      
+                      const aspectRatio = (init.width || 1) / (init.height || 1);
+
+                      if (item.type === 'line') { if (dragState.resizeHandle === 'start') return { ...item, x: x, y: y }; if (dragState.resizeHandle === 'end') return { ...item, x2: x, y2: y }; return item; } 
+                      if (item.type === 'text') { if (dragState.resizeHandle?.includes('e')) newW = Math.max(50, init.width! + dx); if (dragState.resizeHandle?.includes('w')) { newW = Math.max(50, init.width! - dx); newX = init.x + dx; } return { ...item, x: newX, width: newW }; } 
+                      
+                      if (dragState.resizeHandle?.includes('e')) newW = init.width! + dx; 
+                      if (dragState.resizeHandle?.includes('w')) { newW = init.width! - dx; newX = init.x + dx; } 
+                      if (dragState.resizeHandle?.includes('s')) newH = init.height! + dy; 
+                      if (dragState.resizeHandle?.includes('n')) { newH = init.height! - dy; newY = init.y + dy; } 
+                      
+                      if (e.shiftKey && !item.type.includes('text')) {
+                          if (dragState.resizeHandle?.includes('e') || dragState.resizeHandle?.includes('w')) {
+                              newH = newW / aspectRatio;
+                              if (dragState.resizeHandle?.includes('n')) newY = init.y + init.height! - newH;
+                          } 
+                          else if (dragState.resizeHandle?.includes('n') || dragState.resizeHandle?.includes('s')) {
+                              newW = newH * aspectRatio;
+                              if (dragState.resizeHandle?.includes('w')) newX = init.x + init.width! - newW;
+                          }
+                          else {
+                              newH = newW / aspectRatio;
+                              if (dragState.resizeHandle?.includes('n')) newY = init.y + init.height! - newH;
+                          }
+                      }
+                      
+                      if (Math.abs(newW) < 10) newW = 10 * (newW < 0 ? -1 : 1);
+                      if (Math.abs(newH) < 10) newH = 10 * (newH < 0 ? -1 : 1);
+
+                      return { ...item, x: newX, y: newY, width: newW, height: newH }; 
+                  } return item; 
+              }
+              return item;
+          }); 
+          
+          clone[currentSlideIndex] = current;
+          return clone; 
+      }); 
+  };
+
+  const handleMouseUp = () => { 
+      if (!dragState.isDragging) return; 
+      
+      if (dragState.action === 'draw_line' || dragState.action === 'draw_shape') { 
+          let createdItem: CanvasItem | null = null;
+          setSlides(prev => {
+              const clone = [...prev];
+              const current = { ...clone[currentSlideIndex] };
+              
+              const tempIndex = current.items.findIndex(i => i.id === -1);
+              if (tempIndex !== -1) {
+                  const tempItem = current.items[tempIndex];
+                  const isValid = tempItem.type === 'line' 
+                      ? (Math.abs((tempItem.x2 || 0) - tempItem.x) > 5 || Math.abs((tempItem.y2 || 0) - tempItem.y) > 5)
+                      : (Math.abs(tempItem.width || 0) > 5 || Math.abs(tempItem.height || 0) > 5);
+
+                  if (isValid) {
+                      const newItem = { ...tempItem, id: Date.now() };
+                      current.items[tempIndex] = newItem; 
+                      createdItem = newItem;
+                  } else {
+                      current.items.splice(tempIndex, 1); 
+                  }
+              }
+              clone[currentSlideIndex] = current;
+              return clone;
+          });
+
+          setTimeout(() => {
+              recordHistory(); 
+              if (createdItem) {
+                  setCurrentTool('select');
+                  setSelectedIds([createdItem.id]); 
+              }
+          }, 0);
+      } else if (dragState.action === 'box_select') {
+          setSelectionBox(null);
+      } else { 
+          recordHistory(); 
+      } 
+      
+      setDragState({ ...dragState, isDragging: false, action: null, lockedAxis: null, isCloning: false }); 
+  };
 
   const handleSave = async () => { if (!containerRef.current || !canvasRef.current) return; const tempCanvas = document.createElement('canvas'); tempCanvas.width = canvasRef.current.width; tempCanvas.height = canvasRef.current.height; const ctx = tempCanvas.getContext('2d'); if (!ctx) return; ctx.fillStyle = 'white'; ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height); for (const item of items) { if (item.type === 'image' && item.src) { const img = new Image(); img.src = item.src; img.crossOrigin = 'anonymous'; await new Promise(r => { img.onload = r; img.onerror = r; }); ctx.drawImage(img, item.x, item.y, item.width!, item.height!); } else if (item.type === 'line') { ctx.beginPath(); ctx.moveTo(item.x, item.y); ctx.lineTo(item.x2!, item.y2!); ctx.strokeStyle = item.color!; ctx.lineWidth = item.size!; ctx.stroke(); } else if (item.type === 'text') { ctx.font = `bold ${item.size}px sans-serif`; ctx.fillStyle = item.color!; ctx.textBaseline = 'top'; wrapText(ctx, item.text || '', item.x, item.y, item.width || 200, (item.size || 20) * 1.2); } } ctx.drawImage(canvasRef.current, 0, 0); const finalImage = tempCanvas.toDataURL('image/png'); const saveData = { slides }; if (!store) { alert("Error: Store not ready"); return; } await store.saveSummary(patient.id, { image: finalImage, memo: JSON.stringify(saveData) }); alert("Saved with multiple slides!"); };
 
@@ -367,10 +765,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleEditClick = (rule: Rule) => { setEditingRuleId(rule.id); if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } else { setSelectedType("기타"); setCustomType(rule.type); } setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]); setStartStep(rule.startStep); setEndStep(rule.endStep); setNote(rule.note || ""); };
   const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
   
-  // 규칙 삭제 요청
   const handleDeleteRule = (ruleId: string) => { setRuleToDelete(ruleId); };
-  
-  // 규칙 삭제 확정
   const confirmDeleteRule = async () => {
       if (ruleToDelete) {
           if (store) await store.deleteRule(patient.id, ruleToDelete);
@@ -381,8 +776,34 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   const getRulesForStep = (step: number) => (patient.rules || []).filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
   const getGroupedRules = (step: number) => { const allRules = getRulesForStep(step); const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment"); return { genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)), upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)), lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)), attRules: allRules.filter((r: Rule) => isAtt(r)) }; };
-  const renderCard = (rule: Rule, step: number, isTiny = false) => { const checked = patient.checklist_status.some((s: any) => s.step === step && s.ruleId === rule.id && s.checked); const status = (step === rule.startStep) ? "NEW" : (step === rule.endStep ? "REMOVE" : "CHECK"); return ( <div key={rule.id} onClick={() => store && store.toggleChecklistItem(patient.id, step, rule.id)} className={cn("rounded cursor-pointer flex flex-col relative border select-none", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-100 text-slate-400 grayscale" : "bg-white hover:ring-2 hover:ring-blue-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}> <div className="flex justify-between items-start"><span className={cn("font-bold", isTiny ? "text-[11px]" : "text-lg")}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}</span><div className={cn("w-4 h-4 border rounded flex items-center justify-center", checked ? "bg-slate-500" : "bg-white")}>{checked && <CheckCheck className="text-white w-3 h-3"/>}</div></div> <div className={cn("font-bold truncate mt-0.5", getTypeColor(rule.type), isTiny && "text-[10px]")}>{rule.type}</div> {rule.note && <div className={cn("text-slate-400 whitespace-pre-wrap break-words leading-tight", isTiny ? "text-[9px]" : "mt-1")}>{rule.note}</div>} </div> ); };
-  const renderFullScreenGrid = () => { const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i); let maxGenCount = 0; let maxUpperCount = 0; let maxLowerCount = 0; stepsToShow.forEach(step => { if (step > totalSteps) return; const { genRules, upperRules, lowerRules } = getGroupedRules(step); maxGenCount = Math.max(maxGenCount, genRules.length); maxUpperCount = Math.max(maxUpperCount, upperRules.length); maxLowerCount = Math.max(maxLowerCount, lowerRules.length); }); const getFixedStyle = (count: number) => ({ minHeight: `${34 + (count * 64)}px` }); return ( <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in"> <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0"> <h2 className="text-2xl font-bold flex items-center gap-2"><Layout className="text-blue-600"/> Full Checklist Grid</h2> <div className="flex gap-2"><Button variant="outline" onClick={() => setPageStartStep(Math.max(0, pageStartStep - 10))}>Prev 10</Button><Button variant="outline" onClick={() => setPageStartStep(Math.min(totalSteps, pageStartStep + 10))}>Next 10</Button><Button variant="destructive" onClick={() => setIsGridOpen(false)}>Close</Button></div> </div> <div className="flex-1 p-6 overflow-auto bg-slate-50"> <div className="mb-8"> <div className="grid grid-cols-10 gap-3 min-w-[1400px]"> {stepsToShow.map((step) => { if (step > totalSteps) return <div key={step} className="opacity-0 w-full"/>; const { genRules, upperRules, lowerRules } = getGroupedRules(step); return ( <div key={`main-${step}`} className="flex flex-col gap-2"> <div className={cn("p-2 font-bold text-xs text-center rounded-lg border flex justify-between", step===0?"bg-yellow-100":"bg-white")}><span>{step===0?"PRE":`STEP ${step}`}</span>{step<=totalSteps && <button onClick={()=>store && store.checkAllInStep(patient.id,step)}><CheckSquare className="w-3.5 h-3.5"/></button>}</div> <div className="space-y-2"> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxGenCount)}><div className="text-[9px] font-bold text-slate-400 px-1 mb-1">GENERAL</div>{genRules.map((r: Rule) => renderCard(r, step, true))}</div> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxUpperCount)}><div className="text-[9px] font-bold text-blue-400 px-1 mb-1">MAXILLA</div>{upperRules.map((r: Rule) => renderCard(r, step, true))}</div> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxLowerCount)}><div className="text-[9px] font-bold text-orange-400 px-1 mb-1">MANDIBLE</div>{lowerRules.map((r: Rule) => renderCard(r, step, true))}</div> </div> </div> ); })} </div> </div> <div className="mb-10 pt-4 border-t-2 border-dashed"> <h3 className="text-xl font-bold text-green-800 mb-3 pl-3 border-l-4 border-green-600">Attachments Only</h3> <div className="grid grid-cols-10 gap-3 min-w-[1400px]"> {stepsToShow.map(step => { if(step>totalSteps) return null; const { attRules } = getGroupedRules(step); return ( <div key={`att-${step}`} className="rounded-lg bg-white border flex flex-col h-full min-h-[100px]"> <div className="p-1.5 border-b text-[10px] text-center bg-slate-50">{step===0?"PRE":`STEP ${step}`}</div> <div className="p-1 flex-1">{attRules.map((r: Rule) => renderCard(r, step, true))}</div> </div> ) })} </div> </div> </div> </div> ); };
+  
+  const renderCard = (rule: Rule, step: number, isTiny = false) => { 
+      const checked = patient.checklist_status.some((s: any) => s.step === step && s.ruleId === rule.id && s.checked); 
+      const status = (step === rule.startStep) ? "NEW" : (step === rule.endStep ? "REMOVE" : "CHECK"); 
+      return ( 
+        <div key={rule.id} onClick={() => store && store.toggleChecklistItem(patient.id, step, rule.id)} 
+             className={cn("rounded cursor-pointer flex flex-col relative border select-none transition-all", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-50 border-green-500 ring-1 ring-green-500 text-slate-400" : "bg-white hover:ring-2 hover:ring-blue-200 border-slate-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}> 
+             <div className="flex justify-between items-start"><span className={cn("font-bold", isTiny ? "text-[11px]" : "text-lg")}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}</span><div className={cn("w-4 h-4 border rounded flex items-center justify-center transition-colors", checked ? "bg-green-500 border-green-500" : "bg-white")}>{checked && <CheckCheck className="text-white w-3 h-3"/>}</div></div> 
+             <div className={cn("font-bold truncate mt-0.5", getTypeColor(rule.type), isTiny && "text-[10px]")}>{rule.type}</div> {rule.note && <div className={cn("text-slate-400 whitespace-pre-wrap break-words leading-tight", isTiny ? "text-[9px]" : "mt-1")}>{rule.note}</div>} 
+        </div> 
+      ); 
+  };
+
+  const renderFullScreenGrid = () => { 
+      const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i); 
+      let maxGenCount = 0; let maxUpperCount = 0; let maxLowerCount = 0; 
+      stepsToShow.forEach(step => { if (step > totalSteps) return; const { genRules, upperRules, lowerRules } = getGroupedRules(step); maxGenCount = Math.max(maxGenCount, genRules.length); maxUpperCount = Math.max(maxUpperCount, upperRules.length); maxLowerCount = Math.max(maxLowerCount, lowerRules.length); }); 
+      const getFixedStyle = (count: number) => ({ minHeight: `${34 + (count * 64)}px` }); 
+      return ( 
+        <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in"> 
+            <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0"> <h2 className="text-2xl font-bold flex items-center gap-2"><Layout className="text-blue-600"/> Full Checklist Grid</h2> <div className="flex gap-2"><Button variant="outline" onClick={() => setPageStartStep(Math.max(0, pageStartStep - 10))}>Prev 10</Button><Button variant="outline" onClick={() => setPageStartStep(Math.min(totalSteps, pageStartStep + 10))}>Next 10</Button><Button variant="destructive" onClick={() => setIsGridOpen(false)}>Close</Button></div> </div> 
+            <div className="flex-1 p-6 overflow-auto bg-slate-50"> 
+                <div className="mb-8"> <div className="grid grid-cols-10 gap-3 min-w-[1400px]"> {stepsToShow.map((step) => { if (step > totalSteps) return <div key={step} className="opacity-0 w-full"/>; const { genRules, upperRules, lowerRules } = getGroupedRules(step); const allRulesInStep = [...genRules, ...upperRules, ...lowerRules]; const isStepComplete = allRulesInStep.length > 0 && allRulesInStep.every(r => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === r.id && s.checked)); return ( <div key={`main-${step}`} className="flex flex-col gap-2"> <div className={cn("p-2 font-bold text-xs text-center rounded-lg border flex justify-between items-center transition-colors", isStepComplete ? "bg-blue-600 text-white border-blue-600 shadow-md" : (step===0?"bg-yellow-100":"bg-white"))}><span>{step===0?"PRE":`STEP ${step}`}</span>{step<=totalSteps && <button onClick={()=>store && store.checkAllInStep(patient.id,step)} className={cn("rounded hover:bg-black/10 p-0.5", isStepComplete && "text-white")}><CheckSquare className="w-3.5 h-3.5"/></button>}</div> <div className="space-y-2"> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxGenCount)}><div className="text-[9px] font-bold text-slate-400 px-1 mb-1">GENERAL</div>{genRules.map((r: Rule) => renderCard(r, step, true))}</div> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxUpperCount)}><div className="text-[9px] font-bold text-blue-400 px-1 mb-1">MAXILLA</div>{upperRules.map((r: Rule) => renderCard(r, step, true))}</div> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxLowerCount)}><div className="text-[9px] font-bold text-orange-400 px-1 mb-1">MANDIBLE</div>{lowerRules.map((r: Rule) => renderCard(r, step, true))}</div> </div> </div> ); })} </div> </div> 
+                <div className="mb-10 pt-4 border-t-2 border-dashed"> <h3 className="text-xl font-bold text-green-800 mb-3 pl-3 border-l-4 border-green-600">Attachments Only</h3> <div className="grid grid-cols-10 gap-3 min-w-[1400px]"> {stepsToShow.map(step => { if(step>totalSteps) return null; const { attRules } = getGroupedRules(step); return ( <div key={`att-${step}`} className="rounded-lg bg-white border flex flex-col h-full min-h-[100px]"> <div className="p-1.5 border-b text-[10px] text-center bg-slate-50">{step===0?"PRE":`STEP ${step}`}</div> <div className="p-1 flex-1">{attRules.map((r: Rule) => renderCard(r, step, true))}</div> </div> ) })} </div> </div> 
+            </div> 
+        </div> 
+      ); 
+  };
 
   if (!store) return null;
 
@@ -391,7 +812,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       <div className="flex h-full">
         {/* Left Panel */}
         <div className="w-[340px] border-r bg-white flex flex-col h-full overflow-hidden shrink-0 relative">
-           {/* ✨ 규칙 삭제 미니 모달 (왼쪽 패널 위에만 뜸) */}
            {ruleToDelete && (
                <div className="absolute inset-0 z-50 bg-black/10 backdrop-blur-[1px] flex items-center justify-center p-4 animate-in fade-in">
                    <div className="bg-white border shadow-lg rounded-lg p-4 w-[250px] space-y-3">
@@ -443,6 +863,17 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
              <div className="flex gap-2">
+                {selectedIds.length > 0 && (
+                    <>
+                        <Button variant="ghost" size="icon" onClick={handleCopy} title="Copy (Ctrl+C)"><Copy className="w-4 h-4"/></Button>
+                        <Button variant="ghost" size="icon" onClick={handleDuplicate} title="Duplicate (Ctrl+D)"><Plus className="w-4 h-4"/></Button>
+                    </>
+                )}
+                {clipboard.length > 0 && (
+                    <Button variant="ghost" size="icon" onClick={handlePaste} title="Paste (Ctrl+V)"><Clipboard className="w-4 h-4"/></Button>
+                )}
+                <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                
                 <Button onClick={handleSave} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
                 <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-white text-slate-700 border hover:bg-slate-50"><Layout className="w-4 h-4"/> Checklist View</Button>
              </div>
@@ -472,9 +903,11 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('draw')} className={cn(currentTool === 'draw' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Pen"><PenTool className="w-4 h-4"/></Button>
                         <Button variant={currentTool === 'highlighter' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('highlighter')} className={cn(currentTool === 'highlighter' && "bg-yellow-100 text-yellow-600 ring-2 ring-yellow-500")} title="Highlighter"><Highlighter className="w-4 h-4"/></Button>
                         <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('line')} className={cn(currentTool === 'line' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
-                        <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('text')} className={cn(currentTool === 'text' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Text"><Type className="w-4 h-4"/></Button>
-                        <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('eraser')} className={cn(currentTool === 'eraser' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Eraser"><Eraser className="w-4 h-4"/></Button>
+                        <Button variant={currentTool === 'rect' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('rect')} className={cn(currentTool === 'rect' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Rectangle"><Square className="w-4 h-4"/></Button>
+                        <Button variant={currentTool === 'circle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('circle')} className={cn(currentTool === 'circle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Circle"><Circle className="w-4 h-4"/></Button>
+                        <Button variant={currentTool === 'triangle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('triangle')} className={cn(currentTool === 'triangle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Triangle"><Triangle className="w-4 h-4"/></Button>
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                        <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('text')} className={cn(currentTool === 'text' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Text"><Type className="w-4 h-4"/></Button>
                         
                         <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
                         <Button variant="ghost" size="icon" onClick={() => !isImageUploading && fileInputRef.current?.click()} title="Add Image" disabled={isImageUploading}>
@@ -482,23 +915,39 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         </Button>
 
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        <input type="color" value={mainColor} onChange={(e) => handleConfigChange('color', e.target.value)} className="w-6 h-6 p-0 border-0 rounded cursor-pointer" />
-                        <div className="flex items-center gap-1 ml-2">
-                            <span className="text-[10px] text-slate-400 font-bold uppercase">Size</span>
-                            <input type="range" min="5" max="100" value={toolSize} onChange={(e) => handleConfigChange('size', Number(e.target.value))} className="w-20 accent-blue-600" />
+                        
+                        <div className="flex items-center gap-2 border px-2 py-1 rounded bg-slate-50">
+                            <div className="flex flex-col items-center gap-0.5">
+                                <span className="text-[8px] font-bold text-slate-400">Stroke</span>
+                                <input type="color" value={styleSettings.strokeColor} onChange={(e) => handleStyleChange('strokeColor', e.target.value)} className="w-5 h-5 p-0 border-0 rounded cursor-pointer" title="Stroke/Text Color"/>
+                            </div>
+                            {['rect', 'circle', 'triangle'].includes(currentTool) || selectedIds.length > 0 ? (
+                                <div className="flex flex-col items-center gap-0.5">
+                                    <span className="text-[8px] font-bold text-slate-400">Fill</span>
+                                    <div className="relative w-5 h-5">
+                                        <input type="color" value={styleSettings.fillColor === 'transparent' ? '#ffffff' : styleSettings.fillColor} onChange={(e) => handleStyleChange('fillColor', e.target.value)} className="w-full h-full p-0 border-0 rounded cursor-pointer" />
+                                        <button onClick={() => handleStyleChange('fillColor', 'transparent')} className="absolute -top-3 -right-2 bg-white border rounded-[2px] text-[8px] px-0.5" title="Transparent">X</button>
+                                    </div>
+                                </div>
+                            ) : null}
+                            <div className="flex flex-col items-center w-16">
+                                <span className="text-[8px] font-bold text-slate-400">Width: {styleSettings.strokeWidth}</span>
+                                <input type="range" min="1" max="50" value={styleSettings.strokeWidth} onChange={(e) => handleStyleChange('strokeWidth', Number(e.target.value))} className="w-full accent-blue-600 h-1.5" />
+                            </div>
                         </div>
+
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
                         <Button variant="ghost" size="icon" onClick={handleUndo} title="Undo (Ctrl+Z)"><Undo className="w-4 h-4"/></Button>
                         <Button variant="ghost" size="icon" onClick={handleRedo} title="Redo (Ctrl+Y)"><Redo className="w-4 h-4"/></Button>
                     </div>
                     
                     <div className="flex gap-2">
-                       {selectedId && (
+                       {selectedIds.length > 0 && (
                            <>
                                <Button variant="ghost" size="sm" onClick={() => moveLayer('up')} title="Bring Forward"><BringToFront className="w-4 h-4"/></Button>
                                <Button variant="ghost" size="sm" onClick={() => moveLayer('down')} title="Send Backward"><SendToBack className="w-4 h-4"/></Button>
                                <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                               <Button variant="ghost" size="sm" onClick={deleteSelectedItem} className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4"/></Button>
+                               <Button variant="ghost" size="sm" onClick={deleteSelectedItems} className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4"/></Button>
                            </>
                        )}
                        <div className="w-px h-4 bg-slate-300 mx-1"></div>
@@ -507,22 +956,51 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                     </div>
                  </div>
 
-                 <div className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative select-none", currentTool === 'draw' && "cursor-crosshair", currentTool === 'highlighter' && "cursor-crosshair", currentTool === 'eraser' && "cursor-cell", currentTool === 'text' && "cursor-text", currentTool === 'line' && "cursor-crosshair", currentTool === 'select' && "cursor-default")} ref={containerRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onDragOver={handleDrop} onDrop={handleDrop}>
-                    {items.map((item: CanvasItem) => {
+                 <div className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative select-none", 
+                    ['draw', 'highlighter', 'line', 'rect', 'circle', 'triangle'].includes(currentTool) && "cursor-crosshair", 
+                    currentTool === 'eraser' && "cursor-cell", 
+                    currentTool === 'text' && "cursor-text", 
+                    currentTool === 'select' && "cursor-default"
+                 )} ref={containerRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onDragOver={handleDrop} onDrop={handleDrop}>
+                    {items.map((item) => {
                         if (textInput && textInput.id === item.id) return null;
-                        const isSelected = selectedId === item.id;
+                        
+                        const isSelected = selectedIds.includes(item.id);
+                        const showResizeHandles = isSelected && selectedIds.length === 1;
+
                         const commonStyle: React.CSSProperties = { left: item.x, top: item.y, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' };
                         const renderResizeHandles = () => {
-                            if (!isSelected || currentTool !== 'select') return null;
+                            if (!showResizeHandles || currentTool !== 'select') return null;
                             const handles = [ { pos: 'nw', style: { top: -4, left: -4, cursor: 'nw-resize' } }, { pos: 'n', style: { top: -4, left: '50%', transform: 'translateX(-50%)', cursor: 'n-resize' } }, { pos: 'ne', style: { top: -4, right: -4, cursor: 'ne-resize' } }, { pos: 'e', style: { top: '50%', right: -4, transform: 'translateY(-50%)', cursor: 'e-resize' } }, { pos: 'se', style: { bottom: -4, right: -4, cursor: 'se-resize' } }, { pos: 's', style: { bottom: -4, left: '50%', transform: 'translateX(-50%)', cursor: 's-resize' } }, { pos: 'sw', style: { bottom: -4, left: -4, cursor: 'sw-resize' } }, { pos: 'w', style: { top: '50%', left: -4, transform: 'translateY(-50%)', cursor: 'w-resize' } }, ];
                             return handles.map(h => ( <div key={h.pos} className="absolute w-2.5 h-2.5 bg-white border border-blue-500 z-50" style={h.style} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} /> ));
                         };
+                        
                         if (item.type === 'image') { return ( <div key={item.id} className={cn("absolute", isSelected && "ring-1 ring-blue-500")} style={{ ...commonStyle, width: item.width, height: item.height }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> <img src={item.src} className="w-full h-full object-fill pointer-events-none" /> {renderResizeHandles()} </div> ); } 
-                        if (item.type === 'text') { return ( <div key={item.id} className={cn("absolute whitespace-pre-wrap px-1 border border-transparent", isSelected && "border-blue-500")} style={{ ...commonStyle, color: item.color, fontSize: item.size, fontWeight: 'bold', width: item.width, lineHeight: '1.2' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} onDoubleClick={(e) => { e.stopPropagation(); handleTextDoubleClick(item); }}> {item.text} {renderResizeHandles()} </div> ); }
-                        if (item.type === 'line') { return ( <svg key={item.id} className="absolute overflow-visible" style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}> <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.size || 3, 20)} className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} /> <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={item.color} strokeWidth={item.size} className={cn(currentTool === 'select' ? "pointer-events-none" : "", isSelected && "opacity-80")} /> {isSelected && currentTool === 'select' && ( <> <circle cx={item.x} cy={item.y} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'start')} /> <circle cx={item.x2} cy={item.y2} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'end')} /> </> )} </svg> ); }
+                        if (item.type === 'text') { return ( <div key={item.id} className={cn("absolute whitespace-pre-wrap px-1 border border-transparent", isSelected && "border-blue-500")} style={{ ...commonStyle, color: item.strokeColor || item.color, fontSize: item.size, fontWeight: 'bold', width: item.width, lineHeight: '1.2' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} onDoubleClick={(e) => { e.stopPropagation(); handleTextDoubleClick(item); }}> {item.text} {renderResizeHandles()} </div> ); }
+                        if (item.type === 'line') { return ( <svg key={item.id} className="absolute overflow-visible" style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}> <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.strokeWidth || item.size || 3, 20)} className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} /> <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={item.strokeColor || item.color} strokeWidth={item.strokeWidth || item.size} className={cn(currentTool === 'select' ? "pointer-events-none" : "", isSelected && "opacity-80")} /> {showResizeHandles && currentTool === 'select' && ( <> <circle cx={item.x} cy={item.y} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'start')} /> <circle cx={item.x2} cy={item.y2} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'end')} /> </> )} </svg> ); }
+                        
+                        if (['rect', 'circle', 'triangle'].includes(item.type)) {
+                            return (
+                                <div key={item.id} className="absolute" style={{ left: item.x, top: item.y, width: item.width, height: item.height, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}>
+                                    <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible">
+                                        {item.type === 'rect' && <rect x="0" y="0" width="100" height="100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />}
+                                        {item.type === 'circle' && <ellipse cx="50" cy="50" rx="50" ry="50" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />}
+                                        {item.type === 'triangle' && <polygon points="50,0 0,100 100,100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />}
+                                    </svg>
+                                    {/* 다중 선택 시 파란 박스만, 단일 선택 시 리사이즈 핸들 */}
+                                    {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>}
+                                    {renderResizeHandles()}
+                                </div>
+                            );
+                        }
                     })}
-                    <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", (currentTool === 'draw' || currentTool === 'eraser' || currentTool === 'highlighter') ? "pointer-events-auto" : "pointer-events-none")} />
-                    {textInput && ( <textarea autoFocus className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden" style={{ left: textInput.x, top: textInput.y, width: textInput.width ? textInput.width : 'auto', minWidth: '100px', color: mainColor, fontSize: toolSize, fontWeight: "bold", height: "auto", lineHeight: '1.2' }} value={textInput.value} onMouseDown={(e) => e.stopPropagation()} onChange={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; setTextInput({ ...textInput, value: e.target.value }) }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmText(); } }} onBlur={confirmText} /> )}
+                    
+                    {selectionBox && (
+                        <div className="absolute border border-blue-500 bg-blue-200/30 z-[9999] pointer-events-none" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.w, height: selectionBox.h }} />
+                    )}
+
+                    <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", (['draw', 'eraser', 'highlighter'].includes(currentTool)) ? "pointer-events-auto" : "pointer-events-none")} />
+                    {textInput && ( <textarea autoFocus className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden" style={{ left: textInput.x, top: textInput.y, width: textInput.width ? textInput.width : 'auto', minWidth: '100px', color: styleSettings.strokeColor, fontSize: styleSettings.fontSize, fontWeight: "bold", height: "auto", lineHeight: '1.2' }} value={textInput.value} onMouseDown={(e) => e.stopPropagation()} onChange={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; setTextInput({ ...textInput, value: e.target.value }) }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmText(); } }} onBlur={confirmText} /> )}
                     {contextMenu && ( <div className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[100px] animate-in fade-in zoom-in-95 duration-100" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(e) => e.stopPropagation()}> <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2" onClick={handleDeleteFromMenu}> <Trash2 className="w-4 h-4"/> Delete </button> </div> )}
                     {items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
                  </div>
