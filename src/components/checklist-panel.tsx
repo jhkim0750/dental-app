@@ -153,7 +153,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [endStep, setEndStep] = useState(10);
   const [note, setNote] = useState("");
   
-  // ✨ 규칙 삭제 확인 상태 (작은 모달용)
+  // 규칙 삭제 확인 상태 (작은 모달용)
   const [ruleToDelete, setRuleToDelete] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -217,9 +217,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       ctx.globalCompositeOperation = 'source-over';
   }, [penStrokes, currentSlideIndex]);
 
-  // ✨ [수정 완료] 엔터키 삭제 + 붙여넣기(Paste) 기능 부활!
+  // ✨ [수정 완료] 엔터키 삭제 + 붙여넣기(Paste) 기능 (patient.id를 기억하도록 수정!)
   useEffect(() => {
-      // 1. 키보드 핸들러
       const handleKeyDown = (e: KeyboardEvent) => {
           if (ruleToDelete) {
               if (e.key === 'Enter') confirmDeleteRule();
@@ -234,7 +233,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           }
       };
 
-      // 2. ✨ 붙여넣기 핸들러 (이게 빠져있었습니다!)
       const handlePaste = (e: ClipboardEvent) => {
           const clipboardItems = e.clipboardData?.items;
           if (!clipboardItems) return;
@@ -247,13 +245,14 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       };
 
       window.addEventListener('keydown', handleKeyDown);
-      window.addEventListener('paste', handlePaste); // ✨ 리스너 다시 부착
+      window.addEventListener('paste', handlePaste);
 
       return () => {
           window.removeEventListener('keydown', handleKeyDown);
-          window.removeEventListener('paste', handlePaste); // ✨ 클린업
+          window.removeEventListener('paste', handlePaste);
       };
-  }, [selectedId, textInput, historyIndex, history, currentSlideIndex, ruleToDelete]);
+      // ✨ 여기가 핵심! patient.id를 추가해서 환자가 바뀌면 기능도 갱신되게 함
+  }, [selectedId, textInput, historyIndex, history, currentSlideIndex, ruleToDelete, patient.id]);
 
   const changeTool = (tool: typeof currentTool) => { setCurrentTool(tool); if (tool === 'select') setSelectedId(null); };
   const handleConfigChange = (key: 'color' | 'size', value: string | number) => {
