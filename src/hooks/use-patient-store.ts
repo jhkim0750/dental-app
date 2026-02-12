@@ -46,7 +46,7 @@ export interface Patient {
   activeStageId?: string;
 
   isDeleted?: boolean;
-  deletedAt?: any; // 호환성을 위해 any로 유지 (숫자 or 타임스탬프)
+  deletedAt?: any; 
 
   // 호환성 필드
   total_steps?: number; 
@@ -54,7 +54,7 @@ export interface Patient {
   summary?: any;
   checklist_status?: ChecklistStatus[];
   
-  createdAt: any; // 호환성을 위해 any로 유지 (숫자 or 타임스탬프)
+  createdAt: any; 
 }
 
 interface PatientStore {
@@ -99,8 +99,7 @@ export const usePatientStore = create<PatientStore>()(
       fetchPatients: async () => {
         set({ isLoading: true });
         try {
-          // ✨ [핵심 수정] DB에서 정렬하지 않고 가져온 뒤, 자바스크립트에서 정렬합니다.
-          // 이유: DB에 숫자(과거)와 타임스탬프(최근)가 섞여 있으면 orderBy가 에러를 뿜습니다.
+          // ✨ [수정] DB에서 정렬하지 않고 일단 다 가져옵니다. (충돌 방지)
           const q = query(collection(db, "patients")); 
           const snapshot = await getDocs(q);
           
@@ -138,12 +137,16 @@ export const usePatientStore = create<PatientStore>()(
             };
           });
 
-          // ✨ [안전 정렬] 숫자든 객체든 알아서 척척 날짜순(최신순) 정렬
-          patients.sort((a, b) => {
-              const dateA = typeof a.createdAt === 'number' ? a.createdAt : (a.createdAt?.toMillis ? a.createdAt.toMillis() : 0);
-              const dateB = typeof b.createdAt === 'number' ? b.createdAt : (b.createdAt?.toMillis ? b.createdAt.toMillis() : 0);
-              return dateB - dateA;
-          });
+          // ✨ [핵심 해결책] 날짜가 숫자든, 타임스탬프든 알아서 변환해서 정렬하는 만능 로직
+          const getDate = (date: any) => {
+              if (!date) return 0;
+              if (typeof date === 'number') return date;
+              if (date.toMillis) return date.toMillis();
+              if (date.seconds) return date.seconds * 1000;
+              return 0;
+          };
+
+          patients.sort((a, b) => getDate(b.createdAt) - getDate(a.createdAt));
 
           set({ patients, isLoading: false });
         } catch (error) {
@@ -169,7 +172,7 @@ export const usePatientStore = create<PatientStore>()(
           case_number,
           stages: [initialStage],
           activeStageId: initialStage.id,
-          createdAt: Date.now(), // ✨ [수정] 이제부턴 단순 숫자로 저장 (에러 원천 봉쇄)
+          createdAt: Date.now(), // ✨ 이제부턴 안전하게 숫자로 저장
           isDeleted: false,
         };
 
@@ -197,7 +200,7 @@ export const usePatientStore = create<PatientStore>()(
 
       softDeletePatient: async (id) => {
         const patientRef = doc(db, "patients", id);
-        // ✨ [수정] 삭제 날짜도 숫자로 저장
+        // ✨ 삭제 날짜도 숫자로 통일
         await updateDoc(patientRef, { isDeleted: true, deletedAt: Date.now() });
         set((state) => ({
           patients: state.patients.map((p) => (p.id === id ? { ...p, isDeleted: true } : p)),
