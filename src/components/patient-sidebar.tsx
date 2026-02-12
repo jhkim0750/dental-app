@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, forwardRef, useImperativeHandle, useEffect } from "react";
-import { usePatientStoreHydrated, Patient } from "@/hooks/use-patient-store";
+import React, { useState, useImperativeHandle, forwardRef } from "react";
+import { usePatientStoreHydrated, Patient, Stage } from "@/hooks/use-patient-store";
 import { 
-  Search, Plus, User, Trash2, ChevronRight, X, AlertTriangle, RotateCcw, Archive, Pencil
+  Search, Plus, Trash2, User, ChevronRight, ChevronDown, 
+  FileText, RefreshCcw, AlertCircle, Pencil, X, Check, Building2 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -20,280 +21,387 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
   ({ onClose }, ref) => {
     const store = usePatientStoreHydrated();
     const [searchTerm, setSearchTerm] = useState("");
+    const [viewMode, setViewMode] = useState<"active" | "deleted">("active");
     
-    const [viewMode, setViewMode] = useState<'active' | 'trash'>('active');
-    
-    // 삭제 관련 상태
-    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-    const [confirmHardDeleteId, setConfirmHardDeleteId] = useState<string | null>(null);
+    const [expandedPatientId, setExpandedPatientId] = useState<string | null>(null);
 
-    // 추가 모달 상태
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [newPatientName, setNewPatientName] = useState("");
+    const [newName, setNewName] = useState("");
+    const [newHospital, setNewHospital] = useState("");
     const [newCaseNumber, setNewCaseNumber] = useState("");
-    const [newTotalSteps, setNewTotalSteps] = useState(21);
+    const [newTotalSteps, setNewTotalSteps] = useState(20);
 
-    // ✨ [추가] 수정 모달 상태
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [editId, setEditId] = useState<string | null>(null);
-    const [editName, setEditName] = useState("");
-    const [editCaseNumber, setEditCaseNumber] = useState("");
-    const [editTotalSteps, setEditTotalSteps] = useState(0);
+    const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
+    const [editPName, setEditPName] = useState("");
+    const [editPHospital, setEditPHospital] = useState("");
+    const [editPCase, setEditPCase] = useState("");
+
+    const [editingStage, setEditingStage] = useState<{ pId: string, stage: Stage } | null>(null);
+    const [editSName, setEditSName] = useState("");
+    const [editSSteps, setEditSSteps] = useState(0);
+
+    const [addingStagePatientId, setAddingStagePatientId] = useState<string | null>(null);
+    const [newStageName, setNewStageName] = useState("");
 
     useImperativeHandle(ref, () => ({
       openAddModal: () => setIsAddModalOpen(true),
     }));
 
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (confirmDeleteId && e.key === 'Enter') handleSoftDelete();
-            if (confirmDeleteId && e.key === 'Escape') setConfirmDeleteId(null);
-            
-            if (confirmHardDeleteId && e.key === 'Enter') handleHardDelete();
-            if (confirmHardDeleteId && e.key === 'Escape') setConfirmHardDeleteId(null);
-            
-            if (isAddModalOpen && e.key === 'Escape') setIsAddModalOpen(false);
-            if (isEditModalOpen && e.key === 'Escape') setIsEditModalOpen(false);
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [confirmDeleteId, confirmHardDeleteId, isAddModalOpen, isEditModalOpen]);
-
-    if (!store) return null;
+    if (!store) return <div className="w-[320px] bg-white border-r p-4 animate-pulse">Loading...</div>;
 
     const filteredPatients = store.patients.filter((p) => {
-      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            p.case_number.includes(searchTerm);
-      if (viewMode === 'active') return matchesSearch && !p.isDeleted;
-      else return matchesSearch && p.isDeleted;
+      const isDeleted = p.isDeleted ?? false;
+      
+      if (viewMode === "active") {
+          return !isDeleted && (
+            p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (p.hospital || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+            p.case_number.includes(searchTerm)
+          );
+      } else {
+          const hasDeletedStages = p.stages?.some(s => s.isDeleted);
+          const isMatch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+          return isMatch && (isDeleted || hasDeletedStages);
+      }
     });
 
-    // 환자 추가
     const handleAddPatient = async () => {
-      if (!newPatientName || !newCaseNumber) return alert("Please fill in all fields");
-      await store.addPatient(newPatientName, newCaseNumber, newTotalSteps);
-      setIsAddModalOpen(false);
-      setNewPatientName("");
-      setNewCaseNumber("");
-      setNewTotalSteps(21);
+        if (!newName || !newCaseNumber) return;
+        await store.addPatient(newName, newHospital, newCaseNumber, newTotalSteps);
+        setIsAddModalOpen(false);
+        setNewName(""); setNewHospital(""); setNewCaseNumber(""); setNewTotalSteps(20);
     };
 
-    // ✨ [추가] 환자 수정 모달 열기
-    const openEditModal = (e: React.MouseEvent, patient: Patient) => {
-        e.stopPropagation(); // 리스트 클릭 방지
-        setEditId(patient.id);
-        setEditName(patient.name);
-        setEditCaseNumber(patient.case_number);
-        setEditTotalSteps(patient.total_steps || 21);
-        setIsEditModalOpen(true);
-    };
-
-    // ✨ [추가] 환자 수정 저장
-    const handleUpdatePatient = async () => {
-        if (editId) {
-            await store.updatePatient(editId, {
-                name: editName,
-                case_number: editCaseNumber,
-                total_steps: editTotalSteps
-            });
-            setIsEditModalOpen(false);
-            setEditId(null);
+    const handlePatientClick = (patient: Patient) => {
+        if (expandedPatientId === patient.id) {
+            setExpandedPatientId(null); 
+        } else {
+            setExpandedPatientId(patient.id); 
         }
     };
 
-    const handleSoftDelete = async () => {
-        if (confirmDeleteId) {
-            await store.softDeletePatient(confirmDeleteId);
-            setConfirmDeleteId(null);
+    const handleStageClick = (e: React.MouseEvent, patientId: string, stageId: string) => {
+        e.stopPropagation(); 
+        store.selectPatient(patientId); 
+        store.selectStage(patientId, stageId);
+        if (onClose) onClose();
+    };
+
+    const startAddingStage = (e: React.MouseEvent, patientId: string) => {
+        e.stopPropagation();
+        setAddingStagePatientId(patientId);
+        setNewStageName(""); 
+    };
+
+    const confirmAddStage = async (patientId: string) => {
+        if (!newStageName.trim()) {
+            setAddingStagePatientId(null); 
+            return;
+        }
+        await store.addStage(patientId, newStageName);
+        setAddingStagePatientId(null);
+        setNewStageName("");
+    };
+
+    const handleStageKeyDown = (e: React.KeyboardEvent, patientId: string) => {
+        if (e.key === 'Enter') confirmAddStage(patientId);
+        if (e.key === 'Escape') setAddingStagePatientId(null);
+    };
+
+    const openPatientEdit = (e: React.MouseEvent, patient: Patient) => {
+        e.stopPropagation();
+        setEditingPatient(patient);
+        setEditPName(patient.name);
+        setEditPHospital(patient.hospital || "");
+        setEditPCase(patient.case_number);
+    };
+
+    const savePatientEdit = async () => {
+        if (!editingPatient) return;
+        await store.updatePatient(editingPatient.id, {
+            name: editPName,
+            hospital: editPHospital,
+            case_number: editPCase
+        });
+        setEditingPatient(null);
+    };
+
+    const openStageEdit = (e: React.MouseEvent, pId: string, stage: Stage) => {
+        e.stopPropagation();
+        setEditingStage({ pId, stage });
+        setEditSName(stage.name);
+        setEditSSteps(stage.total_steps);
+    };
+
+    const saveStageEdit = async () => {
+        if (!editingStage) return;
+        await store.updateStageInfo(editingStage.pId, editingStage.stage.id, {
+            name: editSName,
+            total_steps: editSSteps
+        });
+        setEditingStage(null);
+    };
+
+    // ✨ [수정] 스테이지 삭제 시 경고창 추가
+    const handleDeleteStage = async (e: React.MouseEvent, patientId: string, stageId: string) => {
+        e.stopPropagation();
+        if (confirm("Move this stage to trash?")) {
+            await store.softDeleteStage(patientId, stageId);
         }
     };
 
-    const handleHardDelete = async () => {
-        if (confirmHardDeleteId) {
-            await store.hardDeletePatient(confirmHardDeleteId);
-            setConfirmHardDeleteId(null);
+    // ✨ [수정] 환자 삭제 시 경고창 추가
+    const handleDeletePatient = async (e: React.MouseEvent, patientId: string) => {
+        e.stopPropagation();
+        if (confirm("Move this patient to trash?")) {
+            await store.softDeletePatient(patientId);
         }
     };
 
     return (
-      <div className="flex flex-col h-full bg-white relative">
-        {/* 헤더 */}
-        <div className="p-4 border-b shrink-0 flex items-center justify-between bg-slate-50">
-           <div className="flex flex-col">
-              <h2 className="font-bold text-lg flex items-center gap-2">
-                 {viewMode === 'active' ? 'Patients List' : '🗑️ Trash Can'}
-              </h2>
-              <span className="text-xs text-slate-500">
-                {filteredPatients.length} {viewMode === 'active' ? 'Active' : 'Deleted'} cases
-              </span>
-           </div>
-           <div className="flex gap-1">
-               {viewMode === 'active' ? (
-                   <Button variant="ghost" size="icon" onClick={() => setViewMode('trash')} title="Go to Trash" className="text-slate-400 hover:text-red-500">
-                       <Trash2 className="w-4 h-4" />
-                   </Button>
-               ) : (
-                   <Button variant="ghost" size="icon" onClick={() => setViewMode('active')} title="Back to List" className="text-green-600 bg-green-50 hover:bg-green-100">
-                       <Archive className="w-4 h-4" />
-                   </Button>
-               )}
-               {onClose && <Button variant="ghost" size="icon" onClick={onClose}><X className="w-5 h-5"/></Button>}
-           </div>
+      <div className="flex flex-col h-full bg-white border-r border-slate-200 shadow-sm w-full max-w-[320px] relative">
+        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+          <h2 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+             {viewMode === 'active' ? 'Patients List' : 'Trash Bin'}
+          </h2>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => setViewMode(prev => prev === 'active' ? 'deleted' : 'active')}
+            className={cn("text-slate-400 hover:text-slate-700", viewMode === 'deleted' && "bg-red-50 text-red-500")}
+            title={viewMode === 'active' ? "Go to Trash" : "Close Trash Bin"}
+          >
+            {/* ✨ [수정] 휴지통 모드일 때 아이콘을 X로 변경 */}
+            {viewMode === 'active' ? <Trash2 className="w-4 h-4" /> : <X className="w-4 h-4"/>}
+          </Button>
         </div>
 
-        {/* 검색 & 추가 버튼 */}
         {viewMode === 'active' && (
-            <div className="p-3 border-b space-y-2 shrink-0 bg-white">
+            <div className="p-4 space-y-3 border-b border-slate-100">
                 <div className="relative">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                    <input
-                    className="w-full pl-9 pr-4 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
-                    placeholder="Search name or case..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input 
+                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                        placeholder="Search name, hospital..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-                <Button className="w-full gap-2 bg-blue-600 hover:bg-blue-700 shadow-sm" onClick={() => setIsAddModalOpen(true)}>
+                <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white gap-2 shadow-sm font-bold" onClick={() => setIsAddModalOpen(true)}>
                     <Plus className="w-4 h-4" /> Add Patient
                 </Button>
             </div>
         )}
 
-        {/* 리스트 영역 */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-2 relative">
-           {store.isLoading ? (
-               <div className="text-center p-10 text-slate-400 animate-pulse">Loading...</div>
-           ) : filteredPatients.length === 0 ? (
-               <div className="text-center p-10 text-slate-400 text-sm">
-                   {viewMode === 'active' ? "No patients found." : "Trash is empty."}
-               </div>
-           ) : (
-               filteredPatients.map((patient) => (
-                <div
-                    key={patient.id}
-                    onClick={() => viewMode === 'active' && store.selectPatient(patient.id)}
-                    className={cn(
-                    "group relative p-3 rounded-lg border transition-all hover:shadow-md cursor-pointer flex justify-between items-center",
-                    store.selectedPatientId === patient.id && viewMode === 'active'
-                        ? "bg-blue-50 border-blue-500 ring-1 ring-blue-500"
-                        : "bg-white border-slate-200 hover:border-blue-300",
-                    viewMode === 'trash' && "opacity-75 bg-slate-50"
-                    )}
-                >
-                    <div className="flex items-center gap-3 overflow-hidden">
-                        <div className={cn("w-10 h-10 rounded-full flex items-center justify-center shrink-0", viewMode === 'active' ? "bg-blue-100 text-blue-600" : "bg-red-100 text-red-500")}>
-                            {viewMode === 'active' ? <User className="w-5 h-5" /> : <Trash2 className="w-5 h-5"/>}
-                        </div>
-                        <div className="flex flex-col truncate">
-                            <span className="font-bold text-slate-800 truncate">{patient.name}</span>
-                            <span className="text-xs text-slate-500 truncate">#{patient.case_number}</span>
-                        </div>
-                    </div>
-
-                    {/* 액션 버튼들 */}
-                    <div className="flex items-center gap-1">
-                        {viewMode === 'active' ? (
-                            <>
-                                {/* ✨ 수정 버튼 (연필) */}
-                                <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-blue-500 transition-opacity"
-                                    onClick={(e) => openEditModal(e, patient)}
-                                    title="Edit Info"
-                                >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                </Button>
-                                {/* 삭제 버튼 */}
-                                <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
-                                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(patient.id); }}
-                                    title="Move to Trash"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </Button>
-                                <ChevronRight className="w-4 h-4 text-slate-300" />
-                            </>
-                        ) : (
-                            <>
-                                <Button size="sm" variant="outline" className="text-green-600 hover:bg-green-50 h-8 px-2" onClick={(e) => { e.stopPropagation(); store.restorePatient(patient.id); }} title="Restore">
-                                    <RotateCcw className="w-3.5 h-3.5 mr-1"/> Restore
-                                </Button>
-                                <Button size="sm" variant="destructive" className="h-8 px-2" onClick={(e) => { e.stopPropagation(); setConfirmHardDeleteId(patient.id); }} title="Delete Forever">
-                                    <X className="w-3.5 h-3.5"/>
-                                </Button>
-                            </>
-                        )}
-                    </div>
+        <div className="flex-1 overflow-y-auto p-2 space-y-2">
+            {filteredPatients.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-40 text-slate-400 text-sm">
+                    <AlertCircle className="w-8 h-8 mb-2 opacity-20"/>
+                    <p>No patients found</p>
                 </div>
-               ))
-           )}
+            ) : (
+                filteredPatients.map((patient) => {
+                    const isActive = store.selectedPatientId === patient.id;
+                    const isExpanded = expandedPatientId === patient.id;
+
+                    return (
+                        <div key={patient.id} className="flex flex-col px-1">
+                            <div 
+                                onClick={() => handlePatientClick(patient)}
+                                className={cn(
+                                    // ✨ [디자인 수정] 홈화면/캔버스 사이드바 디자인 통일 (진한 파랑 테두리)
+                                    "group flex items-center p-3 rounded-xl cursor-pointer transition-all border select-none mb-1 shadow-sm",
+                                    isActive 
+                                        ? "bg-blue-50 border-blue-400 ring-1 ring-blue-300" // 선택됨
+                                        : "bg-white border-blue-300 hover:border-blue-500 hover:shadow-md" // 기본 (진하게)
+                                )}
+                            >
+                                <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold mr-3 transition-colors shrink-0", 
+                                    isActive ? "bg-blue-100 text-blue-600" : "bg-slate-50 text-slate-400 group-hover:bg-slate-100"
+                                )}>
+                                    <User className="w-5 h-5"/>
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between items-center">
+                                        <h3 className={cn("font-extrabold truncate text-base", isActive ? "text-slate-950" : "text-slate-800")}>
+                                            {patient.name}
+                                        </h3>
+                                        {viewMode === 'active' && (
+                                            isExpanded ? <ChevronDown className="w-4 h-4 text-blue-500"/> : <ChevronRight className="w-4 h-4 text-slate-300"/>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                                        {patient.hospital && (
+                                            <span className="flex items-center gap-1 text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full text-[10px] font-bold border border-blue-100 truncate max-w-[100px]">
+                                                <Building2 className="w-3 h-3 shrink-0"/>
+                                                {patient.hospital}
+                                            </span>
+                                        )}
+                                        <span className="font-mono text-slate-400">#{patient.case_number}</span>
+                                    </div>
+                                </div>
+
+                                <div className="ml-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {viewMode === 'active' ? (
+                                        <>
+                                            <button 
+                                                onClick={(e) => openPatientEdit(e, patient)}
+                                                className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded"
+                                                title="Edit Patient"
+                                            >
+                                                <Pencil className="w-3.5 h-3.5"/>
+                                            </button>
+                                            {/* ✨ 환자 삭제 버튼에 핸들러 연결 (경고창) */}
+                                            <button 
+                                                onClick={(e) => handleDeletePatient(e, patient.id)}
+                                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"
+                                                title="Delete Patient"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5"/>
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {patient.isDeleted && (
+                                                <button onClick={(e) => { e.stopPropagation(); store.restorePatient(patient.id); }} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Restore Patient"><RefreshCcw className="w-4 h-4"/></button>
+                                            )}
+                                            {patient.isDeleted && (
+                                                <button onClick={(e) => { e.stopPropagation(); if(confirm("Permanently delete?")) store.hardDeletePatient(patient.id); }} className="p-1 text-red-600 hover:bg-red-50 rounded" title="Delete Forever"><Trash2 className="w-4 h-4"/></button>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            {isExpanded && (
+                                <div className="ml-4 pl-4 border-l-2 border-slate-100 space-y-1 mb-3 animate-in slide-in-from-top-1 duration-200">
+                                    {(patient.stages || []).filter(s => viewMode === 'active' ? !s.isDeleted : s.isDeleted).map((stage) => {
+                                        const isStageActive = isActive && patient.activeStageId === stage.id;
+                                        return (
+                                            <div 
+                                                key={stage.id}
+                                                onClick={(e) => viewMode === 'active' && handleStageClick(e, patient.id, stage.id)}
+                                                className={cn(
+                                                    "group/stage flex items-center justify-between text-sm p-2 rounded-md mb-1 cursor-pointer transition-colors",
+                                                    isStageActive ? "bg-blue-600 text-white shadow-md" : "bg-slate-50 text-slate-700 hover:bg-slate-100",
+                                                    viewMode === 'deleted' && "opacity-70 cursor-default"
+                                                )}
+                                            >
+                                                <div className="flex items-center gap-2 overflow-hidden">
+                                                    <FileText className={cn("w-3.5 h-3.5 shrink-0", isStageActive ? "text-blue-200" : "text-slate-400")}/>
+                                                    <span className="truncate font-bold">{stage.name}</span>
+                                                </div>
+                                                
+                                                <div className="flex items-center gap-1">
+                                                    <span className={cn("text-[10px] mr-1 font-medium", isStageActive ? "text-blue-100" : "text-slate-400")}>
+                                                        {stage.total_steps} Step
+                                                    </span>
+                                                    
+                                                    {viewMode === 'active' ? (
+                                                        <>
+                                                            <button 
+                                                                onClick={(e) => openStageEdit(e, patient.id, stage)}
+                                                                className={cn("p-1 rounded opacity-0 group-hover/stage:opacity-100 transition-opacity", isStageActive ? "hover:bg-blue-500 text-white" : "hover:bg-slate-200 text-slate-400")}
+                                                                title="Edit Stage"
+                                                            >
+                                                                <Pencil className="w-3 h-3"/>
+                                                            </button>
+                                                            {/* ✨ 스테이지 삭제 버튼 핸들러 (경고창) */}
+                                                            <button 
+                                                                onClick={(e) => handleDeleteStage(e, patient.id, stage.id)}
+                                                                className={cn("p-1 rounded opacity-0 group-hover/stage:opacity-100 transition-opacity", isStageActive ? "hover:bg-red-500 text-white" : "hover:bg-red-100 text-red-500")}
+                                                                title="Trash Stage"
+                                                            >
+                                                                <Trash2 className="w-3 h-3"/>
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <div className="flex gap-1">
+                                                            <button onClick={(e) => { e.stopPropagation(); store.restoreStage(patient.id, stage.id); }} className="p-1 text-green-600 hover:bg-green-100 rounded"><RefreshCcw className="w-3 h-3"/></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); if(confirm("Permanently delete stage?")) store.hardDeleteStage(patient.id, stage.id); }} className="p-1 text-red-600 hover:bg-red-100 rounded"><Trash2 className="w-3 h-3"/></button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                    
+                                    {viewMode === 'active' && (
+                                        addingStagePatientId === patient.id ? (
+                                            <div className="flex items-center gap-1 p-1 bg-blue-50 rounded border border-blue-200 animate-in fade-in" onClick={e => e.stopPropagation()}>
+                                                <input 
+                                                    autoFocus
+                                                    className="flex-1 text-xs p-1 bg-white rounded border border-blue-100 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                                    placeholder="Stage Name"
+                                                    value={newStageName}
+                                                    onChange={(e) => setNewStageName(e.target.value)}
+                                                    onKeyDown={(e) => handleStageKeyDown(e, patient.id)}
+                                                />
+                                                <button onClick={() => confirmAddStage(patient.id)} className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600"><Check className="w-3 h-3"/></button>
+                                                <button onClick={() => setAddingStagePatientId(null)} className="p-1 text-slate-400 hover:bg-slate-200 rounded"><X className="w-3 h-3"/></button>
+                                            </div>
+                                        ) : (
+                                            <button 
+                                                onClick={(e) => startAddingStage(e, patient.id)}
+                                                className="flex items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50 w-full p-2 rounded transition-colors"
+                                            >
+                                                <Plus className="w-3.5 h-3.5"/> New Stage
+                                            </button>
+                                        )
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })
+            )}
         </div>
 
-        {/* 삭제 경고창들 (생략 가능하지만 안전을 위해 포함) */}
-        {confirmDeleteId && (
-            <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={e => e.stopPropagation()}>
-                <div className="bg-white border-2 border-red-100 shadow-xl rounded-xl p-5 w-full max-w-[300px] text-center" onClick={e => e.stopPropagation()}>
-                    <div className="w-12 h-12 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <Trash2 className="w-6 h-6"/>
-                    </div>
-                    <h3 className="font-bold text-lg text-slate-800">Move to Trash?</h3>
-                    <div className="flex gap-2 mt-4">
-                        <Button variant="outline" className="flex-1" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
-                        <Button variant="destructive" className="flex-1" onClick={handleSoftDelete}>Delete</Button>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {confirmHardDeleteId && (
-            <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={e => e.stopPropagation()}>
-                <div className="bg-white border-2 border-red-500 shadow-xl rounded-xl p-5 w-full max-w-[300px] text-center" onClick={e => e.stopPropagation()}>
-                    <div className="w-12 h-12 bg-red-600 text-white rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
-                        <AlertTriangle className="w-6 h-6"/>
-                    </div>
-                    <h3 className="font-bold text-lg text-red-600">Delete Forever?</h3>
-                    <div className="flex gap-2 mt-4">
-                        <Button variant="outline" className="flex-1" onClick={() => setConfirmHardDeleteId(null)}>Cancel</Button>
-                        <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={handleHardDelete}>Delete!</Button>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {/* 환자 추가 모달 */}
+        {/* ... (모달 코드는 기존과 동일, 변경사항 없음) ... */}
         {isAddModalOpen && (
-            <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsAddModalOpen(false)}>
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
-                    <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
-                        <h3 className="font-bold text-lg">Add New Patient</h3>
-                        <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
-                    </div>
+            <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsAddModalOpen(false)}>
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+                    <div className="p-4 border-b bg-slate-50"><h3 className="font-bold text-lg">Add New Patient</h3></div>
                     <div className="p-5 space-y-4">
-                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" placeholder="Name" autoFocus value={newPatientName} onChange={e => setNewPatientName(e.target.value)} /></div>
-                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" placeholder="Case Number" value={newCaseNumber} onChange={e => setNewCaseNumber(e.target.value)} /></div>
-                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded" value={newTotalSteps} onChange={e => setNewTotalSteps(Number(e.target.value))} /></div>
-                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-6 text-lg" onClick={handleAddPatient}>Create Case</Button>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" autoFocus value={newName} onChange={e => setNewName(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Hospital</label><input className="w-full border p-2 rounded" value={newHospital} onChange={e => setNewHospital(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={newCaseNumber} onChange={e => setNewCaseNumber(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps (1st Stage)</label><input type="number" className="w-full border p-2 rounded" value={newTotalSteps} onChange={e => setNewTotalSteps(Number(e.target.value))} /></div>
+                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" onClick={handleAddPatient}>Create Patient</Button>
                     </div>
                 </div>
             </div>
         )}
 
-        {/* ✨ [추가] 환자 수정 모달 */}
-        {isEditModalOpen && (
-            <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsEditModalOpen(false)}>
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+        {editingPatient && (
+            <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEditingPatient(null)}>
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
                     <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
-                        <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Patient Info</h3>
-                        <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
+                        <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Patient</h3>
+                        <button onClick={() => setEditingPatient(null)}><X className="w-5 h-5 text-slate-400"/></button>
                     </div>
                     <div className="p-5 space-y-4">
-                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" value={editName} onChange={e => setEditName(e.target.value)} /></div>
-                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={editCaseNumber} onChange={e => setEditCaseNumber(e.target.value)} /></div>
-                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded" value={editTotalSteps} onChange={e => setEditTotalSteps(Number(e.target.value))} /></div>
-                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-6 text-lg" onClick={handleUpdatePatient}>Save Changes</Button>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" value={editPName} onChange={e => setEditPName(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Hospital</label><input className="w-full border p-2 rounded" value={editPHospital} onChange={e => setEditPHospital(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={editPCase} onChange={e => setEditPCase(e.target.value)} /></div>
+                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" onClick={savePatientEdit}>Save Changes</Button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {editingStage && (
+            <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEditingStage(null)}>
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+                    <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+                        <h3 className="font-bold text-lg flex items-center gap-2"><FileText className="w-4 h-4"/> Edit Stage</h3>
+                        <button onClick={() => setEditingStage(null)}><X className="w-5 h-5 text-slate-400"/></button>
+                    </div>
+                    <div className="p-5 space-y-4">
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Stage Name</label><input className="w-full border p-2 rounded" value={editSName} onChange={e => setEditSName(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded" value={editSSteps} onChange={e => setEditSSteps(Number(e.target.value))} /></div>
+                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" onClick={saveStageEdit}>Save Changes</Button>
                     </div>
                 </div>
             </div>

@@ -6,7 +6,7 @@ import { usePatientStoreHydrated } from "@/hooks/use-patient-store";
 import { ChecklistPanel } from "@/components/checklist-panel";
 import { PatientSidebar, PatientSidebarHandle } from "@/components/patient-sidebar";
 import { Button } from "@/components/ui/button";
-import { FolderOpen, Home, UserPlus, Loader2, Pencil, X } from "lucide-react";
+import { FolderOpen, Home, UserPlus, Loader2, Pencil, X, Building2, ChevronRight } from "lucide-react";
 
 function PatientDashboard() {
   const store = usePatientStoreHydrated();
@@ -16,10 +16,11 @@ function PatientDashboard() {
   
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
   
-  // 환자 정보 수정 모달 상태
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editName, setEditName] = useState("");
+  const [editHospital, setEditHospital] = useState(""); 
   const [editCaseNumber, setEditCaseNumber] = useState("");
+  const [editStageName, setEditStageName] = useState(""); 
   const [editTotalSteps, setEditTotalSteps] = useState(0);
 
   useEffect(() => {
@@ -27,7 +28,7 @@ function PatientDashboard() {
         store.fetchPatients();
         isFetched.current = true;
     }
-  }, [store]);
+  }, []); 
 
   useEffect(() => {
     if (!store || store.patients.length === 0) return;
@@ -47,27 +48,32 @@ function PatientDashboard() {
   }
 
   const activePatient = store.patients.find((p) => p.id === store.selectedPatientId);
+  const activeStage = activePatient?.stages.find(s => s.id === activePatient.activeStageId) || activePatient?.stages[0];
 
   const handleHomeAddPatient = () => {
     if (sidebarRef.current) sidebarRef.current.openAddModal();
   };
 
-  // 수정 버튼 클릭
   const openEditModal = () => {
-      if (activePatient) {
+      if (activePatient && activeStage) {
           setEditName(activePatient.name);
+          setEditHospital(activePatient.hospital || ""); 
           setEditCaseNumber(activePatient.case_number);
-          setEditTotalSteps(activePatient.total_steps || 21);
+          setEditStageName(activeStage.name);
+          setEditTotalSteps(activeStage.total_steps);
           setIsEditModalOpen(true);
       }
   };
 
-  // 수정 저장
-  const handleUpdatePatient = async () => {
-      if (!activePatient) return;
+  const handleUpdate = async () => {
+      if (!activePatient || !activeStage) return;
       await store.updatePatient(activePatient.id, {
           name: editName,
+          hospital: editHospital, 
           case_number: editCaseNumber,
+      });
+      await store.updateStageInfo(activePatient.id, activeStage.id, {
+          name: editStageName,
           total_steps: editTotalSteps
       });
       setIsEditModalOpen(false);
@@ -80,18 +86,28 @@ function PatientDashboard() {
             <PatientSidebar ref={sidebarRef} />
         </aside>
       )}
+      
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-          {/* 헤더 */}
           <header className="flex items-center justify-between px-6 py-3 bg-white border-b shadow-sm shrink-0 z-10">
             <div className="flex items-center gap-4">
               <div className="flex flex-col">
                 <h1 className="text-xl font-extrabold text-blue-600 tracking-tight">Dental Work Note</h1>
-                {activePatient ? (
-                   // ✨ 여기 아이콘을 Pencil(연필)로 변경
-                   <div className="flex items-center gap-2 text-sm text-slate-500 group cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors" onClick={openEditModal} title="Click to Edit Info">
-                     <span className="font-bold text-slate-800">{activePatient.name}</span>
-                     <span>(#{activePatient.case_number})</span>
-                     <Pencil className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors" />
+                {activePatient && activeStage ? (
+                   <div className="flex items-center gap-2 mt-1 animate-in fade-in slide-in-from-left-2">
+                     <div className="flex items-center gap-2 text-sm text-slate-500 group cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors" onClick={openEditModal} title="Click to Edit Info">
+                       <span className="font-bold text-slate-800 text-lg">{activePatient.name}</span>
+                       {activePatient.hospital && (
+                           <span className="flex items-center gap-1 text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 text-xs">
+                               <Building2 className="w-3 h-3"/> {activePatient.hospital}
+                           </span>
+                       )}
+                       <span className="text-slate-400 font-mono">#{activePatient.case_number}</span>
+                       <ChevronRight className="w-4 h-4 text-slate-300"/>
+                       <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-xs">
+                           {activeStage.name}
+                       </span>
+                       <Pencil className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors ml-1" />
+                     </div>
                    </div>
                 ) : (
                    <span className="text-xs text-slate-400">Select or create a patient</span>
@@ -103,7 +119,6 @@ function PatientDashboard() {
               <Button variant="ghost" size="icon" onClick={() => store.selectPatient(null)} title="Go Home">
                 <Home className="w-5 h-5 text-slate-600" />
               </Button>
-              
               {activePatient && (
                 <Button variant="outline" className="gap-2" onClick={() => setIsOverlayOpen(true)}>
                   <FolderOpen className="w-4 h-4" />
@@ -114,8 +129,8 @@ function PatientDashboard() {
           </header>
 
           <main className="flex-1 overflow-hidden relative bg-slate-100">
-            {activePatient ? (
-              <ChecklistPanel key={activePatient.id} patient={activePatient} />
+            {activePatient && activeStage ? (
+              <ChecklistPanel key={`${activePatient.id}-${activeStage.id}`} patient={activePatient} />
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center p-10 space-y-6">
                 <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm border border-slate-100">
@@ -123,7 +138,7 @@ function PatientDashboard() {
                 </div>
                 <div>
                     <h2 className="text-2xl font-bold text-slate-800 mb-2">Ready to start?</h2>
-                    <p className="text-slate-500 max-w-md">Select an existing patient from the left list<br/>or create a new case right here.</p>
+                    <p className="text-slate-500 max-w-md">Select a patient from the sidebar<br/>or add a new one to begin.</p>
                 </div>
                 <Button size="lg" className="mt-4 gap-2 text-lg px-8 py-6 shadow-lg shadow-blue-200" onClick={handleHomeAddPatient}>
                   <UserPlus className="w-5 h-5" />
@@ -133,9 +148,9 @@ function PatientDashboard() {
             )}
           </main>
 
-          {/* 환자 리스트 오버레이 */}
+          {/* ✨ [수정] 오버레이 z-index를 최상위(10000)로 높임 */}
           {activePatient && isOverlayOpen && (
-            <div className="absolute inset-0 z-50 flex">
+            <div className="absolute inset-0 z-[10000] flex">
               <div className="absolute inset-0 bg-black/50" onClick={() => setIsOverlayOpen(false)} />
               <div className="relative w-[340px] h-full bg-white shadow-xl flex flex-col animate-in slide-in-from-left">
                 <PatientSidebar onClose={() => setIsOverlayOpen(false)} />
@@ -143,19 +158,26 @@ function PatientDashboard() {
             </div>
           )}
 
-          {/* 헤더에서 띄우는 수정 모달 */}
           {isEditModalOpen && (
             <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsEditModalOpen(false)}>
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                     <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
-                        <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Patient Info</h3>
+                        <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Info</h3>
                         <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
                     </div>
-                    <div className="p-5 space-y-4">
-                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" value={editName} onChange={e => setEditName(e.target.value)} /></div>
-                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={editCaseNumber} onChange={e => setEditCaseNumber(e.target.value)} /></div>
-                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded" value={editTotalSteps} onChange={e => setEditTotalSteps(Number(e.target.value))} /></div>
-                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-6 text-lg" onClick={handleUpdatePatient}>Save Changes</Button>
+                    <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+                        <div className="space-y-3 pb-4 border-b border-slate-100">
+                            <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider">Patient Details</h4>
+                            <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" value={editName} onChange={e => setEditName(e.target.value)} /></div>
+                            <div><label className="text-xs font-bold text-slate-500 block mb-1">Hospital</label><input className="w-full border p-2 rounded" value={editHospital} onChange={e => setEditHospital(e.target.value)} placeholder="Hospital Name" /></div>
+                            <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={editCaseNumber} onChange={e => setEditCaseNumber(e.target.value)} /></div>
+                        </div>
+                        <div className="space-y-3 pt-1">
+                            <h4 className="text-xs font-bold text-green-600 uppercase tracking-wider">Current Stage Details</h4>
+                            <div><label className="text-xs font-bold text-slate-500 block mb-1">Stage Name</label><input className="w-full border p-2 rounded bg-green-50/50" value={editStageName} onChange={e => setEditStageName(e.target.value)} placeholder="e.g. 1st Setup" /></div>
+                            <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded bg-green-50/50" value={editTotalSteps} onChange={e => setEditTotalSteps(Number(e.target.value))} /></div>
+                        </div>
+                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-6 text-lg" onClick={handleUpdate}>Save Changes</Button>
                     </div>
                 </div>
             </div>
