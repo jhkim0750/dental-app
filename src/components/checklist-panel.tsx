@@ -208,7 +208,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ✨ [추가] 리사이즈/탭 전환 시 캔버스 강제 리렌더링용 상태
   const [redrawTrigger, setRedrawTrigger] = useState(0);
 
   const [slides, setSlides] = useState<SlideData[]>([{ id: 1, items: [], penStrokes: [] }]);
@@ -269,7 +268,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   useEffect(() => { setPageStartStep(0); const canvas = canvasRef.current; if (canvas) { canvas.width = canvas.parentElement?.offsetWidth || 800; canvas.height = canvas.parentElement?.offsetHeight || 600; } if (patient.summary && patient.summary.memo && patient.summary.memo.startsWith('{')) { try { const savedData = JSON.parse(patient.summary.memo); if (savedData.slides) { setSlides(savedData.slides); setHistory([savedData.slides]); setHistoryIndex(0); } } catch (e) { console.error("JSON Error", e); } } }, [patient.id]);
   
-  // ✨ [수정] 리사이즈 이벤트 시 redrawTrigger 업데이트
   useEffect(() => {
     const handleResize = () => {
         const canvas = canvasRef.current;
@@ -277,7 +275,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         if (canvas && container) {
             canvas.width = container.offsetWidth;
             canvas.height = container.offsetHeight;
-            setRedrawTrigger(prev => prev + 1); // 강제 리렌더링 트리거
+            setRedrawTrigger(prev => prev + 1);
         }
     };
     window.addEventListener('resize', handleResize);
@@ -286,7 +284,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // ✨ [수정] 펜 그림 그리기 (redrawTrigger 의존성 추가)
   useEffect(() => { 
       const canvas = canvasRef.current; 
       const ctx = canvas?.getContext("2d"); 
@@ -305,7 +302,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           ctx.stroke(); 
       }); 
       ctx.globalCompositeOperation = 'source-over'; 
-  }, [penStrokes, currentSlideIndex, items, redrawTrigger]); // ✨ redrawTrigger 추가됨
+  }, [penStrokes, currentSlideIndex, items, redrawTrigger]); 
 
   useEffect(() => { 
       const handleKeyDown = (e: KeyboardEvent) => { 
@@ -709,11 +706,47 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleSaveRules = async () => { const finalType = selectedType === "기타" ? customType : selectedType; const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t)); if (editingRuleId) { if(store) await store.updateRule(patient.id, { id: editingRuleId, type: finalType, tooth: teethToSave[0], startStep, endStep, note }); setEditingRuleId(null); } else { for (const tooth of teethToSave) { if(store) await store.addRule(patient.id, { type: finalType, tooth, startStep, endStep, note }); } } setSelectedTeeth([]); setNote(""); if (selectedType === "기타") setCustomType(""); };
   const handleEditClick = (rule: Rule) => { setEditingRuleId(rule.id); if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } else { setSelectedType("기타"); setCustomType(rule.type); } setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]); setStartStep(rule.startStep); setEndStep(rule.endStep); setNote(rule.note || ""); };
   const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
+  
+  // ✨ [유지] 삭제 경고창 로직
   const handleDeleteRule = (ruleId: string) => setRuleToDelete(ruleId);
-  const confirmDeleteRule = async () => { if (ruleToDelete) { if (store) await store.deleteRule(patient.id, ruleToDelete); if (editingRuleId === ruleToDelete) cancelEdit(); setRuleToDelete(null); } };
+  
+  const confirmDeleteRule = async () => { 
+      if (ruleToDelete) { 
+          if (store) await store.deleteRule(patient.id, ruleToDelete); 
+          if (editingRuleId === ruleToDelete) cancelEdit(); 
+          setRuleToDelete(null); 
+      } 
+  };
+  
   const getRulesForStep = (step: number) => (patient.rules || []).filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
   const getGroupedRules = (step: number) => { const allRules = getRulesForStep(step); const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment"); return { genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)), upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)), lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)), attRules: allRules.filter((r: Rule) => isAtt(r)) }; };
-  const renderCard = (rule: Rule, step: number, isTiny = false) => { const checked = patient.checklist_status.some((s: any) => s.step === step && s.ruleId === rule.id && s.checked); const status = (step === rule.startStep) ? "NEW" : (step === rule.endStep ? "REMOVE" : "CHECK"); return ( <div key={rule.id} onClick={() => store && store.toggleChecklistItem(patient.id, step, rule.id)} className={cn("rounded cursor-pointer flex flex-col relative border select-none transition-all", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-50 border-green-500 ring-1 ring-green-500 text-slate-400" : "bg-white hover:ring-2 hover:ring-blue-200 border-slate-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}> <div className="flex justify-between items-start"><span className={cn("font-bold", isTiny ? "text-[11px]" : "text-lg")}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}</span><div className={cn("w-4 h-4 border rounded flex items-center justify-center transition-colors", checked ? "bg-green-500 border-green-500" : "bg-white")}>{checked && <CheckCheck className="text-white w-3 h-3"/>}</div></div> <div className={cn("font-bold truncate mt-0.5", getTypeColor(rule.type), isTiny && "text-[10px]")}>{rule.type}</div> {rule.note && <div className={cn("text-slate-400 whitespace-pre-wrap break-words leading-tight", isTiny ? "text-[9px]" : "mt-1")}>{rule.note}</div>} </div> ); };
+  
+  const renderCard = (rule: Rule, step: number, isTiny = false) => { 
+      const checked = patient.checklist_status.some((s: any) => s.step === step && s.ruleId === rule.id && s.checked); 
+      const status = (step === rule.startStep) ? "NEW" : (step === rule.endStep ? "REMOVE" : "CHECK"); 
+      
+      return ( 
+          <div key={rule.id} onClick={() => store && store.toggleChecklistItem(patient.id, step, rule.id)} className={cn("rounded cursor-pointer flex flex-col relative border select-none transition-all", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-50 border-green-500 ring-1 ring-green-500 text-slate-400" : "bg-white hover:ring-2 hover:ring-blue-200 border-slate-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}> 
+              <div className="flex justify-between items-start">
+                  <span className={cn("font-bold", isTiny ? "text-[11px]" : "text-lg")}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`}</span>
+                  <div className={cn("w-4 h-4 border rounded flex items-center justify-center transition-colors", checked ? "bg-green-500 border-green-500" : "bg-white")}>{checked && <CheckCheck className="text-white w-3 h-3"/>}</div>
+              </div> 
+              <div className={cn("font-bold truncate mt-0.5", getTypeColor(rule.type), isTiny && "text-[10px]")}>{rule.type}</div> 
+              
+              {/* ✨ [수정] 노트 디자인 변경: 연한 주황색 박스 + 진한 글씨 + 크기 키움 */}
+              {rule.note && (
+                  <div className={cn(
+                      "whitespace-pre-wrap break-words leading-tight rounded",
+                      isTiny ? "text-[9px] p-0.5 mt-0.5" : "text-[11px] p-1.5 mt-1.5",
+                      "bg-orange-50 text-slate-700 font-medium border border-orange-100/50"
+                  )}>
+                      {rule.note}
+                  </div>
+              )} 
+          </div> 
+      ); 
+  };
+
   const renderFullScreenGrid = () => { const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i); let maxGenCount = 0; let maxUpperCount = 0; let maxLowerCount = 0; stepsToShow.forEach(step => { if (step > totalSteps) return; const { genRules, upperRules, lowerRules } = getGroupedRules(step); maxGenCount = Math.max(maxGenCount, genRules.length); maxUpperCount = Math.max(maxUpperCount, upperRules.length); maxLowerCount = Math.max(maxLowerCount, lowerRules.length); }); const getFixedStyle = (count: number) => ({ minHeight: `${34 + (count * 64)}px` }); return ( <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in"> <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0"> <h2 className="text-2xl font-bold flex items-center gap-2"><Layout className="text-blue-600"/> Full Checklist Grid</h2> <div className="flex gap-2"><Button variant="outline" onClick={() => setPageStartStep(Math.max(0, pageStartStep - 10))}>Prev 10</Button><Button variant="outline" onClick={() => setPageStartStep(Math.min(totalSteps, pageStartStep + 10))}>Next 10</Button><Button variant="destructive" onClick={() => setIsGridOpen(false)}>Close</Button></div> </div> <div className="flex-1 p-6 overflow-auto bg-slate-50"> <div className="mb-8"> <div className="grid grid-cols-10 gap-3 min-w-[1400px]"> {stepsToShow.map((step) => { if (step > totalSteps) return <div key={step} className="opacity-0 w-full"/>; const { genRules, upperRules, lowerRules } = getGroupedRules(step); const allRulesInStep = [...genRules, ...upperRules, ...lowerRules]; const isStepComplete = allRulesInStep.length > 0 && allRulesInStep.every(r => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === r.id && s.checked)); return ( <div key={`main-${step}`} className="flex flex-col gap-2"> <div className={cn("p-2 font-bold text-xs text-center rounded-lg border flex justify-between items-center transition-colors", isStepComplete ? "bg-blue-600 text-white border-blue-600 shadow-md" : (step===0?"bg-yellow-100":"bg-white"))}><span>{step===0?"PRE":`STEP ${step}`}</span>{step<=totalSteps && <button onClick={()=>store && store.checkAllInStep(patient.id,step)} className={cn("rounded hover:bg-black/10 p-0.5", isStepComplete && "text-white")}><CheckSquare className="w-3.5 h-3.5"/></button>}</div> <div className="space-y-2"> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxGenCount)}><div className="text-[9px] font-bold text-slate-400 px-1 mb-1">GENERAL</div>{genRules.map((r: Rule) => renderCard(r, step, true))}</div> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxUpperCount)}><div className="text-[9px] font-bold text-blue-400 px-1 mb-1">MAXILLA</div>{upperRules.map((r: Rule) => renderCard(r, step, true))}</div> <div className={cn("bg-white rounded-lg p-1 border flex flex-col")} style={getFixedStyle(maxLowerCount)}><div className="text-[9px] font-bold text-orange-400 px-1 mb-1">MANDIBLE</div>{lowerRules.map((r: Rule) => renderCard(r, step, true))}</div> </div> </div> ); })} </div> </div> <div className="mb-10 pt-4 border-t-2 border-dashed"> <h3 className="text-xl font-bold text-green-800 mb-3 pl-3 border-l-4 border-green-600">Attachments Only</h3> <div className="grid grid-cols-10 gap-3 min-w-[1400px]"> {stepsToShow.map(step => { if(step>totalSteps) return null; const { attRules } = getGroupedRules(step); return ( <div key={`att-${step}`} className="rounded-lg bg-white border flex flex-col h-full min-h-[100px]"> <div className="p-1.5 border-b text-[10px] text-center bg-slate-50">{step===0?"PRE":`STEP ${step}`}</div> <div className="p-1 flex-1">{attRules.map((r: Rule) => renderCard(r, step, true))}</div> </div> ) })} </div> </div> </div> </div> ); };
 
   if (!store) return null;
@@ -737,6 +770,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
            <div className="p-4 border-b bg-slate-50 shrink-0"><h2 className="font-bold">Rule Definition</h2></div>
            <div className="p-4 space-y-4 overflow-y-auto flex-1">
+              {/* ... (입력 폼 영역: 기존과 동일) ... */}
               <div className="space-y-1">
                  <Label className="text-xs font-bold text-slate-500">Item Type</Label>
                  <select className="w-full border p-2 rounded" value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
@@ -754,7 +788,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                 {editingRuleId && <Button variant="outline" onClick={cancelEdit} className="flex-1">Cancel</Button>}
                 <Button onClick={handleSaveRules} className={cn("flex-1 gap-2", editingRuleId ? "bg-orange-500 hover:bg-orange-600" : "")}>{editingRuleId ? <><Save className="w-4 h-4"/> Update</> : <><Plus className="w-4 h-4"/> Add Rule</>}</Button>
               </div>
+              
               <hr className="my-4"/>
+              
               <div className="space-y-2 pb-10">
                  <h3 className="text-xs font-bold text-slate-500 uppercase">Existing Rules ({patient.rules?.length || 0})</h3>
                  {(patient.rules || []).map((rule: Rule) => (
@@ -770,14 +806,13 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            </div>
         </div>
 
+        {/* ... (우측 캔버스 영역: 기존 코드와 동일, 생략 없이 전체 포함됨) ... */}
         <div className="flex-1 flex flex-col bg-slate-50/50 h-full overflow-hidden">
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
              <div className="flex gap-2">
                 <div className="w-px h-4 bg-slate-300 mx-1"></div>
                 <Button onClick={handleSave} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
-                
-                {/* ✨ [수정] 체크리스트 뷰 버튼 옆의 불필요한 토글 삭제함 */}
                 <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-white text-slate-700 border hover:bg-slate-50"><Layout className="w-4 h-4"/> Checklist View</Button>
              </div>
            </div>
@@ -799,6 +834,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               </div>
 
               <div className="flex-1 bg-white p-4 rounded-lg shadow-sm flex flex-col h-full min-h-[600px] relative">
+                 {/* ... (툴바 영역: 생략 없이 그대로 유지) ... */}
                  <div className="flex justify-between items-center mb-4 flex-wrap gap-2 sticky top-0 z-50 bg-white/90 backdrop-blur-sm p-2 border-b">
                     <div className="flex items-center gap-2">
                         <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('select')} className={cn(currentTool === 'select' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Select"><MousePointer2 className="w-4 h-4"/></Button>
@@ -839,7 +875,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                             </div>
                         </div>
 
-                        {/* ✨ [유지] 토글 메뉴 (두께 조절 옆) */}
                         <div className="relative ml-2">
                              <Button variant="ghost" size="icon" onClick={() => setIsEditMenuOpen(!isEditMenuOpen)} title="Edit Menu"><ChevronDown className="w-4 h-4"/></Button>
                              {isEditMenuOpen && (
@@ -872,6 +907,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                     </div>
                  </div>
 
+                 {/* ... (캔버스 영역: 기존과 동일, 생략 없이 전체 포함) ... */}
                  <div className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative select-none", 
                     ['draw', 'highlighter', 'line', 'rect', 'circle', 'triangle'].includes(currentTool) && "cursor-crosshair", 
                     currentTool === 'eraser' && "cursor-cell", 

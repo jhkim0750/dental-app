@@ -18,7 +18,7 @@ export interface Stage {
     memo?: string;
   };
   createdAt: number;
-  isDeleted?: boolean; // ✨ 스테이지 휴지통 상태
+  isDeleted?: boolean;
 }
 
 export interface Rule {
@@ -46,7 +46,7 @@ export interface Patient {
   activeStageId?: string;
 
   isDeleted?: boolean;
-  deletedAt?: any;
+  deletedAt?: any; // 호환성을 위해 any로 유지 (숫자 or 타임스탬프)
 
   // 호환성 필드
   total_steps?: number; 
@@ -54,7 +54,7 @@ export interface Patient {
   summary?: any;
   checklist_status?: ChecklistStatus[];
   
-  createdAt: any;
+  createdAt: any; // 호환성을 위해 any로 유지 (숫자 or 타임스탬프)
 }
 
 interface PatientStore {
@@ -77,7 +77,6 @@ interface PatientStore {
   selectStage: (patientId: string, stageId: string) => void;
   updateStageInfo: (patientId: string, stageId: string, updates: { name?: string, total_steps?: number }) => Promise<void>;
   
-  // ✨ [신규] 스테이지 휴지통 관련 기능
   softDeleteStage: (patientId: string, stageId: string) => Promise<void>;
   restoreStage: (patientId: string, stageId: string) => Promise<void>;
   hardDeleteStage: (patientId: string, stageId: string) => Promise<void>;
@@ -100,7 +99,9 @@ export const usePatientStore = create<PatientStore>()(
       fetchPatients: async () => {
         set({ isLoading: true });
         try {
-          const q = query(collection(db, "patients"), orderBy("createdAt", "desc"));
+          // ✨ [핵심 수정] DB에서 정렬하지 않고 가져온 뒤, 자바스크립트에서 정렬합니다.
+          // 이유: DB에 숫자(과거)와 타임스탬프(최근)가 섞여 있으면 orderBy가 에러를 뿜습니다.
+          const q = query(collection(db, "patients")); 
           const snapshot = await getDocs(q);
           
           const patients = snapshot.docs.map((doc) => {
@@ -123,19 +124,25 @@ export const usePatientStore = create<PatientStore>()(
                 activeStageId = initialStage.id;
             }
 
-            // 삭제되지 않은 스테이지 우선 선택
             const currentStage = stages.find(s => s.id === activeStageId) || stages.find(s => !s.isDeleted) || stages[0];
             
             return {
               ...data,
               id: doc.id,
               stages,
-              activeStageId,
+              activeStageId: currentStage?.id || activeStageId, 
               total_steps: currentStage.total_steps,
               rules: currentStage.rules,
               checklist_status: currentStage.checklist_status,
               summary: currentStage.summary,
             };
+          });
+
+          // ✨ [안전 정렬] 숫자든 객체든 알아서 척척 날짜순(최신순) 정렬
+          patients.sort((a, b) => {
+              const dateA = typeof a.createdAt === 'number' ? a.createdAt : (a.createdAt?.toMillis ? a.createdAt.toMillis() : 0);
+              const dateB = typeof b.createdAt === 'number' ? b.createdAt : (b.createdAt?.toMillis ? b.createdAt.toMillis() : 0);
+              return dateB - dateA;
           });
 
           set({ patients, isLoading: false });
@@ -162,7 +169,7 @@ export const usePatientStore = create<PatientStore>()(
           case_number,
           stages: [initialStage],
           activeStageId: initialStage.id,
-          createdAt: Timestamp.now(),
+          createdAt: Date.now(), // ✨ [수정] 이제부턴 단순 숫자로 저장 (에러 원천 봉쇄)
           isDeleted: false,
         };
 
@@ -190,7 +197,8 @@ export const usePatientStore = create<PatientStore>()(
 
       softDeletePatient: async (id) => {
         const patientRef = doc(db, "patients", id);
-        await updateDoc(patientRef, { isDeleted: true, deletedAt: Timestamp.now() });
+        // ✨ [수정] 삭제 날짜도 숫자로 저장
+        await updateDoc(patientRef, { isDeleted: true, deletedAt: Date.now() });
         set((state) => ({
           patients: state.patients.map((p) => (p.id === id ? { ...p, isDeleted: true } : p)),
           selectedPatientId: state.selectedPatientId === id ? null : state.selectedPatientId,
@@ -305,7 +313,6 @@ export const usePatientStore = create<PatientStore>()(
           set({ patients: newPatients });
       },
 
-      // ✨ [신규] 스테이지 소프트 삭제 (휴지통행)
       softDeleteStage: async (patientId, stageId) => {
           const { patients } = get();
           const pIdx = patients.findIndex(p => p.id === patientId);
@@ -314,7 +321,6 @@ export const usePatientStore = create<PatientStore>()(
 
           const updatedStages = patient.stages.map(s => s.id === stageId ? { ...s, isDeleted: true } : s);
           
-          // 만약 현재 보고 있던 스테이지를 지웠다면, 다른 스테이지(삭제 안된 것)로 이동
           let newActiveId = patient.activeStageId;
           if (patient.activeStageId === stageId) {
               const availableStage = updatedStages.find(s => !s.isDeleted && s.id !== stageId);
@@ -338,7 +344,6 @@ export const usePatientStore = create<PatientStore>()(
           set({ patients: newPatients });
       },
 
-      // ✨ [신규] 스테이지 복원
       restoreStage: async (patientId, stageId) => {
           const { patients } = get();
           const pIdx = patients.findIndex(p => p.id === patientId);
@@ -355,7 +360,6 @@ export const usePatientStore = create<PatientStore>()(
           set({ patients: newPatients });
       },
 
-      // ✨ [신규] 스테이지 완전 삭제
       hardDeleteStage: async (patientId, stageId) => {
           const { patients } = get();
           const pIdx = patients.findIndex(p => p.id === patientId);
