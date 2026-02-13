@@ -610,9 +610,9 @@ export const usePatientStore = create<PatientStore>()(
     {
       name: "dental-patient-storage-v2", 
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ 
-          selectedPatientId: state.selectedPatientId 
-      }),
+      // ✨ [수정] 이제 로컬 저장소에 '누굴 선택했는지' 저장하지 않습니다.
+      // 따라서 새로고침하면 항상 초기 상태(null)로 시작합니다.
+      partialize: (state) => ({}), 
     }
   )
 );

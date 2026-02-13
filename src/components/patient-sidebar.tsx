@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useImperativeHandle, forwardRef } from "react";
+import React, { useState, useImperativeHandle, forwardRef, useRef } from "react";
 import { usePatientStoreHydrated, Patient, Stage } from "@/hooks/use-patient-store";
 import { 
   Search, Plus, Trash2, User, ChevronRight, ChevronDown, 
@@ -26,6 +26,10 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
     const [expandedPatientId, setExpandedPatientId] = useState<string | null>(null);
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    
+    // ✨ [추가] 모달창 드래그 닫힘 방지용 안전장치
+    const [isMouseDownOnOverlay, setIsMouseDownOnOverlay] = useState(false);
+
     const [newName, setNewName] = useState("");
     const [newHospital, setNewHospital] = useState("");
     const [newCaseNumber, setNewCaseNumber] = useState("");
@@ -65,19 +69,12 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
       }
     });
 
-    // ✨ [수정 핵심] 이벤트(e)를 받아서 새로고침을 막습니다.
     const handleAddPatient = async (e?: React.MouseEvent) => {
-        if (e) e.preventDefault(); // 브라우저야, 새로고침 하지 마!
-        
-        console.log("Adding patient...", { newName, newCaseNumber }); // 확인용 로그
-
+        if (e) e.preventDefault(); 
         if (!newName || !newCaseNumber) return;
         
-        // 저장 시도
         try {
             await store.addPatient(newName, newHospital, newCaseNumber, newTotalSteps);
-            console.log("Patient added successfully!");
-            
             setIsAddModalOpen(false);
             setNewName(""); setNewHospital(""); setNewCaseNumber(""); setNewTotalSteps(20);
         } catch (error) {
@@ -168,6 +165,21 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
         if (confirm("Move this patient to trash?")) {
             await store.softDeletePatient(patientId);
         }
+    };
+
+    // ✨ [핵심 기능] 마우스가 배경에서 눌렸는지 확인
+    const handleOverlayMouseDown = (e: React.MouseEvent) => {
+        if (e.target === e.currentTarget) {
+            setIsMouseDownOnOverlay(true);
+        }
+    };
+
+    // ✨ [핵심 기능] 배경에서 눌리고 + 배경에서 떼졌을 때만 닫기 (드래그 실수 방지)
+    const handleOverlayMouseUp = (e: React.MouseEvent) => {
+        if (isMouseDownOnOverlay && e.target === e.currentTarget) {
+            setIsAddModalOpen(false);
+        }
+        setIsMouseDownOnOverlay(false); // 초기화
     };
 
     return (
@@ -367,17 +379,22 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
         </div>
 
         {isAddModalOpen && (
-            <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsAddModalOpen(false)}>
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div 
+                className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" 
+                // ✨ [수정] onClick 대신 MouseDown, MouseUp 조합으로 변경
+                onMouseDown={handleOverlayMouseDown}
+                onMouseUp={handleOverlayMouseUp}
+            >
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" 
+                    onMouseDown={e => e.stopPropagation()} // 내부 클릭은 전파 방지
+                >
                     <div className="p-4 border-b bg-slate-50"><h3 className="font-bold text-lg">Add New Patient</h3></div>
                     <div className="p-5 space-y-4">
-                        {/* ✨ [안전장치] 엔터키를 쳐도 submit 되지 않도록 form 태그를 쓰지 않거나, 명시적으로 막음 */}
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" autoFocus value={newName} onChange={e => setNewName(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Hospital</label><input className="w-full border p-2 rounded" value={newHospital} onChange={e => setNewHospital(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={newCaseNumber} onChange={e => setNewCaseNumber(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps (1st Stage)</label><input type="number" className="w-full border p-2 rounded" value={newTotalSteps} onChange={e => setNewTotalSteps(Number(e.target.value))} /></div>
                         
-                        {/* ✨ [핵심 수정] type="button"을 명시해서 새로고침(submit)을 원천 차단 */}
                         <Button 
                             type="button" 
                             className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" 
@@ -390,6 +407,7 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
             </div>
         )}
 
+        {/* 편집 모달도 동일하게 적용 (선생님이 언급은 안 하셨지만 통일성을 위해) */}
         {editingPatient && (
             <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEditingPatient(null)}>
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>

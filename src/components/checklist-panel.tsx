@@ -219,14 +219,14 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [selectedIds, setSelectedIds] = useState<number[]>([]); 
   const [clipboard, setClipboard] = useState<CanvasItem[]>([]);
   const [pasteOffset, setPasteOffset] = useState(20);
-  
+   
   const [selectionBox, setSelectionBox] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
 
   const [history, setHistory] = useState<SlideData[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
   const [currentTool, setCurrentTool] = useState<"select" | "draw" | "line" | "eraser" | "text" | "highlighter" | "rect" | "circle" | "triangle">("select");
-  
+   
   const [styleSettings, setStyleSettings] = useState({
       strokeColor: "#000000",
       fillColor: "transparent",
@@ -267,7 +267,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const totalSteps = patient.total_steps || 21;
 
   useEffect(() => { setPageStartStep(0); const canvas = canvasRef.current; if (canvas) { canvas.width = canvas.parentElement?.offsetWidth || 800; canvas.height = canvas.parentElement?.offsetHeight || 600; } if (patient.summary && patient.summary.memo && patient.summary.memo.startsWith('{')) { try { const savedData = JSON.parse(patient.summary.memo); if (savedData.slides) { setSlides(savedData.slides); setHistory([savedData.slides]); setHistoryIndex(0); } } catch (e) { console.error("JSON Error", e); } } }, [patient.id]);
-  
+   
   useEffect(() => {
     const handleResize = () => {
         const canvas = canvasRef.current;
@@ -311,17 +311,17 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           if (isInputActive) return;
 
           if (textInput) return; 
-          
+           
           if (ruleToDelete) { 
               if (e.key === 'Enter') confirmDeleteRule(); 
               if (e.key === 'Escape') setRuleToDelete(null); 
               return; 
           } 
-          
+           
           if (e.key === 'Delete') deleteSelectedItems(); 
-          
+           
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); handleCopy(); }
-          
+           
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); handleDuplicate(); }
 
           if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
@@ -372,7 +372,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const changeTool = (tool: typeof currentTool) => { 
       setCurrentTool(tool); 
       if (tool === 'select') setSelectedIds([]); 
-      
+       
       const config = toolConfigs[tool];
       if (config) {
           setStyleSettings(prev => ({
@@ -384,10 +384,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           }));
       }
   };
-  
+   
   const handleStyleChange = (key: keyof typeof styleSettings, value: string | number) => {
       setStyleSettings(prev => ({ ...prev, [key]: value }));
-      
+       
       if (currentTool === 'text' && key === 'strokeWidth') {
           setStyleSettings(prev => ({ ...prev, fontSize: value as number }));
       }
@@ -445,7 +445,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const uploadImageToFirebase = async (file: File) => { setIsImageUploading(true); try { const compressedBlob = await compressImage(file); const storageRef = ref(storage, `patients/${patient.id}/images/${Date.now()}_${file.name}`); await uploadBytes(storageRef, compressedBlob); const url = await getDownloadURL(storageRef); addImage(url); } catch (error) { console.error("Image upload error:", error); alert("이미지 업로드 실패 (CORS 설정을 확인하세요)"); } finally { setIsImageUploading(false); } };
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) uploadImageToFirebase(file); e.target.value = ""; };
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); const file = e.dataTransfer.files?.[0]; if (file && file.type.startsWith('image/')) uploadImageToFirebase(file); };
-  
+   
   const confirmText = () => { if (!textInput) return; const trimmedText = textInput.value.trim(); let newItems = [...items]; if (!trimmedText) { if (textInput.id) newItems = newItems.filter(i => i.id !== textInput.id); } else { if (textInput.id) { newItems = newItems.map(i => i.id === textInput.id ? { ...i, text: trimmedText, color: styleSettings.strokeColor, size: styleSettings.fontSize, width: textInput.width } : i); } else { newItems.push({ id: Date.now(), type: 'text', text: trimmedText, x: textInput.x, y: textInput.y, color: styleSettings.strokeColor, size: styleSettings.fontSize, zIndex: items.length, width: 200, height: styleSettings.fontSize * 1.5 }); setSelectedIds([newItems[newItems.length-1].id]); } } updateCurrentSlide(newItems, penStrokes); recordHistory(); setTextInput(null); setCurrentTool('select'); };
   const handleTextDoubleClick = (item: CanvasItem) => { if (item.type !== 'text') return; setStyleSettings(prev => ({ ...prev, strokeColor: item.color || "#000", fontSize: item.size || 20 })); setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width }); setCurrentTool('text'); };
   const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => { const lines = text.split('\n'); let lineCounter = 0; lines.forEach((line) => { const words = line.split(''); let currentLine = ''; for(let n = 0; n < words.length; n++) { const testLine = currentLine + words[n]; const metrics = ctx.measureText(testLine); if (metrics.width > maxWidth && n > 0) { ctx.fillText(currentLine, x, y + (lineCounter * lineHeight)); currentLine = words[n]; lineCounter++; } else { currentLine = testLine; } } ctx.fillText(currentLine, x, y + (lineCounter * lineHeight)); lineCounter++; }); };
@@ -454,7 +454,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       if (!rect) return { x: 0, y: 0 };
       return { x: e.clientX - rect.left, y: e.clientY - rect.top }; 
   };
-  
+   
   const handleCopy = () => { 
       const selectedItems = items.filter(i => selectedIds.includes(i.id)); 
       if (selectedItems.length > 0) {
@@ -473,7 +473,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       if (!textInput && e.target === containerRef.current) e.preventDefault();
       if (contextMenu) { setContextMenu(null); return; } 
       const { x, y } = getPos(e); 
-      
+       
       if (['draw', 'eraser', 'highlighter'].includes(currentTool)) { 
           const newStroke: PenStroke = { points: [{ x, y }], color: styleSettings.strokeColor, size: styleSettings.strokeWidth, tool: currentTool as any }; 
           setSlides(prev => { const newSlides = [...prev]; const current = { ...newSlides[currentSlideIndex] }; current.penStrokes = [...current.penStrokes, newStroke]; newSlides[currentSlideIndex] = current; return newSlides; }); 
@@ -493,7 +493,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           return;
       }
       if (currentTool === 'text') { e.preventDefault(); if (textInput) confirmText(); else setTextInput({ x, y, value: "" }); return; } 
-      
+       
       if (currentTool === 'select') {
           if (!e.ctrlKey && !e.shiftKey) setSelectedIds([]); 
           setSelectionBox({ x, y, w: 0, h: 0 }); 
@@ -505,7 +505,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       if (currentTool !== 'select') return; 
       e.stopPropagation(); if (e.button === 2) return; 
       const { x, y } = getPos(e); 
-      
+       
       let newSelectedIds = [...selectedIds];
       const isAlreadySelected = newSelectedIds.includes(item.id);
 
@@ -522,7 +522,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           if (!isAlreadySelected) newSelectedIds = [item.id];
       }
       setSelectedIds(newSelectedIds);
-      
+       
       const initialItemsMap: Record<number, { x: number, y: number, x2?: number, y2?: number }> = {};
       newSelectedIds.forEach(id => {
           const it = items.find(i => i.id === id);
@@ -539,7 +539,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
       let offsetX = x - item.x; 
       let offsetY = y - item.y; 
-      
+       
       setDragState({ 
           isDragging: true, action, startX: x, startY: y, offsetX, offsetY, 
           initialItem: { ...item }, initialItemsMap, lockedAxis: null, 
@@ -550,10 +550,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   const handleResizeMouseDown = (e: React.MouseEvent, item: CanvasItem, handle: string) => { e.stopPropagation(); const { x, y } = getPos(e); setDragState({ isDragging: true, action: 'resize', resizeHandle: handle, startX: x, startY: y, offsetX: 0, offsetY: 0, initialItem: { ...item } }); };
   const handleItemContextMenu = (e: React.MouseEvent, itemId: number) => { e.preventDefault(); e.stopPropagation(); const rect = containerRef.current?.getBoundingClientRect(); if(rect) setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, itemId }); };
-  
+   
   const handleMouseMove = (e: React.MouseEvent) => { 
       const { x, y } = getPos(e); 
-      
+       
       if (dragState.isDragging && !dragState.hasMoved) {
           const totalDx = Math.abs(x - dragState.startX);
           const totalDy = Math.abs(y - dragState.startY);
@@ -566,13 +566,13 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       if (dragState.isDragging && dragState.action === 'draw_line') { 
           setSlides(prev => { const clone = [...prev]; const current = { ...clone[currentSlideIndex] }; current.items = current.items.map(i => { if (i.id !== -1) return i; let newX2 = x; let newY2 = y; if (e.shiftKey) { const dx = Math.abs(x - i.x); const dy = Math.abs(y - i.y); if (dx > dy) newY2 = i.y; else newX2 = i.x; } return { ...i, x2: newX2, y2: newY2 }; }); clone[currentSlideIndex] = current; return clone; }); return; 
       } 
-      
+       
       if (dragState.isDragging && dragState.action === 'draw_shape') {
           setSlides(prev => { 
               const clone = [...prev]; const current = { ...clone[currentSlideIndex] }; 
               current.items = current.items.map(i => { 
                   if (i.id !== -1) return i; 
-                  
+                   
                   let startX = dragState.startX;
                   let startY = dragState.startY;
                   let currentX = x;
@@ -615,7 +615,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
       }
 
       if (!dragState.isDragging || selectedIds.length === 0) return; 
-      
+       
       let currentLockedAxis = dragState.lockedAxis;
       if (dragState.isDragging && dragState.action === 'move' && e.shiftKey && !currentLockedAxis) {
           const dx = Math.abs(x - dragState.startX); const dy = Math.abs(y - dragState.startY);
@@ -676,7 +676,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   const handleMouseUp = () => { 
       if (!dragState.isDragging) return; 
-      
+       
       if (dragState.isCloning && !dragState.hasMoved && dragState.initialItem) {
           setSelectedIds(prev => prev.filter(id => id !== dragState.initialItem!.id));
       }
@@ -706,10 +706,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const handleSaveRules = async () => { const finalType = selectedType === "기타" ? customType : selectedType; const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t)); if (editingRuleId) { if(store) await store.updateRule(patient.id, { id: editingRuleId, type: finalType, tooth: teethToSave[0], startStep, endStep, note }); setEditingRuleId(null); } else { for (const tooth of teethToSave) { if(store) await store.addRule(patient.id, { type: finalType, tooth, startStep, endStep, note }); } } setSelectedTeeth([]); setNote(""); if (selectedType === "기타") setCustomType(""); };
   const handleEditClick = (rule: Rule) => { setEditingRuleId(rule.id); if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } else { setSelectedType("기타"); setCustomType(rule.type); } setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]); setStartStep(rule.startStep); setEndStep(rule.endStep); setNote(rule.note || ""); };
   const cancelEdit = () => { setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); };
-  
-  // ✨ [유지] 삭제 경고창 로직
+   
   const handleDeleteRule = (ruleId: string) => setRuleToDelete(ruleId);
-  
+   
   const confirmDeleteRule = async () => { 
       if (ruleToDelete) { 
           if (store) await store.deleteRule(patient.id, ruleToDelete); 
@@ -717,14 +716,14 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           setRuleToDelete(null); 
       } 
   };
-  
+   
   const getRulesForStep = (step: number) => (patient.rules || []).filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
   const getGroupedRules = (step: number) => { const allRules = getRulesForStep(step); const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment"); return { genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)), upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)), lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)), attRules: allRules.filter((r: Rule) => isAtt(r)) }; };
-  
+   
   const renderCard = (rule: Rule, step: number, isTiny = false) => { 
       const checked = patient.checklist_status.some((s: any) => s.step === step && s.ruleId === rule.id && s.checked); 
       const status = (step === rule.startStep) ? "NEW" : (step === rule.endStep ? "REMOVE" : "CHECK"); 
-      
+       
       return ( 
           <div key={rule.id} onClick={() => store && store.toggleChecklistItem(patient.id, step, rule.id)} className={cn("rounded cursor-pointer flex flex-col relative border select-none transition-all", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-50 border-green-500 ring-1 ring-green-500 text-slate-400" : "bg-white hover:ring-2 hover:ring-blue-200 border-slate-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}> 
               <div className="flex justify-between items-start">
@@ -732,8 +731,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                   <div className={cn("w-4 h-4 border rounded flex items-center justify-center transition-colors", checked ? "bg-green-500 border-green-500" : "bg-white")}>{checked && <CheckCheck className="text-white w-3 h-3"/>}</div>
               </div> 
               <div className={cn("font-bold truncate mt-0.5", getTypeColor(rule.type), isTiny && "text-[10px]")}>{rule.type}</div> 
-              
-              {/* ✨ [수정] 노트 디자인 변경: 연한 주황색 박스 + 진한 글씨 + 크기 키움 */}
+               
               {rule.note && (
                   <div className={cn(
                       "whitespace-pre-wrap break-words leading-tight rounded",
@@ -770,7 +768,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
            <div className="p-4 border-b bg-slate-50 shrink-0"><h2 className="font-bold">Rule Definition</h2></div>
            <div className="p-4 space-y-4 overflow-y-auto flex-1">
-              {/* ... (입력 폼 영역: 기존과 동일) ... */}
               <div className="space-y-1">
                  <Label className="text-xs font-bold text-slate-500">Item Type</Label>
                  <select className="w-full border p-2 rounded" value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
@@ -806,7 +803,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
            </div>
         </div>
 
-        {/* ... (우측 캔버스 영역: 기존 코드와 동일, 생략 없이 전체 포함됨) ... */}
         <div className="flex-1 flex flex-col bg-slate-50/50 h-full overflow-hidden">
            <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
              <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
@@ -834,108 +830,108 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               </div>
 
               <div className="flex-1 bg-white p-4 rounded-lg shadow-sm flex flex-col h-full min-h-[600px] relative">
-                 {/* ... (툴바 영역: 생략 없이 그대로 유지) ... */}
-                 <div className="flex justify-between items-center mb-4 flex-wrap gap-2 sticky top-0 z-50 bg-white/90 backdrop-blur-sm p-2 border-b">
-                    <div className="flex items-center gap-2">
-                        <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('select')} className={cn(currentTool === 'select' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Select"><MousePointer2 className="w-4 h-4"/></Button>
-                        <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('draw')} className={cn(currentTool === 'draw' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Pen"><PenTool className="w-4 h-4"/></Button>
-                        <Button variant={currentTool === 'highlighter' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('highlighter')} className={cn(currentTool === 'highlighter' && "bg-yellow-100 text-yellow-600 ring-2 ring-yellow-500")} title="Highlighter"><Highlighter className="w-4 h-4"/></Button>
-                        <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('line')} className={cn(currentTool === 'line' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
-                        <Button variant={currentTool === 'rect' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('rect')} className={cn(currentTool === 'rect' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Rectangle"><Square className="w-4 h-4"/></Button>
-                        <Button variant={currentTool === 'circle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('circle')} className={cn(currentTool === 'circle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Circle"><Circle className="w-4 h-4"/></Button>
-                        <Button variant={currentTool === 'triangle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('triangle')} className={cn(currentTool === 'triangle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Triangle"><Triangle className="w-4 h-4"/></Button>
-                        <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('text')} className={cn(currentTool === 'text' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Text"><Type className="w-4 h-4"/></Button>
-                        
-                        <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-                        <Button variant="ghost" size="icon" onClick={() => !isImageUploading && fileInputRef.current?.click()} title="Add Image" disabled={isImageUploading}>
-                            {isImageUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <ImageIcon className="w-4 h-4"/>}
-                        </Button>
+                  <div className="flex justify-between items-center mb-4 flex-wrap gap-2 sticky top-0 z-50 bg-white/90 backdrop-blur-sm p-2 border-b">
+                     <div className="flex items-center gap-2">
+                         <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('select')} className={cn(currentTool === 'select' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Select"><MousePointer2 className="w-4 h-4"/></Button>
+                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                         <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('draw')} className={cn(currentTool === 'draw' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Pen"><PenTool className="w-4 h-4"/></Button>
+                         <Button variant={currentTool === 'highlighter' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('highlighter')} className={cn(currentTool === 'highlighter' && "bg-yellow-100 text-yellow-600 ring-2 ring-yellow-500")} title="Highlighter"><Highlighter className="w-4 h-4"/></Button>
+                         {/* ✨ [복구 완료] 지우개 버튼 추가됨 */}
+                         <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('eraser')} className={cn(currentTool === 'eraser' && "bg-pink-100 text-pink-600 ring-2 ring-pink-500")} title="Eraser"><Eraser className="w-4 h-4"/></Button>
+                         <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('line')} className={cn(currentTool === 'line' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
+                         <Button variant={currentTool === 'rect' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('rect')} className={cn(currentTool === 'rect' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Rectangle"><Square className="w-4 h-4"/></Button>
+                         <Button variant={currentTool === 'circle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('circle')} className={cn(currentTool === 'circle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Circle"><Circle className="w-4 h-4"/></Button>
+                         <Button variant={currentTool === 'triangle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('triangle')} className={cn(currentTool === 'triangle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Triangle"><Triangle className="w-4 h-4"/></Button>
+                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                         <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('text')} className={cn(currentTool === 'text' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Text"><Type className="w-4 h-4"/></Button>
+                         
+                         <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+                         <Button variant="ghost" size="icon" onClick={() => !isImageUploading && fileInputRef.current?.click()} title="Add Image" disabled={isImageUploading}>
+                             {isImageUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <ImageIcon className="w-4 h-4"/>}
+                         </Button>
 
-                        <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        
-                        <div className="flex items-center gap-2 border px-2 py-1 rounded bg-slate-50">
-                            <div className="flex flex-col items-center gap-0.5">
-                                <span className="text-[8px] font-bold text-slate-400">Stroke</span>
-                                <input type="color" value={styleSettings.strokeColor} onChange={(e) => handleStyleChange('strokeColor', e.target.value)} className="w-5 h-5 p-0 border-0 rounded cursor-pointer" title="Stroke/Text Color"/>
-                            </div>
-                            {['rect', 'circle', 'triangle'].includes(currentTool) || selectedIds.length > 0 ? (
-                                <div className="flex flex-col items-center gap-0.5">
-                                    <span className="text-[8px] font-bold text-slate-400">Fill</span>
-                                    <div className="relative w-5 h-5">
-                                        <input type="color" value={styleSettings.fillColor === 'transparent' ? '#ffffff' : styleSettings.fillColor} onChange={(e) => handleStyleChange('fillColor', e.target.value)} className="w-full h-full p-0 border-0 rounded cursor-pointer" />
-                                        <button onClick={() => handleStyleChange('fillColor', 'transparent')} className="absolute -top-3 -right-2 bg-white border rounded-[2px] text-[8px] px-0.5" title="Transparent">X</button>
-                                    </div>
-                                </div>
-                            ) : null}
-                            <div className="flex flex-col items-center w-16">
-                                <span className="text-[8px] font-bold text-slate-400">Width: {styleSettings.strokeWidth}</span>
-                                <input type="range" min="1" max="50" value={styleSettings.strokeWidth} onChange={(e) => handleStyleChange('strokeWidth', Number(e.target.value))} className="w-full accent-blue-600 h-1.5" />
-                            </div>
-                        </div>
-
-                        <div className="relative ml-2">
-                             <Button variant="ghost" size="icon" onClick={() => setIsEditMenuOpen(!isEditMenuOpen)} title="Edit Menu"><ChevronDown className="w-4 h-4"/></Button>
-                             {isEditMenuOpen && (
-                                 <div className="absolute left-0 top-full mt-1 bg-white border shadow-lg rounded-lg p-1 flex flex-col gap-1 z-50 min-w-[140px] animate-in fade-in zoom-in-95" onClick={() => setIsEditMenuOpen(false)}>
-                                     <div className="text-[10px] font-bold text-slate-400 px-2 py-1">CLIPBOARD</div>
-                                     <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleCopy} disabled={selectedIds.length === 0}><Copy className="w-3.5 h-3.5"/> Copy</button>
-                                     <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handlePaste} disabled={clipboard.length === 0}><Clipboard className="w-3.5 h-3.5"/> Paste</button>
-                                     <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleDuplicate} disabled={selectedIds.length === 0}><Plus className="w-3.5 h-3.5"/> Duplicate</button>
+                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                         
+                         <div className="flex items-center gap-2 border px-2 py-1 rounded bg-slate-50">
+                             <div className="flex flex-col items-center gap-0.5">
+                                 <span className="text-[8px] font-bold text-slate-400">Stroke</span>
+                                 <input type="color" value={styleSettings.strokeColor} onChange={(e) => handleStyleChange('strokeColor', e.target.value)} className="w-5 h-5 p-0 border-0 rounded cursor-pointer" title="Stroke/Text Color"/>
+                             </div>
+                             {['rect', 'circle', 'triangle'].includes(currentTool) || selectedIds.length > 0 ? (
+                                 <div className="flex flex-col items-center gap-0.5">
+                                     <span className="text-[8px] font-bold text-slate-400">Fill</span>
+                                     <div className="relative w-5 h-5">
+                                         <input type="color" value={styleSettings.fillColor === 'transparent' ? '#ffffff' : styleSettings.fillColor} onChange={(e) => handleStyleChange('fillColor', e.target.value)} className="w-full h-full p-0 border-0 rounded cursor-pointer" />
+                                         <button onClick={() => handleStyleChange('fillColor', 'transparent')} className="absolute -top-3 -right-2 bg-white border rounded-[2px] text-[8px] px-0.5" title="Transparent">X</button>
+                                     </div>
                                  </div>
-                             )}
-                        </div>
+                             ) : null}
+                             <div className="flex flex-col items-center w-16">
+                                 <span className="text-[8px] font-bold text-slate-400">Width: {styleSettings.strokeWidth}</span>
+                                 <input type="range" min="1" max="50" value={styleSettings.strokeWidth} onChange={(e) => handleStyleChange('strokeWidth', Number(e.target.value))} className="w-full accent-blue-600 h-1.5" />
+                             </div>
+                         </div>
 
+                         <div className="relative ml-2">
+                              <Button variant="ghost" size="icon" onClick={() => setIsEditMenuOpen(!isEditMenuOpen)} title="Edit Menu"><ChevronDown className="w-4 h-4"/></Button>
+                              {isEditMenuOpen && (
+                                  <div className="absolute left-0 top-full mt-1 bg-white border shadow-lg rounded-lg p-1 flex flex-col gap-1 z-50 min-w-[140px] animate-in fade-in zoom-in-95" onClick={() => setIsEditMenuOpen(false)}>
+                                      <div className="text-[10px] font-bold text-slate-400 px-2 py-1">CLIPBOARD</div>
+                                      <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleCopy} disabled={selectedIds.length === 0}><Copy className="w-3.5 h-3.5"/> Copy</button>
+                                      <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handlePaste} disabled={clipboard.length === 0}><Clipboard className="w-3.5 h-3.5"/> Paste</button>
+                                      <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleDuplicate} disabled={selectedIds.length === 0}><Plus className="w-3.5 h-3.5"/> Duplicate</button>
+                                  </div>
+                              )}
+                         </div>
+
+                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                         <Button variant="ghost" size="icon" onClick={handleUndo} title="Undo (Ctrl+Z)"><Undo className="w-4 h-4"/></Button>
+                         <Button variant="ghost" size="icon" onClick={handleRedo} title="Redo (Ctrl+Y)"><Redo className="w-4 h-4"/></Button>
+                     </div>
+                     
+                     <div className="flex gap-2">
+                        {selectedIds.length > 0 && (
+                            <>
+                                <Button variant="ghost" size="sm" onClick={() => moveLayer('up')} title="Bring Forward"><BringToFront className="w-4 h-4"/></Button>
+                                <Button variant="ghost" size="sm" onClick={() => moveLayer('down')} title="Send Backward"><SendToBack className="w-4 h-4"/></Button>
+                                <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                                <Button variant="ghost" size="sm" onClick={deleteSelectedItems} className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4"/></Button>
+                            </>
+                        )}
                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        <Button variant="ghost" size="icon" onClick={handleUndo} title="Undo (Ctrl+Z)"><Undo className="w-4 h-4"/></Button>
-                        <Button variant="ghost" size="icon" onClick={handleRedo} title="Redo (Ctrl+Y)"><Redo className="w-4 h-4"/></Button>
-                    </div>
-                    
-                    <div className="flex gap-2">
-                       {selectedIds.length > 0 && (
-                           <>
-                               <Button variant="ghost" size="sm" onClick={() => moveLayer('up')} title="Bring Forward"><BringToFront className="w-4 h-4"/></Button>
-                               <Button variant="ghost" size="sm" onClick={() => moveLayer('down')} title="Send Backward"><SendToBack className="w-4 h-4"/></Button>
-                               <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                               <Button variant="ghost" size="sm" onClick={deleteSelectedItems} className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4"/></Button>
-                           </>
-                       )}
-                       <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                       <Button variant="ghost" size="sm" onClick={clearPenLayer} className="text-slate-500">Clear Pen</Button>
-                       <Button variant="ghost" size="sm" onClick={clearAll} className="text-red-400">Clear All</Button>
-                    </div>
-                 </div>
+                        <Button variant="ghost" size="sm" onClick={clearPenLayer} className="text-slate-500">Clear Pen</Button>
+                        <Button variant="ghost" size="sm" onClick={clearAll} className="text-red-400">Clear All</Button>
+                     </div>
+                  </div>
 
-                 {/* ... (캔버스 영역: 기존과 동일, 생략 없이 전체 포함) ... */}
-                 <div className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative select-none", 
+                  <div className={cn("flex-1 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 overflow-hidden relative select-none", 
                     ['draw', 'highlighter', 'line', 'rect', 'circle', 'triangle'].includes(currentTool) && "cursor-crosshair", 
                     currentTool === 'eraser' && "cursor-cell", 
                     currentTool === 'text' && "cursor-text", 
                     currentTool === 'select' && "cursor-default"
-                 )} ref={containerRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onDragOver={handleDrop} onDrop={handleDrop}>
-                    {items.map((item) => {
-                        if (textInput && textInput.id === item.id) return null;
-                        const isSelected = selectedIds.includes(item.id);
-                        const showResizeHandles = isSelected && selectedIds.length === 1;
-                        const commonStyle: React.CSSProperties = { left: item.x, top: item.y, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' };
-                        const renderResizeHandles = () => {
-                            if (!showResizeHandles || currentTool !== 'select') return null;
-                            const handles = [ { pos: 'nw', style: { top: -4, left: -4, cursor: 'nw-resize' } }, { pos: 'n', style: { top: -4, left: '50%', transform: 'translateX(-50%)', cursor: 'n-resize' } }, { pos: 'ne', style: { top: -4, right: -4, cursor: 'ne-resize' } }, { pos: 'e', style: { top: '50%', right: -4, transform: 'translateY(-50%)', cursor: 'e-resize' } }, { pos: 'se', style: { bottom: -4, right: -4, cursor: 'se-resize' } }, { pos: 's', style: { bottom: -4, left: '50%', transform: 'translateX(-50%)', cursor: 's-resize' } }, { pos: 'sw', style: { bottom: -4, left: -4, cursor: 'sw-resize' } }, { pos: 'w', style: { top: '50%', left: -4, transform: 'translateY(-50%)', cursor: 'w-resize' } }, ];
-                            return handles.map(h => ( <div key={h.pos} className="absolute w-2.5 h-2.5 bg-white border border-blue-500 z-50" style={h.style} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} /> ));
-                        };
-                        
-                        if (item.type === 'image') { return ( <div key={item.id} className={cn("absolute", isSelected && "ring-1 ring-blue-500")} style={{ ...commonStyle, width: item.width, height: item.height }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> <img src={item.src} className="w-full h-full object-fill pointer-events-none" /> {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} {renderResizeHandles()} </div> ); } 
-                        if (item.type === 'text') { return ( <div key={item.id} className={cn("absolute whitespace-pre-wrap px-1 border border-transparent", isSelected && "border-blue-500")} style={{ ...commonStyle, color: item.strokeColor || item.color, fontSize: item.size, fontWeight: 'bold', width: item.width, lineHeight: '1.2' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} onDoubleClick={(e) => { e.stopPropagation(); handleTextDoubleClick(item); }}> {item.text} {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} {renderResizeHandles()} </div> ); }
-                        if (item.type === 'line') { return ( <svg key={item.id} className="absolute overflow-visible" style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}> <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.strokeWidth || item.size || 3, 20)} className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} /> <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={isSelected ? "#3b82f6" : (item.strokeColor || item.color)} strokeWidth={item.strokeWidth || item.size} className={cn(currentTool === 'select' ? "pointer-events-none" : "")} /> {showResizeHandles && currentTool === 'select' && ( <> <circle cx={item.x} cy={item.y} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'start')} /> <circle cx={item.x2} cy={item.y2} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'end')} /> </> )} </svg> ); }
-                        if (['rect', 'circle', 'triangle'].includes(item.type)) { return ( <div key={item.id} className="absolute" style={{ left: item.x, top: item.y, width: item.width, height: item.height, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible"> {item.type === 'rect' && <rect x="0" y="0" width="100" height="100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} {item.type === 'circle' && <ellipse cx="50" cy="50" rx="50" ry="50" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} {item.type === 'triangle' && <polygon points="50,0 0,100 100,100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} </svg> {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} {renderResizeHandles()} </div> ); }
-                    })}
-                    {selectionBox && ( <div className="absolute border border-blue-500 bg-blue-200/30 z-[9999] pointer-events-none" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.w, height: selectionBox.h }} /> )}
-                    <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", (['draw', 'eraser', 'highlighter'].includes(currentTool)) ? "pointer-events-auto" : "pointer-events-none")} />
-                    {textInput && ( <textarea autoFocus className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden" style={{ left: textInput.x, top: textInput.y, width: textInput.width ? textInput.width : 'auto', minWidth: '100px', color: styleSettings.strokeColor, fontSize: styleSettings.fontSize, fontWeight: "bold", height: "auto", lineHeight: '1.2' }} value={textInput.value} onMouseDown={(e) => e.stopPropagation()} onChange={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; setTextInput({ ...textInput, value: e.target.value }) }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmText(); } }} onBlur={confirmText} /> )}
-                    {contextMenu && ( <div className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[100px] animate-in fade-in zoom-in-95 duration-100" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(e) => e.stopPropagation()}> <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2" onClick={handleDeleteFromMenu}> <Trash2 className="w-4 h-4"/> Delete </button> </div> )}
-                    {items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
-                 </div>
+                  )} ref={containerRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onDragOver={handleDrop} onDrop={handleDrop}>
+                     {items.map((item) => {
+                         if (textInput && textInput.id === item.id) return null;
+                         const isSelected = selectedIds.includes(item.id);
+                         const showResizeHandles = isSelected && selectedIds.length === 1;
+                         const commonStyle: React.CSSProperties = { left: item.x, top: item.y, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' };
+                         const renderResizeHandles = () => {
+                             if (!showResizeHandles || currentTool !== 'select') return null;
+                             const handles = [ { pos: 'nw', style: { top: -4, left: -4, cursor: 'nw-resize' } }, { pos: 'n', style: { top: -4, left: '50%', transform: 'translateX(-50%)', cursor: 'n-resize' } }, { pos: 'ne', style: { top: -4, right: -4, cursor: 'ne-resize' } }, { pos: 'e', style: { top: '50%', right: -4, transform: 'translateY(-50%)', cursor: 'e-resize' } }, { pos: 'se', style: { bottom: -4, right: -4, cursor: 'se-resize' } }, { pos: 's', style: { bottom: -4, left: '50%', transform: 'translateX(-50%)', cursor: 's-resize' } }, { pos: 'sw', style: { bottom: -4, left: -4, cursor: 'sw-resize' } }, { pos: 'w', style: { top: '50%', left: -4, transform: 'translateY(-50%)', cursor: 'w-resize' } }, ];
+                             return handles.map(h => ( <div key={h.pos} className="absolute w-2.5 h-2.5 bg-white border border-blue-500 z-50" style={h.style} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} /> ));
+                         };
+                         
+                         if (item.type === 'image') { return ( <div key={item.id} className={cn("absolute", isSelected && "ring-1 ring-blue-500")} style={{ ...commonStyle, width: item.width, height: item.height }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> <img src={item.src} className="w-full h-full object-fill pointer-events-none" /> {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} {renderResizeHandles()} </div> ); } 
+                         if (item.type === 'text') { return ( <div key={item.id} className={cn("absolute whitespace-pre-wrap px-1 border border-transparent", isSelected && "border-blue-500")} style={{ ...commonStyle, color: item.strokeColor || item.color, fontSize: item.size, fontWeight: 'bold', width: item.width, lineHeight: '1.2' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} onDoubleClick={(e) => { e.stopPropagation(); handleTextDoubleClick(item); }}> {item.text} {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} {renderResizeHandles()} </div> ); }
+                         if (item.type === 'line') { return ( <svg key={item.id} className="absolute overflow-visible" style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}> <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.strokeWidth || item.size || 3, 20)} className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} /> <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={isSelected ? "#3b82f6" : (item.strokeColor || item.color)} strokeWidth={item.strokeWidth || item.size} className={cn(currentTool === 'select' ? "pointer-events-none" : "")} /> {showResizeHandles && currentTool === 'select' && ( <> <circle cx={item.x} cy={item.y} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'start')} /> <circle cx={item.x2} cy={item.y2} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'end')} /> </> )} </svg> ); }
+                         if (['rect', 'circle', 'triangle'].includes(item.type)) { return ( <div key={item.id} className="absolute" style={{ left: item.x, top: item.y, width: item.width, height: item.height, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible"> {item.type === 'rect' && <rect x="0" y="0" width="100" height="100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} {item.type === 'circle' && <ellipse cx="50" cy="50" rx="50" ry="50" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} {item.type === 'triangle' && <polygon points="50,0 0,100 100,100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} </svg> {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} {renderResizeHandles()} </div> ); }
+                     })}
+                     {selectionBox && ( <div className="absolute border border-blue-500 bg-blue-200/30 z-[9999] pointer-events-none" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.w, height: selectionBox.h }} /> )}
+                     <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", (['draw', 'eraser', 'highlighter'].includes(currentTool)) ? "pointer-events-auto" : "pointer-events-none")} />
+                     {textInput && ( <textarea autoFocus className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden" style={{ left: textInput.x, top: textInput.y, width: textInput.width ? textInput.width : 'auto', minWidth: '100px', color: styleSettings.strokeColor, fontSize: styleSettings.fontSize, fontWeight: "bold", height: "auto", lineHeight: '1.2' }} value={textInput.value} onMouseDown={(e) => e.stopPropagation()} onChange={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; setTextInput({ ...textInput, value: e.target.value }) }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmText(); } }} onBlur={confirmText} /> )}
+                     {contextMenu && ( <div className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[100px] animate-in fade-in zoom-in-95 duration-100" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(e) => e.stopPropagation()}> <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2" onClick={handleDeleteFromMenu}> <Trash2 className="w-4 h-4"/> Delete </button> </div> )}
+                     {items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
+                  </div>
               </div>
            </div>
         </div>
