@@ -65,11 +65,25 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
       }
     });
 
-    const handleAddPatient = async () => {
+    // ✨ [수정 핵심] 이벤트(e)를 받아서 새로고침을 막습니다.
+    const handleAddPatient = async (e?: React.MouseEvent) => {
+        if (e) e.preventDefault(); // 브라우저야, 새로고침 하지 마!
+        
+        console.log("Adding patient...", { newName, newCaseNumber }); // 확인용 로그
+
         if (!newName || !newCaseNumber) return;
-        await store.addPatient(newName, newHospital, newCaseNumber, newTotalSteps);
-        setIsAddModalOpen(false);
-        setNewName(""); setNewHospital(""); setNewCaseNumber(""); setNewTotalSteps(20);
+        
+        // 저장 시도
+        try {
+            await store.addPatient(newName, newHospital, newCaseNumber, newTotalSteps);
+            console.log("Patient added successfully!");
+            
+            setIsAddModalOpen(false);
+            setNewName(""); setNewHospital(""); setNewCaseNumber(""); setNewTotalSteps(20);
+        } catch (error) {
+            console.error("Failed to add patient:", error);
+            alert("Failed to save patient. Please check the console.");
+        }
     };
 
     const handlePatientClick = (patient: Patient) => {
@@ -142,7 +156,6 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
         setEditingStage(null);
     };
 
-    // ✨ [수정] 스테이지 삭제 시 경고창 추가
     const handleDeleteStage = async (e: React.MouseEvent, patientId: string, stageId: string) => {
         e.stopPropagation();
         if (confirm("Move this stage to trash?")) {
@@ -150,7 +163,6 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
         }
     };
 
-    // ✨ [수정] 환자 삭제 시 경고창 추가
     const handleDeletePatient = async (e: React.MouseEvent, patientId: string) => {
         e.stopPropagation();
         if (confirm("Move this patient to trash?")) {
@@ -171,7 +183,6 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
             className={cn("text-slate-400 hover:text-slate-700", viewMode === 'deleted' && "bg-red-50 text-red-500")}
             title={viewMode === 'active' ? "Go to Trash" : "Close Trash Bin"}
           >
-            {/* ✨ [수정] 휴지통 모드일 때 아이콘을 X로 변경 */}
             {viewMode === 'active' ? <Trash2 className="w-4 h-4" /> : <X className="w-4 h-4"/>}
           </Button>
         </div>
@@ -209,11 +220,10 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
                             <div 
                                 onClick={() => handlePatientClick(patient)}
                                 className={cn(
-                                    // ✨ [디자인 수정] 홈화면/캔버스 사이드바 디자인 통일 (진한 파랑 테두리)
                                     "group flex items-center p-3 rounded-xl cursor-pointer transition-all border select-none mb-1 shadow-sm",
                                     isActive 
-                                        ? "bg-blue-50 border-blue-400 ring-1 ring-blue-300" // 선택됨
-                                        : "bg-white border-blue-300 hover:border-blue-500 hover:shadow-md" // 기본 (진하게)
+                                        ? "bg-blue-50 border-blue-400 ring-1 ring-blue-300"
+                                        : "bg-white border-blue-300 hover:border-blue-500 hover:shadow-md"
                                 )}
                             >
                                 <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold mr-3 transition-colors shrink-0", 
@@ -252,7 +262,6 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
                                             >
                                                 <Pencil className="w-3.5 h-3.5"/>
                                             </button>
-                                            {/* ✨ 환자 삭제 버튼에 핸들러 연결 (경고창) */}
                                             <button 
                                                 onClick={(e) => handleDeletePatient(e, patient.id)}
                                                 className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded"
@@ -307,7 +316,6 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
                                                             >
                                                                 <Pencil className="w-3 h-3"/>
                                                             </button>
-                                                            {/* ✨ 스테이지 삭제 버튼 핸들러 (경고창) */}
                                                             <button 
                                                                 onClick={(e) => handleDeleteStage(e, patient.id, stage.id)}
                                                                 className={cn("p-1 rounded opacity-0 group-hover/stage:opacity-100 transition-opacity", isStageActive ? "hover:bg-red-500 text-white" : "hover:bg-red-100 text-red-500")}
@@ -358,17 +366,25 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
             )}
         </div>
 
-        {/* ... (모달 코드는 기존과 동일, 변경사항 없음) ... */}
         {isAddModalOpen && (
             <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsAddModalOpen(false)}>
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
                     <div className="p-4 border-b bg-slate-50"><h3 className="font-bold text-lg">Add New Patient</h3></div>
                     <div className="p-5 space-y-4">
+                        {/* ✨ [안전장치] 엔터키를 쳐도 submit 되지 않도록 form 태그를 쓰지 않거나, 명시적으로 막음 */}
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" autoFocus value={newName} onChange={e => setNewName(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Hospital</label><input className="w-full border p-2 rounded" value={newHospital} onChange={e => setNewHospital(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={newCaseNumber} onChange={e => setNewCaseNumber(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps (1st Stage)</label><input type="number" className="w-full border p-2 rounded" value={newTotalSteps} onChange={e => setNewTotalSteps(Number(e.target.value))} /></div>
-                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" onClick={handleAddPatient}>Create Patient</Button>
+                        
+                        {/* ✨ [핵심 수정] type="button"을 명시해서 새로고침(submit)을 원천 차단 */}
+                        <Button 
+                            type="button" 
+                            className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" 
+                            onClick={handleAddPatient}
+                        >
+                            Create Patient
+                        </Button>
                     </div>
                 </div>
             </div>
@@ -385,7 +401,7 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" value={editPName} onChange={e => setEditPName(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Hospital</label><input className="w-full border p-2 rounded" value={editPHospital} onChange={e => setEditPHospital(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={editPCase} onChange={e => setEditPCase(e.target.value)} /></div>
-                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" onClick={savePatientEdit}>Save Changes</Button>
+                        <Button type="button" className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" onClick={savePatientEdit}>Save Changes</Button>
                     </div>
                 </div>
             </div>
@@ -401,7 +417,7 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
                     <div className="p-5 space-y-4">
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Stage Name</label><input className="w-full border p-2 rounded" value={editSName} onChange={e => setEditSName(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded" value={editSSteps} onChange={e => setEditSSteps(Number(e.target.value))} /></div>
-                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" onClick={saveStageEdit}>Save Changes</Button>
+                        <Button type="button" className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" onClick={saveStageEdit}>Save Changes</Button>
                     </div>
                 </div>
             </div>

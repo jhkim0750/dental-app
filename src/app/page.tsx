@@ -12,6 +12,8 @@ function PatientDashboard() {
   const store = usePatientStoreHydrated();
   const searchParams = useSearchParams();
   const sidebarRef = useRef<PatientSidebarHandle>(null);
+  
+  // ✨ [수정 1] 데이터를 가져왔는지 확인하는 플래그 (중복 호출 방지)
   const isFetched = useRef(false);
   
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
@@ -23,12 +25,16 @@ function PatientDashboard() {
   const [editStageName, setEditStageName] = useState(""); 
   const [editTotalSteps, setEditTotalSteps] = useState(0);
 
+  // ✨ [수정 2] useEffect 의존성 배열에 [store] 추가!
+  // 의미: "store가 준비(Hydrated)되면 그때 fetchPatients를 실행해라!"
   useEffect(() => {
+    // store가 로드되었고, 아직 데이터를 안 가져왔다면?
     if (store && !isFetched.current) {
+        console.log("🚀 [Page] Calling fetchPatients()..."); // 호출 확인용 로그
         store.fetchPatients();
-        isFetched.current = true;
+        isFetched.current = true; // "나 이제 가져왔어!" 표시
     }
-  }, []); 
+  }, [store]); // <--- 여기가 핵심입니다! 원래는 [] 였음
 
   useEffect(() => {
     if (!store || store.patients.length === 0) return;
@@ -93,24 +99,24 @@ function PatientDashboard() {
               <div className="flex flex-col">
                 <h1 className="text-xl font-extrabold text-blue-600 tracking-tight">Dental Work Note</h1>
                 {activePatient && activeStage ? (
-                   <div className="flex items-center gap-2 mt-1 animate-in fade-in slide-in-from-left-2">
-                     <div className="flex items-center gap-2 text-sm text-slate-500 group cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors" onClick={openEditModal} title="Click to Edit Info">
-                       <span className="font-bold text-slate-800 text-lg">{activePatient.name}</span>
-                       {activePatient.hospital && (
-                           <span className="flex items-center gap-1 text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 text-xs">
-                               <Building2 className="w-3 h-3"/> {activePatient.hospital}
-                           </span>
-                       )}
-                       <span className="text-slate-400 font-mono">#{activePatient.case_number}</span>
-                       <ChevronRight className="w-4 h-4 text-slate-300"/>
-                       <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-xs">
-                           {activeStage.name}
-                       </span>
-                       <Pencil className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors ml-1" />
-                     </div>
-                   </div>
+                    <div className="flex items-center gap-2 mt-1 animate-in fade-in slide-in-from-left-2">
+                      <div className="flex items-center gap-2 text-sm text-slate-500 group cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors" onClick={openEditModal} title="Click to Edit Info">
+                        <span className="font-bold text-slate-800 text-lg">{activePatient.name}</span>
+                        {activePatient.hospital && (
+                            <span className="flex items-center gap-1 text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 text-xs">
+                                <Building2 className="w-3 h-3"/> {activePatient.hospital}
+                            </span>
+                        )}
+                        <span className="text-slate-400 font-mono">#{activePatient.case_number}</span>
+                        <ChevronRight className="w-4 h-4 text-slate-300"/>
+                        <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-xs">
+                            {activeStage.name}
+                        </span>
+                        <Pencil className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-500 transition-colors ml-1" />
+                      </div>
+                    </div>
                 ) : (
-                   <span className="text-xs text-slate-400">Select or create a patient</span>
+                    <span className="text-xs text-slate-400">Select or create a patient</span>
                 )}
               </div>
             </div>
@@ -148,7 +154,6 @@ function PatientDashboard() {
             )}
           </main>
 
-          {/* ✨ [수정] 오버레이 z-index를 최상위(10000)로 높임 */}
           {activePatient && isOverlayOpen && (
             <div className="absolute inset-0 z-[10000] flex">
               <div className="absolute inset-0 bg-black/50" onClick={() => setIsOverlayOpen(false)} />

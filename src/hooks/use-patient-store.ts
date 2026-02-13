@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { useState, useEffect } from "react"; 
 import { 
   collection, addDoc, updateDoc, deleteDoc, doc, getDocs, 
-  query, orderBy, Timestamp 
+  query 
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -99,56 +99,82 @@ export const usePatientStore = create<PatientStore>()(
       fetchPatients: async () => {
         set({ isLoading: true });
         try {
-          // ✨ [수정] DB에서 정렬하지 않고 일단 다 가져옵니다. (충돌 방지)
           const q = query(collection(db, "patients")); 
           const snapshot = await getDocs(q);
           
-          const patients = snapshot.docs.map((doc) => {
-            const data = doc.data() as Patient;
-            
-            let stages = data.stages || [];
-            let activeStageId = data.activeStageId;
+          const processedPatients = snapshot.docs.map((doc) => {
+            const data = doc.data(); 
 
-            if (stages.length === 0) {
-                const initialStage: Stage = {
-                    id: `stage-${Date.now()}`,
-                    name: "1st Setup",
-                    total_steps: data.total_steps || 20,
-                    rules: data.rules || [],
-                    checklist_status: data.checklist_status || [],
-                    summary: data.summary || {},
-                    createdAt: Date.now()
-                };
-                stages = [initialStage];
-                activeStageId = initialStage.id;
+            try {
+                // 이름 유효성 검사 (데이터 보호막)
+                if (!data.name || typeof data.name !== 'string' || data.name.trim() === "") {
+                    return null; 
+                }
+                
+                // 병원 이름 호환성
+                const hospitalName = data.hospital || data.clinic_name || "";
+                
+                // 날짜 파싱 (안전 장치)
+                let parsedCreatedAt = 0;
+                try {
+                    if (typeof data.createdAt === 'number') parsedCreatedAt = data.createdAt;
+                    else if (data.createdAt?.toMillis) parsedCreatedAt = data.createdAt.toMillis();
+                    else if (data.createdAt?.seconds) parsedCreatedAt = data.createdAt.seconds * 1000;
+                    else if (typeof data.createdAt === 'string') {
+                        const parsed = new Date(data.createdAt).getTime();
+                        parsedCreatedAt = isNaN(parsed) ? 0 : parsed;
+                    }
+                } catch (e) { parsedCreatedAt = 0; }
+
+                // 스테이지 및 배열 안전 처리
+                let stages = Array.isArray(data.stages) ? data.stages : [];
+                let rules = Array.isArray(data.rules) ? data.rules : [];
+                let checklist_status = Array.isArray(data.checklist_status) ? data.checklist_status : [];
+                let activeStageId = data.activeStageId;
+
+                // 스테이지가 없으면 1st Setup 자동 생성
+                if (stages.length === 0) {
+                    const initialStage: Stage = {
+                        id: `stage-${Date.now()}`,
+                        name: "1st Setup",
+                        total_steps: Number(data.total_steps) || 20,
+                        rules: rules,
+                        checklist_status: checklist_status,
+                        summary: data.summary || {},
+                        createdAt: parsedCreatedAt || Date.now()
+                    };
+                    stages = [initialStage];
+                    activeStageId = initialStage.id;
+                }
+
+                const currentStage = stages.find((s: Stage) => s.id === activeStageId) || stages.find((s: Stage) => !s.isDeleted) || stages[0];
+                
+                return {
+                  id: doc.id,
+                  name: data.name, 
+                  hospital: hospitalName,
+                  case_number: data.case_number,
+                  stages: stages,
+                  activeStageId: currentStage?.id || activeStageId, 
+                  total_steps: currentStage.total_steps,
+                  rules: currentStage.rules,
+                  checklist_status: currentStage.checklist_status,
+                  summary: currentStage.summary,
+                  createdAt: parsedCreatedAt,
+                  isDeleted: !!data.isDeleted
+                } as Patient;
+
+            } catch (err) {
+                return null;
             }
-
-            const currentStage = stages.find(s => s.id === activeStageId) || stages.find(s => !s.isDeleted) || stages[0];
-            
-            return {
-              ...data,
-              id: doc.id,
-              stages,
-              activeStageId: currentStage?.id || activeStageId, 
-              total_steps: currentStage.total_steps,
-              rules: currentStage.rules,
-              checklist_status: currentStage.checklist_status,
-              summary: currentStage.summary,
-            };
           });
 
-          // ✨ [핵심 해결책] 날짜가 숫자든, 타임스탬프든 알아서 변환해서 정렬하는 만능 로직
-          const getDate = (date: any) => {
-              if (!date) return 0;
-              if (typeof date === 'number') return date;
-              if (date.toMillis) return date.toMillis();
-              if (date.seconds) return date.seconds * 1000;
-              return 0;
-          };
+          const validPatients = processedPatients.filter((p): p is Patient => p !== null);
+          
+          // 최신순 정렬
+          validPatients.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-          patients.sort((a, b) => getDate(b.createdAt) - getDate(a.createdAt));
-
-          set({ patients, isLoading: false });
+          set({ patients: validPatients, isLoading: false });
         } catch (error) {
           console.error("Error fetching patients:", error);
           set({ isLoading: false });
@@ -172,7 +198,7 @@ export const usePatientStore = create<PatientStore>()(
           case_number,
           stages: [initialStage],
           activeStageId: initialStage.id,
-          createdAt: Date.now(), // ✨ 이제부턴 안전하게 숫자로 저장
+          createdAt: Date.now(), 
           isDeleted: false,
         };
 
@@ -200,7 +226,6 @@ export const usePatientStore = create<PatientStore>()(
 
       softDeletePatient: async (id) => {
         const patientRef = doc(db, "patients", id);
-        // ✨ 삭제 날짜도 숫자로 통일
         await updateDoc(patientRef, { isDeleted: true, deletedAt: Date.now() });
         set((state) => ({
           patients: state.patients.map((p) => (p.id === id ? { ...p, isDeleted: true } : p)),
@@ -583,7 +608,7 @@ export const usePatientStore = create<PatientStore>()(
       },
     }),
     {
-      name: "dental-patient-storage",
+      name: "dental-patient-storage-v2", 
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ 
           selectedPatientId: state.selectedPatientId 
