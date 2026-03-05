@@ -6,7 +6,7 @@ import { usePatientStoreHydrated } from "@/hooks/use-patient-store";
 import { ChecklistPanel } from "@/components/checklist-panel";
 import { PatientSidebar, PatientSidebarHandle } from "@/components/patient-sidebar";
 import { Button } from "@/components/ui/button";
-import { FolderOpen, Home, UserPlus, Loader2, Pencil, X, Building2, ChevronRight } from "lucide-react";
+import { FolderOpen, Home, UserPlus, Loader2, Pencil, X, Building2, ChevronRight, Link as LinkIcon } from "lucide-react";
 
 function PatientDashboard() {
   const store = usePatientStoreHydrated();
@@ -23,6 +23,11 @@ function PatientDashboard() {
   const [editStageName, setEditStageName] = useState(""); 
   const [editTotalSteps, setEditTotalSteps] = useState(0);
 
+  const [mouseDownTarget, setMouseDownTarget] = useState<EventTarget | null>(null);
+
+  // ✨ [새 기능] URL 지우개 로직의 신호등 역할
+  const [isReadyToSyncUrl, setIsReadyToSyncUrl] = useState(false);
+
   useEffect(() => {
     if (store && !isFetched.current) {
         store.fetchPatients();
@@ -30,11 +35,32 @@ function PatientDashboard() {
     }
   }, [store]);
 
+  // 1️⃣ 딥링크 읽기 로직 (얘가 먼저 실행되어야 함)
   useEffect(() => {
     if (!store || store.patients.length === 0) return;
     const paramId = searchParams.get("patientId");
-    if (paramId) store.selectPatient(paramId); 
-  }, [searchParams, store]); 
+    
+    if (paramId && store.selectedPatientId !== paramId) {
+        store.selectPatient(paramId); 
+    }
+    
+    // ✨ 딥링크 확인이 완전히 끝났으니, 이제 주소창을 동기화해도 좋다고 파란불을 켬!
+    setIsReadyToSyncUrl(true);
+  }, [searchParams, store?.patients.length]); 
+
+  // 2️⃣ URL 지우개 & 쓰기 로직 (파란불이 켜진 후에만 작동)
+  useEffect(() => {
+    // 파란불(isReadyToSyncUrl)이 켜지기 전까지는 절대 주소창을 건드리지 않음!
+    if (!store || !isReadyToSyncUrl) return;
+
+    const newUrl = new URL(window.location.href);
+    if (store.selectedPatientId) {
+        newUrl.searchParams.set("patientId", store.selectedPatientId);
+    } else {
+        newUrl.searchParams.delete("patientId");
+    }
+    window.history.replaceState({}, '', newUrl.toString());
+  }, [store?.selectedPatientId, isReadyToSyncUrl]);
 
   if (!store) {
     return (
@@ -79,6 +105,13 @@ function PatientDashboard() {
       setIsEditModalOpen(false);
   };
 
+  const handleCopyLink = () => {
+      const url = window.location.href;
+      navigator.clipboard.writeText(url).then(() => {
+          alert("환자 전용 링크가 복사되었습니다!\n원하는 곳에 붙여넣기 하세요.");
+      });
+  };
+
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden">
       {!activePatient && (
@@ -108,6 +141,11 @@ function PatientDashboard() {
                         </span>
                         <Pencil className="w-3 h-3 text-slate-300 group-hover:text-blue-500 transition-colors ml-1" />
                       </div>
+                      
+                      <div className="w-px h-3 bg-slate-200 mx-1"></div>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-blue-600" onClick={(e) => { e.stopPropagation(); handleCopyLink(); }} title="이 환자 링크 복사하기">
+                          <LinkIcon className="w-3.5 h-3.5" />
+                      </Button>
                     </div>
                 ) : (
                     <span className="text-xs text-slate-400 ml-2">Select or create a patient</span>
@@ -157,10 +195,14 @@ function PatientDashboard() {
             </div>
           )}
 
-          {/* ✨ [수정됨] onMouseDown으로 변경하여 드래그 시 꺼짐 완벽 방지 */}
           {isEditModalOpen && (
             <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" 
-                 onMouseDown={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
+                 onMouseDown={(e) => setMouseDownTarget(e.target)}
+                 onMouseUp={(e) => { 
+                     if(e.target === e.currentTarget && mouseDownTarget === e.currentTarget) {
+                         setIsEditModalOpen(false); 
+                     }
+                 }}>
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200" onMouseDown={e => e.stopPropagation()}>
                     <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
                         <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Info</h3>

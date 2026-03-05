@@ -7,7 +7,7 @@ import {
   Type, Eraser, PenTool, Minus, Undo, Redo, CheckSquare,
   Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter,
   Loader2, Square, Circle, Triangle, Palette, Copy, Clipboard, ChevronDown,
-  Crop, RotateCcw, Check
+  Crop, RotateCcw, Check, X // ✨ [새 기능] X 아이콘 추가
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -416,6 +416,12 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           if (isInputActive) return;
 
           if (textInput) return; 
+
+          // ✨ [새 기능] ESC 누르면 다중 선택 해제 & 빠른 편집 종료
+          if (e.key === 'Escape') {
+              setSelectedRuleIds([]);
+              setIsQuickEdit(false);
+          }
            
           if (e.key === 'Delete') deleteSelectedItems(); 
            
@@ -1244,10 +1250,16 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                  <div className="flex items-center justify-between">
                      <h3 className="text-xs font-bold text-slate-500 uppercase">Existing Rules ({safeRules.length})</h3>
                      <div className="flex gap-1.5">
+                         {/* ✨ [새 기능] 선택 해제 버튼 추가 */}
                          {selectedRuleIds.length > 0 && !isQuickEdit && (
-                             <Button size="sm" variant="destructive" className="h-7 text-xs px-2" onClick={handleDeleteMultiRules}>
-                                 <Trash2 className="w-3 h-3 mr-1"/> 선택 삭제 ({selectedRuleIds.length})
-                             </Button>
+                             <>
+                                 <Button size="sm" variant="outline" className="h-7 text-xs px-2 border-slate-300 text-slate-600 hover:bg-slate-100" onClick={() => setSelectedRuleIds([])}>
+                                     <X className="w-3 h-3 mr-1"/> 선택 해제
+                                 </Button>
+                                 <Button size="sm" variant="destructive" className="h-7 text-xs px-2" onClick={handleDeleteMultiRules}>
+                                     <Trash2 className="w-3 h-3 mr-1"/> 선택 삭제 ({selectedRuleIds.length})
+                                 </Button>
+                             </>
                          )}
                          {isQuickEdit ? (
                              <Button size="sm" variant="default" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={handleSaveQuickEdit}><Check className="w-3 h-3 mr-1"/> 완료</Button>
@@ -1372,7 +1384,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               </div>
 
               <div className="flex-1 bg-white p-4 rounded-lg shadow-sm flex flex-col h-full min-h-[600px] relative">
-                  {/* ✨ [수정됨] 높이를 64px로 강제 고정하여 속성창이 떠도 캔버스가 흔들리지 않음 */}
                   <div className="flex justify-between items-center mb-4 gap-2 sticky top-0 z-50 bg-white/90 backdrop-blur-sm p-2 border-b overflow-x-auto no-scrollbar min-h-[64px] shrink-0">
                      <div className="flex items-center gap-2 min-w-max">
                          <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('select')} className={cn(currentTool === 'select' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Select"><MousePointer2 className="w-4 h-4"/></Button>
@@ -1408,7 +1419,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                              </>
                          )}
                          
-                         {/* ✨ [수정됨] 도구가 선택되거나 아이템이 선택되면 즉시 속성창(색/굵기)이 뜹니다! */}
                          {((currentTool === 'select' && selectedIds.length > 0) || ['draw', 'line', 'rect', 'circle', 'triangle', 'text', 'highlighter', 'eraser'].includes(currentTool)) && (
                             <div className="flex items-center gap-2 border px-2 py-1 rounded bg-slate-50 ml-2 shrink-0">
                                <div className="flex flex-col items-center gap-0.5">
@@ -1416,7 +1426,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                    <input type="color" value={styleSettings.strokeColor} onChange={(e) => handleStyleChange('strokeColor', e.target.value)} className="w-5 h-5 p-0 border-0 rounded cursor-pointer" title="Stroke/Text Color"/>
                                </div>
                                
-                               {/* Fill은 도형 관련 도구에서만 표시 */}
                                {(['rect', 'circle', 'triangle'].includes(currentTool) || (currentTool === 'select' && items.some(i => selectedIds.includes(i.id) && ['rect', 'circle', 'triangle'].includes(i.type)))) && (
                                    <div className="flex flex-col items-center gap-0.5">
                                        <span className="text-[8px] font-bold text-slate-400">Fill</span>
@@ -1484,7 +1493,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                              return handles.map(h => ( <div key={h.pos} className="absolute w-2.5 h-2.5 bg-white border border-blue-500 z-50" style={h.style} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} /> ));
                          };
 
-                         // ✨ [수정됨] 초록색 자르기 조절바 (선 전체를 잡고 이동 가능)
                          const renderCropHandles = () => {
                             if (!showCropHandles || currentTool !== 'select') return null;
                             const crops = [ 
