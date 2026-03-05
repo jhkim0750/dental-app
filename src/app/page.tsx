@@ -23,9 +23,6 @@ function PatientDashboard() {
   const [editStageName, setEditStageName] = useState(""); 
   const [editTotalSteps, setEditTotalSteps] = useState(0);
 
-  const [mouseDownTarget, setMouseDownTarget] = useState<EventTarget | null>(null);
-
-  // ✨ [새 기능] URL 지우개 로직의 신호등 역할
   const [isReadyToSyncUrl, setIsReadyToSyncUrl] = useState(false);
 
   useEffect(() => {
@@ -35,7 +32,6 @@ function PatientDashboard() {
     }
   }, [store]);
 
-  // 1️⃣ 딥링크 읽기 로직 (얘가 먼저 실행되어야 함)
   useEffect(() => {
     if (!store || store.patients.length === 0) return;
     const paramId = searchParams.get("patientId");
@@ -44,13 +40,10 @@ function PatientDashboard() {
         store.selectPatient(paramId); 
     }
     
-    // ✨ 딥링크 확인이 완전히 끝났으니, 이제 주소창을 동기화해도 좋다고 파란불을 켬!
     setIsReadyToSyncUrl(true);
   }, [searchParams, store?.patients.length]); 
 
-  // 2️⃣ URL 지우개 & 쓰기 로직 (파란불이 켜진 후에만 작동)
   useEffect(() => {
-    // 파란불(isReadyToSyncUrl)이 켜지기 전까지는 절대 주소창을 건드리지 않음!
     if (!store || !isReadyToSyncUrl) return;
 
     const newUrl = new URL(window.location.href);
@@ -195,15 +188,18 @@ function PatientDashboard() {
             </div>
           )}
 
+          {/* ✨ [핵심 수정됨] 부모-자식을 '형제(Sibling)' 구조로 분리! */}
           {isEditModalOpen && (
-            <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in" 
-                 onMouseDown={(e) => setMouseDownTarget(e.target)}
-                 onMouseUp={(e) => { 
-                     if(e.target === e.currentTarget && mouseDownTarget === e.currentTarget) {
-                         setIsEditModalOpen(false); 
-                     }
-                 }}>
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200" onMouseDown={e => e.stopPropagation()}>
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in">
+                
+                {/* 1층: 어두운 바탕화면 (오직 이 바탕화면 위에서 마우스를 누를 때만 꺼짐) */}
+                <div 
+                    className="absolute inset-0 bg-black/50 backdrop-blur-sm" 
+                    onMouseDown={() => setIsEditModalOpen(false)} 
+                />
+
+                {/* 2층: 하얀색 정보 창 본체 (바탕화면과 완전히 남남이 됨. relative로 위로 띄움) */}
+                <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
                     <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
                         <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Info</h3>
                         <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>

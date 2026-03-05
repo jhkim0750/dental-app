@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useImperativeHandle, forwardRef, useRef } from "react";
+import React, { useState, useImperativeHandle, forwardRef } from "react";
 import { usePatientStoreHydrated, Patient, Stage } from "@/hooks/use-patient-store";
 import { 
   Search, Plus, Trash2, User, ChevronRight, ChevronDown, 
@@ -27,9 +27,6 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     
-    // ✨ [추가] 모달창 드래그 닫힘 방지용 안전장치
-    const [isMouseDownOnOverlay, setIsMouseDownOnOverlay] = useState(false);
-
     const [newName, setNewName] = useState("");
     const [newHospital, setNewHospital] = useState("");
     const [newCaseNumber, setNewCaseNumber] = useState("");
@@ -165,21 +162,6 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
         if (confirm("Move this patient to trash?")) {
             await store.softDeletePatient(patientId);
         }
-    };
-
-    // ✨ [핵심 기능] 마우스가 배경에서 눌렸는지 확인
-    const handleOverlayMouseDown = (e: React.MouseEvent) => {
-        if (e.target === e.currentTarget) {
-            setIsMouseDownOnOverlay(true);
-        }
-    };
-
-    // ✨ [핵심 기능] 배경에서 눌리고 + 배경에서 떼졌을 때만 닫기 (드래그 실수 방지)
-    const handleOverlayMouseUp = (e: React.MouseEvent) => {
-        if (isMouseDownOnOverlay && e.target === e.currentTarget) {
-            setIsAddModalOpen(false);
-        }
-        setIsMouseDownOnOverlay(false); // 초기화
     };
 
     return (
@@ -378,16 +360,14 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
             )}
         </div>
 
+        {/* ✨ 1. 새 환자 추가 모달 (형제 구조 완벽 방어) */}
         {isAddModalOpen && (
-            <div 
-                className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" 
-                // ✨ [수정] onClick 대신 MouseDown, MouseUp 조합으로 변경
-                onMouseDown={handleOverlayMouseDown}
-                onMouseUp={handleOverlayMouseUp}
-            >
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" 
-                    onMouseDown={e => e.stopPropagation()} // 내부 클릭은 전파 방지
-                >
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in">
+                <div 
+                    className="absolute inset-0 bg-black/50 backdrop-blur-sm" 
+                    onMouseDown={() => setIsAddModalOpen(false)} 
+                />
+                <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
                     <div className="p-4 border-b bg-slate-50"><h3 className="font-bold text-lg">Add New Patient</h3></div>
                     <div className="p-5 space-y-4">
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" autoFocus value={newName} onChange={e => setNewName(e.target.value)} /></div>
@@ -407,16 +387,20 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
             </div>
         )}
 
-        {/* 편집 모달도 동일하게 적용 (선생님이 언급은 안 하셨지만 통일성을 위해) */}
+        {/* ✨ 2. 환자 정보 수정 모달 (형제 구조 완벽 방어) */}
         {editingPatient && (
-            <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEditingPatient(null)}>
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in">
+                <div 
+                    className="absolute inset-0 bg-black/50 backdrop-blur-sm" 
+                    onMouseDown={() => setEditingPatient(null)} 
+                />
+                <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
                     <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
                         <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Patient</h3>
-                        <button onClick={() => setEditingPatient(null)}><X className="w-5 h-5 text-slate-400"/></button>
+                        <button onClick={() => setEditingPatient(null)}><X className="w-5 h-5 text-slate-400 hover:text-slate-700"/></button>
                     </div>
                     <div className="p-5 space-y-4">
-                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" value={editPName} onChange={e => setEditPName(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" autoFocus value={editPName} onChange={e => setEditPName(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Hospital</label><input className="w-full border p-2 rounded" value={editPHospital} onChange={e => setEditPHospital(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={editPCase} onChange={e => setEditPCase(e.target.value)} /></div>
                         <Button type="button" className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" onClick={savePatientEdit}>Save Changes</Button>
@@ -425,15 +409,20 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
             </div>
         )}
 
+        {/* ✨ 3. 스테이지 정보 수정 모달 (형제 구조 완벽 방어) */}
         {editingStage && (
-            <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEditingStage(null)}>
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in">
+                <div 
+                    className="absolute inset-0 bg-black/50 backdrop-blur-sm" 
+                    onMouseDown={() => setEditingStage(null)} 
+                />
+                <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
                     <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
                         <h3 className="font-bold text-lg flex items-center gap-2"><FileText className="w-4 h-4"/> Edit Stage</h3>
-                        <button onClick={() => setEditingStage(null)}><X className="w-5 h-5 text-slate-400"/></button>
+                        <button onClick={() => setEditingStage(null)}><X className="w-5 h-5 text-slate-400 hover:text-slate-700"/></button>
                     </div>
                     <div className="p-5 space-y-4">
-                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Stage Name</label><input className="w-full border p-2 rounded" value={editSName} onChange={e => setEditSName(e.target.value)} /></div>
+                        <div><label className="text-xs font-bold text-slate-500 block mb-1">Stage Name</label><input className="w-full border p-2 rounded" autoFocus value={editSName} onChange={e => setEditSName(e.target.value)} /></div>
                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded" value={editSSteps} onChange={e => setEditSSteps(Number(e.target.value))} /></div>
                         <Button type="button" className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-3" onClick={saveStageEdit}>Save Changes</Button>
                     </div>
