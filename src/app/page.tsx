@@ -1,5 +1,6 @@
 "use client";
 
+import { UserControls } from "@/components/user-controls"; // 경로 확인해주세요!
 import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation"; 
 import { usePatientStoreHydrated } from "@/hooks/use-patient-store";
@@ -156,6 +157,10 @@ function PatientDashboard() {
                   Patients
                 </Button>
               )}
+              
+              {/* ✨ [핵심] 여기에 관리자 메뉴(Admin, Logout)가 쏙 들어갔습니다! */}
+              <UserControls />
+              
             </div>
           </header>
 
@@ -188,17 +193,17 @@ function PatientDashboard() {
             </div>
           )}
 
-          {/* ✨ [핵심 수정됨] 부모-자식을 '형제(Sibling)' 구조로 분리! */}
+          {/* ✨ 부모-자식을 '형제(Sibling)' 구조로 분리! */}
           {isEditModalOpen && (
             <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in">
                 
-                {/* 1층: 어두운 바탕화면 (오직 이 바탕화면 위에서 마우스를 누를 때만 꺼짐) */}
+                {/* 1층: 어두운 바탕화면 */}
                 <div 
                     className="absolute inset-0 bg-black/50 backdrop-blur-sm" 
                     onMouseDown={() => setIsEditModalOpen(false)} 
                 />
 
-                {/* 2층: 하얀색 정보 창 본체 (바탕화면과 완전히 남남이 됨. relative로 위로 띄움) */}
+                {/* 2층: 하얀색 정보 창 본체 */}
                 <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
                     <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
                         <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Info</h3>
