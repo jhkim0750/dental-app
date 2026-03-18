@@ -48,7 +48,6 @@ export interface Patient {
   isDeleted?: boolean;
   deletedAt?: any; 
 
-  // 호환성 필드
   total_steps?: number; 
   rules?: Rule[];
   summary?: any;
@@ -84,10 +83,32 @@ interface PatientStore {
   addRule: (patientId: string, rule: Omit<Rule, "id">) => Promise<void>;
   updateRule: (patientId: string, rule: Rule) => Promise<void>;
   deleteRule: (patientId: string, ruleId: string) => Promise<void>;
+  
   toggleChecklistItem: (patientId: string, step: number, ruleId: string) => Promise<void>;
   checkAllInStep: (patientId: string, step: number) => Promise<void>;
   saveSummary: (patientId: string, summary: { image: string; memo: string }) => Promise<void>;
 }
+
+const saveTimeouts: Record<string, ReturnType<typeof setTimeout>> = {};
+
+const debouncedFirebaseSave = (patientId: string, getStore: () => PatientStore) => {
+  if (saveTimeouts[patientId]) {
+    clearTimeout(saveTimeouts[patientId]);
+  }
+  saveTimeouts[patientId] = setTimeout(async () => {
+    try {
+      const { patients } = getStore();
+      const patient = patients.find((p: Patient) => p.id === patientId);
+      if (patient) {
+        const patientRef = doc(db, "patients", patientId);
+        await updateDoc(patientRef, { stages: patient.stages });
+      }
+      delete saveTimeouts[patientId];
+    } catch (error) {
+      console.error("체크리스트 서버 동기화 실패:", error);
+    }
+  }, 800); 
+};
 
 export const usePatientStore = create<PatientStore>()(
   persist(
@@ -102,19 +123,16 @@ export const usePatientStore = create<PatientStore>()(
           const q = query(collection(db, "patients")); 
           const snapshot = await getDocs(q);
           
-          const processedPatients = snapshot.docs.map((doc) => {
-            const data = doc.data(); 
+          const processedPatients = snapshot.docs.map((docSnap) => {
+            const data = docSnap.data(); 
 
             try {
-                // 이름 유효성 검사 (데이터 보호막)
                 if (!data.name || typeof data.name !== 'string' || data.name.trim() === "") {
                     return null; 
                 }
                 
-                // 병원 이름 호환성
                 const hospitalName = data.hospital || data.clinic_name || "";
                 
-                // 날짜 파싱 (안전 장치)
                 let parsedCreatedAt = 0;
                 try {
                     if (typeof data.createdAt === 'number') parsedCreatedAt = data.createdAt;
@@ -126,13 +144,11 @@ export const usePatientStore = create<PatientStore>()(
                     }
                 } catch (e) { parsedCreatedAt = 0; }
 
-                // 스테이지 및 배열 안전 처리
                 let stages = Array.isArray(data.stages) ? data.stages : [];
                 let rules = Array.isArray(data.rules) ? data.rules : [];
                 let checklist_status = Array.isArray(data.checklist_status) ? data.checklist_status : [];
                 let activeStageId = data.activeStageId;
 
-                // 스테이지가 없으면 1st Setup 자동 생성
                 if (stages.length === 0) {
                     const initialStage: Stage = {
                         id: `stage-${Date.now()}`,
@@ -150,7 +166,7 @@ export const usePatientStore = create<PatientStore>()(
                 const currentStage = stages.find((s: Stage) => s.id === activeStageId) || stages.find((s: Stage) => !s.isDeleted) || stages[0];
                 
                 return {
-                  id: doc.id,
+                  id: docSnap.id,
                   name: data.name, 
                   hospital: hospitalName,
                   case_number: data.case_number,
@@ -170,9 +186,7 @@ export const usePatientStore = create<PatientStore>()(
           });
 
           const validPatients = processedPatients.filter((p): p is Patient => p !== null);
-          
-          // 최신순 정렬
-          validPatients.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          validPatients.sort((a: Patient, b: Patient) => (b.createdAt || 0) - (a.createdAt || 0));
 
           set({ patients: validPatients, isLoading: false });
         } catch (error) {
@@ -181,7 +195,7 @@ export const usePatientStore = create<PatientStore>()(
         }
       },
 
-      addPatient: async (name, hospital, case_number, total_steps) => {
+      addPatient: async (name: string, hospital: string, case_number: string, total_steps: number) => {
         const initialStage: Stage = {
             id: `stage-${Date.now()}`,
             name: "1st Setup",
@@ -213,55 +227,55 @@ export const usePatientStore = create<PatientStore>()(
             summary: initialStage.summary
         } as Patient;
 
-        set((state) => ({ patients: [createdPatient, ...state.patients] }));
+        set((state: PatientStore) => ({ patients: [createdPatient, ...state.patients] }));
       },
 
-      updatePatient: async (id, updates) => {
+      updatePatient: async (id: string, updates: Partial<Patient>) => {
         const patientRef = doc(db, "patients", id);
         await updateDoc(patientRef, updates);
-        set((state) => ({
-          patients: state.patients.map((p) => (p.id === id ? { ...p, ...updates } : p)),
+        set((state: PatientStore) => ({
+          patients: state.patients.map((p: Patient) => (p.id === id ? { ...p, ...updates } : p)),
         }));
       },
 
-      softDeletePatient: async (id) => {
+      softDeletePatient: async (id: string) => {
         const patientRef = doc(db, "patients", id);
         await updateDoc(patientRef, { isDeleted: true, deletedAt: Date.now() });
-        set((state) => ({
-          patients: state.patients.map((p) => (p.id === id ? { ...p, isDeleted: true } : p)),
+        set((state: PatientStore) => ({
+          patients: state.patients.map((p: Patient) => (p.id === id ? { ...p, isDeleted: true } : p)),
           selectedPatientId: state.selectedPatientId === id ? null : state.selectedPatientId,
         }));
       },
 
-      restorePatient: async (id) => {
+      restorePatient: async (id: string) => {
         const patientRef = doc(db, "patients", id);
         await updateDoc(patientRef, { isDeleted: false, deletedAt: null });
-        set((state) => ({
-          patients: state.patients.map((p) => (p.id === id ? { ...p, isDeleted: false } : p)),
+        set((state: PatientStore) => ({
+          patients: state.patients.map((p: Patient) => (p.id === id ? { ...p, isDeleted: false } : p)),
         }));
       },
 
-      hardDeletePatient: async (id) => {
+      hardDeletePatient: async (id: string) => {
         await deleteDoc(doc(db, "patients", id));
-        set((state) => ({
-          patients: state.patients.filter((p) => p.id !== id),
+        set((state: PatientStore) => ({
+          patients: state.patients.filter((p: Patient) => p.id !== id),
           selectedPatientId: state.selectedPatientId === id ? null : state.selectedPatientId,
         }));
       },
 
-      deletePatient: async (id) => {
+      deletePatient: async (id: string) => {
          await deleteDoc(doc(db, "patients", id));
-         set((state) => ({
-           patients: state.patients.filter((p) => p.id !== id),
+         set((state: PatientStore) => ({
+           patients: state.patients.filter((p: Patient) => p.id !== id),
            selectedPatientId: state.selectedPatientId === id ? null : state.selectedPatientId,
          }));
       },
 
-      selectPatient: (id) => set({ selectedPatientId: id }),
+      selectPatient: (id: string | null) => set({ selectedPatientId: id }),
 
-      addStage: async (patientId, stageName) => {
+      addStage: async (patientId: string, stageName: string) => {
           const { patients } = get();
-          const patientIndex = patients.findIndex(p => p.id === patientId);
+          const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
           if (patientIndex === -1) return;
 
           const patient = patients[patientIndex];
@@ -294,13 +308,13 @@ export const usePatientStore = create<PatientStore>()(
           set({ patients: newPatients });
       },
 
-      selectStage: async (patientId, stageId) => {
+      selectStage: async (patientId: string, stageId: string) => {
           const { patients } = get();
-          const patientIndex = patients.findIndex(p => p.id === patientId);
+          const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
           if (patientIndex === -1) return;
 
           const patient = patients[patientIndex];
-          const targetStage = patient.stages.find(s => s.id === stageId);
+          const targetStage = patient.stages.find((s: Stage) => s.id === stageId);
           if (!targetStage) return;
 
           const patientRef = doc(db, "patients", patientId);
@@ -320,13 +334,13 @@ export const usePatientStore = create<PatientStore>()(
           set({ patients: newPatients });
       },
 
-      updateStageInfo: async (patientId, stageId, updates) => {
+      updateStageInfo: async (patientId: string, stageId: string, updates: { name?: string, total_steps?: number }) => {
           const { patients } = get();
-          const patientIndex = patients.findIndex(p => p.id === patientId);
+          const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
           if (patientIndex === -1) return;
 
           const patient = patients[patientIndex];
-          const updatedStages = patient.stages.map(s => s.id === stageId ? { ...s, ...updates } : s);
+          const updatedStages = patient.stages.map((s: Stage) => s.id === stageId ? { ...s, ...updates } : s);
           
           const patientRef = doc(db, "patients", patientId);
           await updateDoc(patientRef, { stages: updatedStages });
@@ -341,17 +355,17 @@ export const usePatientStore = create<PatientStore>()(
           set({ patients: newPatients });
       },
 
-      softDeleteStage: async (patientId, stageId) => {
+      softDeleteStage: async (patientId: string, stageId: string) => {
           const { patients } = get();
-          const pIdx = patients.findIndex(p => p.id === patientId);
+          const pIdx = patients.findIndex((p: Patient) => p.id === patientId);
           if (pIdx === -1) return;
           const patient = patients[pIdx];
 
-          const updatedStages = patient.stages.map(s => s.id === stageId ? { ...s, isDeleted: true } : s);
+          const updatedStages = patient.stages.map((s: Stage) => s.id === stageId ? { ...s, isDeleted: true } : s);
           
           let newActiveId = patient.activeStageId;
           if (patient.activeStageId === stageId) {
-              const availableStage = updatedStages.find(s => !s.isDeleted && s.id !== stageId);
+              const availableStage = updatedStages.find((s: Stage) => !s.isDeleted && s.id !== stageId);
               if (availableStage) newActiveId = availableStage.id;
           }
 
@@ -359,7 +373,7 @@ export const usePatientStore = create<PatientStore>()(
           await updateDoc(patientRef, { stages: updatedStages, activeStageId: newActiveId });
 
           const updatedPatient = { ...patient, stages: updatedStages, activeStageId: newActiveId };
-          const targetStage = updatedStages.find(s => s.id === newActiveId);
+          const targetStage = updatedStages.find((s: Stage) => s.id === newActiveId);
           if (targetStage) {
               updatedPatient.total_steps = targetStage.total_steps;
               updatedPatient.rules = targetStage.rules;
@@ -372,13 +386,13 @@ export const usePatientStore = create<PatientStore>()(
           set({ patients: newPatients });
       },
 
-      restoreStage: async (patientId, stageId) => {
+      restoreStage: async (patientId: string, stageId: string) => {
           const { patients } = get();
-          const pIdx = patients.findIndex(p => p.id === patientId);
+          const pIdx = patients.findIndex((p: Patient) => p.id === patientId);
           if (pIdx === -1) return;
           
           const patient = patients[pIdx];
-          const updatedStages = patient.stages.map(s => s.id === stageId ? { ...s, isDeleted: false } : s);
+          const updatedStages = patient.stages.map((s: Stage) => s.id === stageId ? { ...s, isDeleted: false } : s);
 
           const patientRef = doc(db, "patients", patientId);
           await updateDoc(patientRef, { stages: updatedStages });
@@ -388,13 +402,13 @@ export const usePatientStore = create<PatientStore>()(
           set({ patients: newPatients });
       },
 
-      hardDeleteStage: async (patientId, stageId) => {
+      hardDeleteStage: async (patientId: string, stageId: string) => {
           const { patients } = get();
-          const pIdx = patients.findIndex(p => p.id === patientId);
+          const pIdx = patients.findIndex((p: Patient) => p.id === patientId);
           if (pIdx === -1) return;
 
           const patient = patients[pIdx];
-          const updatedStages = patient.stages.filter(s => s.id !== stageId);
+          const updatedStages = patient.stages.filter((s: Stage) => s.id !== stageId);
 
           const patientRef = doc(db, "patients", patientId);
           await updateDoc(patientRef, { stages: updatedStages });
@@ -404,9 +418,9 @@ export const usePatientStore = create<PatientStore>()(
           set({ patients: newPatients });
       },
 
-      addRule: async (patientId, ruleData) => {
+      addRule: async (patientId: string, ruleData: Omit<Rule, "id">) => {
         const { patients } = get();
-        const patientIndex = patients.findIndex(p => p.id === patientId);
+        const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
         if (patientIndex === -1) return;
 
         const patient = patients[patientIndex];
@@ -414,7 +428,7 @@ export const usePatientStore = create<PatientStore>()(
         
         const newRule = { ...ruleData, id: Date.now().toString() };
 
-        const updatedStages = patient.stages.map(stage => {
+        const updatedStages = patient.stages.map((stage: Stage) => {
             if (stage.id === activeStageId) {
                 return { ...stage, rules: [...stage.rules, newRule] };
             }
@@ -427,26 +441,26 @@ export const usePatientStore = create<PatientStore>()(
         const updatedPatient = { 
             ...patient, 
             stages: updatedStages,
-            rules: updatedStages.find(s => s.id === activeStageId)?.rules 
+            rules: updatedStages.find((s: Stage) => s.id === activeStageId)?.rules 
         };
         const newPatients = [...patients];
         newPatients[patientIndex] = updatedPatient;
         set({ patients: newPatients });
       },
 
-      updateRule: async (patientId, updatedRule) => {
+      updateRule: async (patientId: string, updatedRule: Rule) => {
         const { patients } = get();
-        const patientIndex = patients.findIndex(p => p.id === patientId);
+        const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
         if (patientIndex === -1) return;
 
         const patient = patients[patientIndex];
         const activeStageId = patient.activeStageId || patient.stages[0].id;
 
-        const updatedStages = patient.stages.map(stage => {
+        const updatedStages = patient.stages.map((stage: Stage) => {
             if (stage.id === activeStageId) {
                 return { 
                     ...stage, 
-                    rules: stage.rules.map(r => r.id === updatedRule.id ? updatedRule : r) 
+                    rules: stage.rules.map((r: Rule) => r.id === updatedRule.id ? updatedRule : r) 
                 };
             }
             return stage;
@@ -458,27 +472,27 @@ export const usePatientStore = create<PatientStore>()(
         const updatedPatient = { 
             ...patient, 
             stages: updatedStages,
-            rules: updatedStages.find(s => s.id === activeStageId)?.rules 
+            rules: updatedStages.find((s: Stage) => s.id === activeStageId)?.rules 
         };
         const newPatients = [...patients];
         newPatients[patientIndex] = updatedPatient;
         set({ patients: newPatients });
       },
 
-      deleteRule: async (patientId, ruleId) => {
+      deleteRule: async (patientId: string, ruleId: string) => {
         const { patients } = get();
-        const patientIndex = patients.findIndex(p => p.id === patientId);
+        const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
         if (patientIndex === -1) return;
 
         const patient = patients[patientIndex];
         const activeStageId = patient.activeStageId || patient.stages[0].id;
 
-        const updatedStages = patient.stages.map(stage => {
+        const updatedStages = patient.stages.map((stage: Stage) => {
             if (stage.id === activeStageId) {
                 return { 
                     ...stage, 
-                    rules: stage.rules.filter(r => r.id !== ruleId),
-                    checklist_status: stage.checklist_status.filter(c => c.ruleId !== ruleId)
+                    rules: stage.rules.filter((r: Rule) => r.id !== ruleId),
+                    checklist_status: stage.checklist_status.filter((c: ChecklistStatus) => c.ruleId !== ruleId)
                 };
             }
             return stage;
@@ -487,7 +501,7 @@ export const usePatientStore = create<PatientStore>()(
         const patientRef = doc(db, "patients", patientId);
         await updateDoc(patientRef, { stages: updatedStages });
 
-        const currentStage = updatedStages.find(s => s.id === activeStageId)!;
+        const currentStage = updatedStages.find((s: Stage) => s.id === activeStageId)!;
         const updatedPatient = { 
             ...patient, 
             stages: updatedStages,
@@ -499,18 +513,18 @@ export const usePatientStore = create<PatientStore>()(
         set({ patients: newPatients });
       },
 
-      toggleChecklistItem: async (patientId, step, ruleId) => {
+      toggleChecklistItem: async (patientId: string, step: number, ruleId: string) => {
         const { patients } = get();
-        const patientIndex = patients.findIndex(p => p.id === patientId);
+        const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
         if (patientIndex === -1) return;
 
         const patient = patients[patientIndex];
         const activeStageId = patient.activeStageId || patient.stages[0].id;
 
-        const updatedStages = patient.stages.map(stage => {
+        const updatedStages = patient.stages.map((stage: Stage) => {
             if (stage.id === activeStageId) {
                 const existingIndex = stage.checklist_status.findIndex(
-                    (s) => s.step === step && s.ruleId === ruleId
+                    (s: ChecklistStatus) => s.step === step && s.ruleId === ruleId
                 );
                 let newStatus = [...stage.checklist_status];
                 if (existingIndex > -1) {
@@ -523,40 +537,39 @@ export const usePatientStore = create<PatientStore>()(
             return stage;
         });
 
-        const patientRef = doc(db, "patients", patientId);
-        await updateDoc(patientRef, { stages: updatedStages });
-
         const updatedPatient = { 
             ...patient, 
             stages: updatedStages,
-            checklist_status: updatedStages.find(s => s.id === activeStageId)?.checklist_status 
+            checklist_status: updatedStages.find((s: Stage) => s.id === activeStageId)?.checklist_status 
         };
         const newPatients = [...patients];
         newPatients[patientIndex] = updatedPatient;
         set({ patients: newPatients });
+
+        debouncedFirebaseSave(patientId, get);
       },
 
-      checkAllInStep: async (patientId, step) => {
+      checkAllInStep: async (patientId: string, step: number) => {
         const { patients } = get();
-        const patientIndex = patients.findIndex(p => p.id === patientId);
+        const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
         if (patientIndex === -1) return;
 
         const patient = patients[patientIndex];
         const activeStageId = patient.activeStageId || patient.stages[0].id;
 
-        const updatedStages = patient.stages.map(stage => {
+        const updatedStages = patient.stages.map((stage: Stage) => {
             if (stage.id === activeStageId) {
-                const rulesInStep = stage.rules.filter(r => step >= r.startStep && step <= r.endStep);
-                const allChecked = rulesInStep.every(r => 
-                    stage.checklist_status.some(s => s.step === step && s.ruleId === r.id && s.checked)
+                const rulesInStep = stage.rules.filter((r: Rule) => step >= r.startStep && step <= r.endStep);
+                const allChecked = rulesInStep.every((r: Rule) => 
+                    stage.checklist_status.some((s: ChecklistStatus) => s.step === step && s.ruleId === r.id && s.checked)
                 );
 
                 let newStatus = [...stage.checklist_status];
                 if (allChecked) {
-                    newStatus = newStatus.filter(s => !(s.step === step && rulesInStep.some(r => r.id === s.ruleId)));
+                    newStatus = newStatus.filter((s: ChecklistStatus) => !(s.step === step && rulesInStep.some((r: Rule) => r.id === s.ruleId)));
                 } else {
-                    rulesInStep.forEach(r => {
-                        if (!newStatus.some(s => s.step === step && s.ruleId === r.id && s.checked)) {
+                    rulesInStep.forEach((r: Rule) => {
+                        if (!newStatus.some((s: ChecklistStatus) => s.step === step && s.ruleId === r.id && s.checked)) {
                             newStatus.push({ step, ruleId: r.id, checked: true });
                         }
                     });
@@ -566,28 +579,27 @@ export const usePatientStore = create<PatientStore>()(
             return stage;
         });
 
-        const patientRef = doc(db, "patients", patientId);
-        await updateDoc(patientRef, { stages: updatedStages });
-
         const updatedPatient = { 
             ...patient, 
             stages: updatedStages,
-            checklist_status: updatedStages.find(s => s.id === activeStageId)?.checklist_status 
+            checklist_status: updatedStages.find((s: Stage) => s.id === activeStageId)?.checklist_status 
         };
         const newPatients = [...patients];
         newPatients[patientIndex] = updatedPatient;
         set({ patients: newPatients });
+
+        debouncedFirebaseSave(patientId, get);
       },
 
-      saveSummary: async (patientId, summary) => {
+      saveSummary: async (patientId: string, summary: { image: string; memo: string }) => {
         const { patients } = get();
-        const patientIndex = patients.findIndex(p => p.id === patientId);
+        const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
         if (patientIndex === -1) return;
 
         const patient = patients[patientIndex];
         const activeStageId = patient.activeStageId || patient.stages[0].id;
 
-        const updatedStages = patient.stages.map(stage => {
+        const updatedStages = patient.stages.map((stage: Stage) => {
             if (stage.id === activeStageId) {
                 return { ...stage, summary }; 
             }
@@ -610,9 +622,7 @@ export const usePatientStore = create<PatientStore>()(
     {
       name: "dental-patient-storage-v2", 
       storage: createJSONStorage(() => localStorage),
-      // ✨ [수정] 이제 로컬 저장소에 '누굴 선택했는지' 저장하지 않습니다.
-      // 따라서 새로고침하면 항상 초기 상태(null)로 시작합니다.
-      partialize: (state) => ({}), 
+      partialize: (state: any) => ({}), 
     }
   )
 );

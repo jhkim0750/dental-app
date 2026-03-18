@@ -1,6 +1,6 @@
 "use client";
 
-import { UserControls } from "@/components/user-controls"; // 경로 확인해주세요!
+import { UserControls } from "@/components/user-controls"; 
 import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation"; 
 import { usePatientStoreHydrated } from "@/hooks/use-patient-store";
@@ -107,125 +107,120 @@ function PatientDashboard() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden">
-      {!activePatient && (
-        <aside className="w-[320px] bg-white border-r shadow-sm shrink-0 h-full flex flex-col z-20">
-            <PatientSidebar ref={sidebarRef} />
-        </aside>
-      )}
-      
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-          <header className="flex items-center justify-between px-6 py-1.5 bg-white border-b shadow-sm shrink-0 z-10">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3">
-                <h1 className="text-lg font-extrabold text-blue-600 tracking-tight">Dental Work Note</h1>
-                {activePatient && activeStage ? (
-                    <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 border-l pl-3">
-                      <div className="flex items-center gap-2 text-sm text-slate-500 group cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors" onClick={openEditModal} title="Click to Edit Info">
-                        <span className="font-bold text-slate-800">{activePatient.name}</span>
-                        {activePatient.hospital && (
-                            <span className="flex items-center gap-1 text-blue-600 font-bold bg-blue-50 px-1.5 py-0.5 rounded-full border border-blue-100 text-[10px]">
-                                <Building2 className="w-3 h-3"/> {activePatient.hospital}
-                            </span>
-                        )}
-                        <span className="text-slate-400 font-mono text-xs">#{activePatient.case_number}</span>
-                        <ChevronRight className="w-3 h-3 text-slate-300"/>
-                        <span className="font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">
-                            {activeStage.name}
-                        </span>
-                        <Pencil className="w-3 h-3 text-slate-300 group-hover:text-blue-500 transition-colors ml-1" />
+    // ✨ 일반 인터넷 창처럼 브라우저 기본 스크롤(overflow-auto)이 나타나도록 수정
+    <div className="w-full h-screen overflow-auto bg-slate-50 text-slate-900">
+      <div className="flex min-w-[1400px] min-h-screen">
+        {!activePatient && (
+          // ✨ 왼쪽 패널은 화면에 붙어있게(sticky) 하고 독립 스크롤 유지
+          <aside className="w-[320px] bg-white border-r shadow-sm shrink-0 flex flex-col z-20 sticky top-0 h-screen overflow-y-auto">
+              <PatientSidebar ref={sidebarRef} />
+          </aside>
+        )}
+        
+        <div className="flex-1 flex flex-col h-full relative">
+            <header className="flex items-center justify-between px-6 py-1.5 bg-white border-b shadow-sm shrink-0 z-10 sticky top-0">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
+                  <h1 className="text-lg font-extrabold text-blue-600 tracking-tight">Dental Work Note</h1>
+                  {activePatient && activeStage ? (
+                      <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 border-l pl-3">
+                        <div className="flex items-center gap-2 text-sm text-slate-500 group cursor-pointer hover:bg-slate-50 p-1 rounded transition-colors" onClick={openEditModal} title="Click to Edit Info">
+                          <span className="font-bold text-slate-800">{activePatient.name}</span>
+                          {activePatient.hospital && (
+                              <span className="flex items-center gap-1 text-blue-600 font-bold bg-blue-50 px-1.5 py-0.5 rounded-full border border-blue-100 text-[10px]">
+                                  <Building2 className="w-3 h-3"/> {activePatient.hospital}
+                              </span>
+                          )}
+                          <span className="text-slate-400 font-mono text-xs">#{activePatient.case_number}</span>
+                          <ChevronRight className="w-3 h-3 text-slate-300"/>
+                          <span className="font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">
+                              {activeStage.name}
+                          </span>
+                          <Pencil className="w-3 h-3 text-slate-300 group-hover:text-blue-500 transition-colors ml-1" />
+                        </div>
+                        
+                        <div className="w-px h-3 bg-slate-200 mx-1"></div>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-blue-600" onClick={(e) => { e.stopPropagation(); handleCopyLink(); }} title="이 환자 링크 복사하기">
+                            <LinkIcon className="w-3.5 h-3.5" />
+                        </Button>
                       </div>
-                      
-                      <div className="w-px h-3 bg-slate-200 mx-1"></div>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-blue-600" onClick={(e) => { e.stopPropagation(); handleCopyLink(); }} title="이 환자 링크 복사하기">
-                          <LinkIcon className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                ) : (
-                    <span className="text-xs text-slate-400 ml-2">Select or create a patient</span>
-                )}
+                  ) : (
+                      <span className="text-xs text-slate-400 ml-2">Select or create a patient</span>
+                  )}
+                </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => store.selectPatient(null)} title="Go Home">
-                <Home className="w-4 h-4 text-slate-600" />
-              </Button>
-              {activePatient && (
-                <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => setIsOverlayOpen(true)}>
-                  <FolderOpen className="w-3.5 h-3.5" />
-                  Patients
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => store.selectPatient(null)} title="Go Home">
+                  <Home className="w-4 h-4 text-slate-600" />
                 </Button>
+                {activePatient && (
+                  <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => setIsOverlayOpen(true)}>
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    Patients
+                  </Button>
+                )}
+                
+                <UserControls />
+                
+              </div>
+            </header>
+
+            <main className="flex-1 relative bg-slate-100">
+              {activePatient && activeStage ? (
+                <ChecklistPanel key={`${activePatient.id}-${activeStage.id}`} patient={activePatient} />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center p-10 space-y-6 min-h-[800px]">
+                  <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm border border-slate-100">
+                    <UserPlus className="w-10 h-10 text-blue-600" />
+                  </div>
+                  <div>
+                      <h2 className="text-2xl font-bold text-slate-800 mb-2">Ready to start?</h2>
+                      <p className="text-slate-500 max-w-md">Select a patient from the sidebar<br/>or add a new one to begin.</p>
+                  </div>
+                  <Button size="lg" className="mt-4 gap-2 text-lg px-8 py-6 shadow-lg shadow-blue-200" onClick={handleHomeAddPatient}>
+                    <UserPlus className="w-5 h-5" />
+                    Add Patient
+                  </Button>
+                </div>
               )}
-              
-              {/* ✨ [핵심] 여기에 관리자 메뉴(Admin, Logout)가 쏙 들어갔습니다! */}
-              <UserControls />
-              
-            </div>
-          </header>
+            </main>
 
-          <main className="flex-1 overflow-hidden relative bg-slate-100">
-            {activePatient && activeStage ? (
-              <ChecklistPanel key={`${activePatient.id}-${activeStage.id}`} patient={activePatient} />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-center p-10 space-y-6">
-                <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm border border-slate-100">
-                  <UserPlus className="w-10 h-10 text-blue-600" />
+            {activePatient && isOverlayOpen && (
+              <div className="fixed inset-0 z-[10000] flex">
+                <div className="absolute inset-0 bg-black/50" onClick={() => setIsOverlayOpen(false)} />
+                <div className="relative w-[340px] h-full bg-white shadow-xl flex flex-col animate-in slide-in-from-left">
+                  <PatientSidebar onClose={() => setIsOverlayOpen(false)} />
                 </div>
-                <div>
-                    <h2 className="text-2xl font-bold text-slate-800 mb-2">Ready to start?</h2>
-                    <p className="text-slate-500 max-w-md">Select a patient from the sidebar<br/>or add a new one to begin.</p>
-                </div>
-                <Button size="lg" className="mt-4 gap-2 text-lg px-8 py-6 shadow-lg shadow-blue-200" onClick={handleHomeAddPatient}>
-                  <UserPlus className="w-5 h-5" />
-                  Add Patient
-                </Button>
               </div>
             )}
-          </main>
 
-          {activePatient && isOverlayOpen && (
-            <div className="absolute inset-0 z-[10000] flex">
-              <div className="absolute inset-0 bg-black/50" onClick={() => setIsOverlayOpen(false)} />
-              <div className="relative w-[340px] h-full bg-white shadow-xl flex flex-col animate-in slide-in-from-left">
-                <PatientSidebar onClose={() => setIsOverlayOpen(false)} />
+            {isEditModalOpen && (
+              <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in">
+                  <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onMouseDown={() => setIsEditModalOpen(false)} />
+                  <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                      <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
+                          <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Info</h3>
+                          <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
+                      </div>
+                      <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+                          <div className="space-y-3 pb-4 border-b border-slate-100">
+                              <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider">Patient Details</h4>
+                              <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" value={editName} onChange={e => setEditName(e.target.value)} /></div>
+                              <div><label className="text-xs font-bold text-slate-500 block mb-1">Hospital</label><input className="w-full border p-2 rounded" value={editHospital} onChange={e => setEditHospital(e.target.value)} placeholder="Hospital Name" /></div>
+                              <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={editCaseNumber} onChange={e => setEditCaseNumber(e.target.value)} /></div>
+                          </div>
+                          <div className="space-y-3 pt-1">
+                              <h4 className="text-xs font-bold text-green-600 uppercase tracking-wider">Current Stage</h4>
+                              <div><label className="text-xs font-bold text-slate-500 block mb-1">Stage Name</label><input className="w-full border p-2 rounded bg-green-50/50" value={editStageName} onChange={e => setEditStageName(e.target.value)} /></div>
+                              <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded bg-green-50/50" value={editTotalSteps} onChange={e => setEditTotalSteps(Number(e.target.value))} /></div>
+                          </div>
+                          <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-6 text-lg" onClick={handleUpdate}>Save Changes</Button>
+                      </div>
+                  </div>
               </div>
-            </div>
-          )}
-
-          {/* ✨ 부모-자식을 '형제(Sibling)' 구조로 분리! */}
-          {isEditModalOpen && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in">
-                
-                {/* 1층: 어두운 바탕화면 */}
-                <div 
-                    className="absolute inset-0 bg-black/50 backdrop-blur-sm" 
-                    onMouseDown={() => setIsEditModalOpen(false)} 
-                />
-
-                {/* 2층: 하얀색 정보 창 본체 */}
-                <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
-                    <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
-                        <h3 className="font-bold text-lg flex items-center gap-2"><Pencil className="w-4 h-4"/> Edit Info</h3>
-                        <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5"/></button>
-                    </div>
-                    <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
-                        <div className="space-y-3 pb-4 border-b border-slate-100">
-                            <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider">Patient Details</h4>
-                            <div><label className="text-xs font-bold text-slate-500 block mb-1">Name</label><input className="w-full border p-2 rounded" value={editName} onChange={e => setEditName(e.target.value)} /></div>
-                            <div><label className="text-xs font-bold text-slate-500 block mb-1">Hospital</label><input className="w-full border p-2 rounded" value={editHospital} onChange={e => setEditHospital(e.target.value)} placeholder="Hospital Name" /></div>
-                            <div><label className="text-xs font-bold text-slate-500 block mb-1">Case No.</label><input className="w-full border p-2 rounded" value={editCaseNumber} onChange={e => setEditCaseNumber(e.target.value)} /></div>
-                        </div>
-                        <div className="space-y-3 pt-1">
-                            <h4 className="text-xs font-bold text-green-600 uppercase tracking-wider">Current Stage</h4>
-                            <div><label className="text-xs font-bold text-slate-500 block mb-1">Stage Name</label><input className="w-full border p-2 rounded bg-green-50/50" value={editStageName} onChange={e => setEditStageName(e.target.value)} /></div>
-                            <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded bg-green-50/50" value={editTotalSteps} onChange={e => setEditTotalSteps(Number(e.target.value))} /></div>
-                        </div>
-                        <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-6 text-lg" onClick={handleUpdate}>Save Changes</Button>
-                    </div>
-                </div>
-            </div>
-          )}
+            )}
+        </div>
       </div>
     </div>
   );
