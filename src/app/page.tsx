@@ -118,7 +118,7 @@ function PatientDashboard() {
         )}
         
         <div className="flex-1 flex flex-col h-full relative">
-            <header className="flex items-center justify-between px-6 py-1.5 bg-white border-b shadow-sm shrink-0 z-10 sticky top-0">
+            <header className="flex items-center justify-between px-6 py-1.5 bg-white border-b shadow-sm shrink-0 z-50 sticky top-0">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-3">
                   <h1 className="text-lg font-extrabold text-blue-600 tracking-tight">Dental Work Note</h1>

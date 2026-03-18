@@ -608,7 +608,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const confirmText = () => { 
     if (!textInput) return; 
     
-    // ✨ 화면에 떠 있는 최신 글씨를 안전하게 가져옵니다.
     const el = document.getElementById('active-text-editor') as HTMLTextAreaElement;
     const currentText = el ? el.value : textInput.value;
     const trimmedText = currentText.trim(); 
@@ -618,15 +617,15 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
         if (textInput.id) newItems = newItems.filter(i => i.id !== textInput.id); 
     } else { 
         if (textInput.id) { 
-            newItems = newItems.map(i => i.id === textInput.id ? { ...i, text: trimmedText, color: styleSettings.strokeColor, size: styleSettings.fontSize, width: textInput.width } : i); 
+            newItems = newItems.map(i => i.id === textInput.id ? { ...i, text: trimmedText, color: styleSettings.strokeColor, size: styleSettings.fontSize, width: textInput.width, height: textInput.height } : i); 
         } else { 
-            newItems.push({ id: Date.now(), type: 'text', text: trimmedText, x: textInput.x, y: textInput.y, color: styleSettings.strokeColor, size: styleSettings.fontSize, zIndex: items.length, width: Math.max(100, textInput.width || 100), height: styleSettings.fontSize * 1.5 }); 
+            // ✨ 핵심: 억지로 100px 주던 제한을 풀고, 처음엔 Auto 상태(undefined)로 저장시킵니다!
+            newItems.push({ id: Date.now(), type: 'text', text: trimmedText, x: textInput.x, y: textInput.y, color: styleSettings.strokeColor, size: styleSettings.fontSize, zIndex: items.length, width: textInput.width, height: textInput.height }); 
             setSelectedIds([newItems[newItems.length-1].id]); 
         } 
     } 
     updateCurrentSlide(newItems, penStrokes); recordHistory(); setTextInput(null); setCurrentTool('select'); 
-};
-  
+};  
   const handleTextDoubleClick = (item: CanvasItem) => { if (item.type !== 'text') return; setStyleSettings(prev => ({ ...prev, strokeColor: item.color || "#000", fontSize: item.size || 20 })); setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width }); setCurrentTool('text'); };
   const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => { const lines = text.split('\n'); let lineCounter = 0; lines.forEach((line) => { const words = line.split(''); let currentLine = ''; for(let n = 0; n < words.length; n++) { const testLine = currentLine + words[n]; const metrics = ctx.measureText(testLine); if (metrics.width > maxWidth && n > 0) { ctx.fillText(currentLine, x, y + (lineCounter * lineHeight)); currentLine = words[n]; lineCounter++; } else { currentLine = testLine; } } ctx.fillText(currentLine, x, y + (lineCounter * lineHeight)); lineCounter++; }); };
   
@@ -967,16 +966,21 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                     const aspectRatio = (init.width || 1) / (init.height || 1);
                     if (item.type === 'line') { if (dragState.resizeHandle === 'start') return { ...item, x: x, y: y }; if (dragState.resizeHandle === 'end') return { ...item, x2: x, y2: y }; return item; } 
                     
-              // ✨ [수술 1] 텍스트 상하 조절 마비 해결 (NaN 에러 방지)
-              if (item.type === 'text') { 
-                const baseHeight = init.height || (init.size || 20) * 1.5; // 에러 방지: 높이 데이터가 없으면 기본값으로 안전하게 계산!
-                if (dragState.resizeHandle?.includes('e')) newW = Math.max(50, (init.width || 100) + dx); 
-                if (dragState.resizeHandle?.includes('w')) { newW = Math.max(50, (init.width || 100) - dx); newX = init.x + dx; } 
-                if (dragState.resizeHandle?.includes('s')) newH = Math.max(20, baseHeight + dy);
-                if (dragState.resizeHandle?.includes('n')) { newH = Math.max(20, baseHeight - dy); newY = init.y + dy; }
-                return { ...item, x: newX, y: newY, width: newW, height: newH }; 
-            }
-                    
+// ✨ 핀셋 2: 스위치 변환 모터 (에러 완벽 방지)
+if (item.type === 'text') { 
+    const baseWidth = init.width || 100; // 가로 자동 상태일 때를 대비한 기본값
+    const baseHeight = init.height || (init.size || 20) * 1.5; 
+    
+    let newW = init.width; // 기본적으로는 원래 상태(수동/자동) 유지
+    let newH = init.height; 
+    
+    // 마우스로 좌우를 잡고 당겼을 때만 '수동 모드(숫자)'로 스위치 전환!
+    if (dragState.resizeHandle?.includes('e')) newW = Math.max(50, baseWidth + dx); 
+    if (dragState.resizeHandle?.includes('w')) { newW = Math.max(50, baseWidth - dx); newX = init.x + dx; } 
+    if (dragState.resizeHandle?.includes('s')) newH = Math.max(20, baseHeight + dy);
+    if (dragState.resizeHandle?.includes('n')) { newH = Math.max(20, baseHeight - dy); newY = init.y + dy; }
+    return { ...item, x: newX, y: newY, width: newW, height: newH }; 
+}                    
                     if (dragState.resizeHandle?.includes('e')) newW = init.width! + dx; if (dragState.resizeHandle?.includes('w')) { newW = init.width! - dx; newX = init.x + dx; } 
                     if (dragState.resizeHandle?.includes('s')) newH = init.height! + dy; if (dragState.resizeHandle?.includes('n')) { newH = init.height! - dy; newY = init.y + dy; } 
                     if (e.shiftKey && !item.type.includes('text')) {
@@ -1672,16 +1676,19 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                  // ✨ [수술 2] 더블클릭 1단계 진입 확실하게 열어주기
                  if (item.type === 'text') { 
                     return ( 
-                        <div key={item.id} className={cn("absolute whitespace-pre-wrap px-1 border border-transparent group", isSelected && "border-blue-500")} 
-                             style={{ ...commonStyle, color: item.strokeColor || item.color, fontSize: `${item.size || 20}px`, fontWeight: 'bold', width: item.width || 100, height: item.height || 'auto', lineHeight: '1.2' }} 
+                        <div key={item.id} className={cn("absolute px-1 border border-transparent group", isSelected && "border-blue-500")} 
+                             style={{ 
+                                 ...commonStyle, color: item.strokeColor || item.color, fontSize: `${item.size || 20}px`, fontWeight: 'bold', lineHeight: '1.2',
+                                 width: item.width ? `${item.width}px` : 'max-content', // ✨ 가로길이가 없으면 글씨크기에 맞춰 무한히!
+                                 height: item.height || 'auto',
+                                 whiteSpace: item.width ? 'pre-wrap' : 'pre' // ✨ 스위치: 가로가 고정되면 자동 줄바꿈(pre-wrap), 아니면 그대로(pre)
+                             }} 
                              onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} 
                              onContextMenu={(e) => handleItemContextMenu(e, item.id)} 
                              onDoubleClick={(e) => { 
-                                 e.preventDefault(); 
-                                 e.stopPropagation(); 
-                                 // ✨ 외부 함수를 거치지 않고 직접 직행으로 텍스트 창을 강제 활성화시킵니다!
+                                 e.preventDefault(); e.stopPropagation(); 
                                  setStyleSettings(prev => ({ ...prev, strokeColor: item.color || item.strokeColor || "#000", fontSize: item.size || 20 }));
-                                 setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width || 100, height: item.height }); // ✨ height 값 추가
+                                 setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width, height: item.height }); 
                                  setCurrentTool('text');
                              }}> 
                             {item.text} 
@@ -1690,8 +1697,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                             {renderResizeHandles()} 
                         </div> 
                     ); 
-                }
-                         if (item.type === 'sticker') { 
+                }                         if (item.type === 'sticker') { 
                              return ( 
                                  <div key={item.id} className={cn("absolute flex items-center justify-center rounded-full", isSelected && "ring-1 ring-blue-500")} 
                                       style={{ ...commonStyle, width: item.width, height: item.height, backgroundColor: 'transparent', color: item.color, fontSize: `${item.size}px`, fontWeight: '900', textShadow: '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff' }} 
@@ -1728,7 +1734,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                      <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", (['draw', 'eraser', 'highlighter'].includes(currentTool)) ? "pointer-events-auto" : "pointer-events-none")} />
                      
                {/* ✨ [수술 3] 텍스트 입력창 증발 버그 완전 제거 */}
-{/* ✨ 핀셋 3: 텍스트 창이 열릴 때 글자 분량에 맞춰 스크롤 없이 큼지막하게 쫙 펴집니다! */}
+{/* ✨ 핀셋 3: 타자치면 가로로 쭉쭉 늘어나는 자동폭 입력창! */}
 {textInput && ( 
                          <textarea 
                              id="active-text-editor"
@@ -1737,20 +1743,21 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                              className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden select-text pointer-events-auto" 
                              style={{ 
                                  left: textInput.x, top: textInput.y, 
-                                 width: textInput.width ? `${Math.max(50, textInput.width)}px` : '100px', 
+                                 width: textInput.width ? `${textInput.width}px` : 'auto', minWidth: '20px', 
                                  color: styleSettings.strokeColor, fontSize: `${styleSettings.fontSize || 20}px`, 
-                                 fontWeight: "bold", minHeight: textInput.height ? `${textInput.height}px` : "auto", lineHeight: '1.2' 
+                                 fontWeight: "bold", minHeight: textInput.height ? `${textInput.height}px` : "auto", lineHeight: '1.2',
+                                 whiteSpace: textInput.width ? 'pre-wrap' : 'pre' // ✨ 스위치
                              }} 
                              ref={(el) => {
                                  if (el) {
-                                     el.style.height = 'auto';
-                                     el.style.height = el.scrollHeight + 'px';
+                                     el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px';
+                                     if (!textInput.width) { el.style.width = 'auto'; el.style.width = (el.scrollWidth + 10) + 'px'; }
                                  }
                              }}
                              onMouseDown={(e) => e.stopPropagation()} 
                              onInput={(e) => {
-                                 e.currentTarget.style.height = 'auto'; 
-                                 e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px'; 
+                                 e.currentTarget.style.height = 'auto'; e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px'; 
+                                 if (!textInput.width) { e.currentTarget.style.width = 'auto'; e.currentTarget.style.width = (e.currentTarget.scrollWidth + 10) + 'px'; }
                              }} 
                              onKeyDown={(e) => { 
                                  e.stopPropagation();
@@ -1760,8 +1767,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                  } 
                              }} 
                          /> 
-                     )}                     
-                     {contextMenu && (
+                     )}
+                                          {contextMenu && (
                          <>
                              <div className="fixed inset-0 z-[10000]" onMouseDown={(e) => { e.stopPropagation(); setContextMenu(null); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu(null); }} />
                              <div className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[120px] animate-in fade-in zoom-in-95 duration-100" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(e) => e.stopPropagation()}> 
