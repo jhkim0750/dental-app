@@ -336,6 +336,36 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   const totalSteps = patient.total_steps || 21;
 
+  // ✨ [마법의 스크롤 방지 마스터 키]
+  // 리액트의 한계를 무시하고 브라우저의 휠 스크롤을 강제로 제어합니다.
+  useEffect(() => {
+    const handleNumberInputWheel = (e: WheelEvent) => {
+        const target = e.target as HTMLInputElement;
+        
+        // 마우스가 '숫자 입력창(number)' 위에 있을 때만 발동!
+        if (target && target.tagName === 'INPUT' && target.type === 'number') {
+            e.preventDefault(); // 1. 지긋지긋한 페이지 스크롤 완벽 차단!
+            
+            // 2. 스크롤 방향에 따라 숫자를 수동으로 올리거나 내립니다.
+            const step = parseFloat(target.step || "1");
+            const current = parseFloat(target.value || "0");
+            let newValue = current + (e.deltaY < 0 ? step : -step);
+            
+            // 3. 최댓값/최솟값 제한 방어막
+            if (target.max) newValue = Math.min(newValue, parseFloat(target.max));
+            if (target.min) newValue = Math.max(newValue, parseFloat(target.min));
+            
+            // 4. React가 값 변화를 즉각 눈치채게 만드는 핵심 코드
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+            nativeInputValueSetter?.call(target, newValue.toString());
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    };
+
+    // passive: false 옵션으로 브라우저에게 "내 명령(스크롤 차단)을 절대 무시하지 마!"라고 선전포고합니다.
+    window.addEventListener('wheel', handleNumberInputWheel, { passive: false });
+    return () => window.removeEventListener('wheel', handleNumberInputWheel);
+}, []);
 
   useEffect(() => { 
     setPageStartStep(0); 
@@ -1339,10 +1369,9 @@ if (item.type === 'text') {
               </div>
               <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Select Teeth</Label><ToothGrid selectedTeeth={selectedTeeth} onToggle={toggleTooth} /></div>
               <div className="flex gap-2">
-                 <div className="flex-1"><Label className="text-xs font-bold text-slate-500">Start</Label><input type="number" className="w-full border p-2 rounded" value={startStep} onChange={(e) => setStartStep(Number(e.target.value))} /></div>
-                 <div className="flex-1"><Label className="text-xs font-bold text-slate-500">End</Label><div className="flex gap-1"><input type="number" className="w-full border p-2 rounded" value={endStep} onChange={(e) => setEndStep(Number(e.target.value))} /><Button variant="outline" className="px-2 text-xs" onClick={() => setEndStep(totalSteps)}>End</Button></div></div>
-              </div>
-              <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Note</Label><input className="w-full border p-2 rounded" placeholder="e.g. Mesial" value={note} onChange={(e) => setNote(e.target.value)} /></div>
+                 <div className="flex-1"><Label className="text-xs font-bold text-slate-500">Start</Label><input type="number" className="w-full border p-2 rounded" value={startStep} onChange={(e) => setStartStep(Number(e.target.value))} onWheel={(e) => e.preventDefault()} /></div>
+                 <div className="flex-1"><Label className="text-xs font-bold text-slate-500">End</Label><div className="flex gap-1"><input type="number" className="w-full border p-2 rounded" value={endStep} onChange={(e) => setEndStep(Number(e.target.value))} onWheel={(e) => e.preventDefault()} /><Button variant="outline" className="px-2 text-xs" onClick={() => setEndStep(totalSteps)}>End</Button></div></div>
+              </div>              <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Note</Label><input className="w-full border p-2 rounded" placeholder="e.g. Mesial" value={note} onChange={(e) => setNote(e.target.value)} /></div>
               <div className="flex gap-2">
                 {editingRuleId && <Button variant="outline" onClick={cancelEdit} className="flex-1">Cancel</Button>}
                 <Button onClick={handleSaveRules} className={cn("flex-1 gap-2", editingRuleId ? "bg-orange-500 hover:bg-orange-600" : "")}>{editingRuleId ? <><Save className="w-4 h-4"/> Update</> : <><Plus className="w-4 h-4"/> Add Rule</>}</Button>
@@ -1567,10 +1596,10 @@ if (item.type === 'text') {
                                            value={styleSettings.fontSize} 
                                            onChange={(e) => handleStyleChange('fontSize', Number(e.target.value))} 
                                            onWheel={(e) => {
-                                               const delta = e.deltaY < 0 ? 1 : -1;
-                                               handleStyleChange('fontSize', Math.max(10, Math.min(150, styleSettings.fontSize + delta)));
-                                           }}
-                                           className="w-12 h-6 text-center text-xs font-bold border rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                                            e.preventDefault(); // ✨ NEW: 페이지 스크롤이 넘어가는 것을 콱! 막아줍니다.
+                                            const delta = e.deltaY < 0 ? 1 : -1;
+                                            handleStyleChange('fontSize', Math.max(10, Math.min(150, styleSettings.fontSize + delta)));
+                                        }}                                           className="w-12 h-6 text-center text-xs font-bold border rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" 
                                            title="Font Size (Scroll to adjust)"
                                        />
                                    </div>
