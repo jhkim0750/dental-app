@@ -216,16 +216,17 @@ function PatientDashboard() {
                               <div><label className="text-xs font-bold text-slate-500 block mb-1">Total Steps</label><input type="number" className="w-full border p-2 rounded bg-green-50/50" value={editTotalSteps} onChange={e => setEditTotalSteps(Number(e.target.value))} /></div>
                           </div>
                           <Button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 py-6 text-lg" onClick={handleUpdate}>Save Changes</Button>
-                      </div>
+                          </div>
                   </div>
               </div>
             )}
+            
+
         </div>
       </div>
     </div>
   );
 }
-
 export default function DentalApp() {
   return (
     <Suspense fallback={

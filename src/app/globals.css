@@ -1,3 +1,7 @@
+/* ✨ 파일의 가장 맨 윗줄에 아래 두 줄을 무조건 추가해야 합니다! */
+@import 'handsontable/styles/handsontable.min.css';
+@import 'handsontable/styles/ht-theme-main.min.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,4 +14,3 @@ body {
 body {
   @apply bg-background text-foreground;
 }
-

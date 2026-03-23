@@ -7,15 +7,15 @@ import {
   Type, Eraser, PenTool, Minus, Undo, Redo, CheckSquare,
   Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter,
   Loader2, Square, Circle, Triangle, Copy, Clipboard, ChevronDown,
-  Crop, RotateCcw, Check, X 
+  Crop, RotateCcw, Check, X, Table
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ToothGrid } from "@/components/tooth-grid";
 import { storage } from "@/lib/firebase";
 import { ref, getDownloadURL, uploadBytes } from "firebase/storage";
-
-const Label = ({ children, className }: any) => <label className={className}>{children}</label>;
+import dynamic from 'next/dynamic';
+const RecordsSheet = dynamic(() => import('./records-sheet'), { ssr: false });const Label = ({ children, className }: any) => <label className={className}>{children}</label>;
 
 interface ChecklistPanelProps {
   patient: any;
@@ -257,6 +257,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [isGridOpen, setIsGridOpen] = useState(false);
   const [pageStartStep, setPageStartStep] = useState(0);
   const [isImageUploading, setIsImageUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'summary' | 'records'>('summary'); // ✨ NEW: 탭 스위치
 
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState("BOS");
@@ -453,8 +454,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
             
           if (e.key === 'Delete') deleteSelectedItems(); 
             
-          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); handleCopy(); }
-          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); handleDuplicate(); }
+          if (activeTab === 'summary' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+            e.preventDefault();
+            handleCopy();
+          }          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); handleDuplicate(); }
 
           if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
               e.preventDefault();
@@ -1353,8 +1356,11 @@ if (item.type === 'text') {
       {/* ✨ 스크롤 감옥 해제: min-h-screen으로 자연스럽게 화면이 늘어나며 기본 스크롤바 생성 */}
       <div className="flex min-h-screen">
         
-        {/* ✨ 왼쪽 패널: h-screen과 sticky top-0으로 화면에 착 붙어서 독립 스크롤 유지 */}
+               {/* ✨ 왼쪽 패널: h-screen과 sticky top-0으로 화면에 착 붙어서 독립 스크롤 유지 */}
         <div className="w-[360px] border-r bg-white flex flex-col h-screen sticky top-0 overflow-y-auto shrink-0 relative z-0">
+           {/* ✨ 핀셋 2-1: 왼쪽 패널 스위치 시작 */}
+           {activeTab === 'summary' ? (
+               <>
            <div ref={ruleFormRef} className={cn("p-4 border-b shrink-0 transition-colors duration-500", editingRuleId ? "bg-orange-50 border-orange-200" : "bg-slate-50")}>
                <h2 className="font-bold flex items-center gap-2">{editingRuleId ? <><Pencil className="w-4 h-4 text-orange-500"/> Editing Rule</> : "Rule Definition"}</h2>
            </div>
@@ -1469,354 +1475,387 @@ if (item.type === 'text') {
                          <Trash2 className="w-6 h-6 mb-1 opacity-50"/>
                          <span className="text-[10px] font-bold">Drag checked items here to Delete</span>
                      </div>
-                 )}
-              </div>
-           </div>
+)}
+</div>
+</div>
+</>
+) : (
+    <div className="p-5 flex flex-col gap-4">
+        <h2 className="font-bold text-slate-700 flex items-center gap-2 text-lg border-b pb-3 tracking-tight">
+            <Table className="w-5 h-5 text-slate-700"/> Records Tools
+        </h2>
+        <div className="p-4 bg-slate-50 rounded border border-slate-200 text-sm text-slate-500 shadow-inner">
+            Admin conditional formatting, quick format buttons, and data filters will be placed here.
         </div>
+    </div>
+)}{/* ✨ 핀셋 2-2: 왼쪽 패널 스위치 종료 */}
+</div>
 
-        {/* ✨ 오른쪽 패널: min-h-screen 으로 페이지 전체의 스크롤을 그대로 따릅니다. */}
-        <div className="flex-1 flex flex-col bg-slate-50/50 min-h-screen relative">
-           <div className="flex items-center justify-between p-4 border-b bg-white shadow-sm shrink-0">
-           <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-blue-600"/><h3 className="text-lg font-bold text-slate-800">Work Summary</h3></div>
-           </div>
+{/* ✨ 오른쪽 패널: min-h-screen 으로 페이지 전체의 스크롤을 그대로 따릅니다. */}
+<div className="flex-1 flex flex-col bg-slate-50/50 min-h-screen relative">
            
-{/* ✨ 핀셋 1: 치식과 큼직한 버튼을 한 줄에 완벽 정렬! (스크롤해도 잘 보임) */}
-<div className="px-4 py-3 bg-slate-100 border-b flex flex-nowrap items-center gap-4 overflow-x-auto shrink-0 select-none">
-                <div className="flex items-center gap-1.5 border-r pr-4 shrink-0">
-                    <span className="text-[10px] font-bold text-blue-600 mr-1">MAXILLA</span>
-                    {UPPER_TEETH.map(num => (
-                        <div key={num} draggable onDragStart={(e) => e.dataTransfer.setData('sticker', num.toString())} 
-                             onClick={() => { setActiveSticker({num: num.toString(), color: '#2563eb'}); setCurrentTool('sticker'); }}
-                             className={cn("w-6 h-6 flex items-center justify-center rounded-full border bg-white text-xs font-bold cursor-pointer hover:bg-blue-50 hover:border-blue-300 text-blue-600 transition-colors", currentTool==='sticker' && activeSticker?.num === num.toString() && "bg-blue-500 text-white border-blue-600")}>
-                            {num}
-                        </div>
-                    ))}
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-[10px] font-bold text-red-600 mr-1">MANDIBLE</span>
-                    {LOWER_TEETH.map(num => (
-                        <div key={num} draggable onDragStart={(e) => e.dataTransfer.setData('sticker', num.toString())} 
-                             onClick={() => { setActiveSticker({num: num.toString(), color: '#dc2626'}); setCurrentTool('sticker'); }}
-                             className={cn("w-6 h-6 flex items-center justify-center rounded-full border bg-white text-xs font-bold cursor-pointer hover:bg-red-50 hover:border-red-300 text-red-600 transition-colors", currentTool==='sticker' && activeSticker?.num === num.toString() && "bg-red-500 text-white border-red-600")}>
-                            {num}
-                        </div>
-                    ))}
-                </div>
-                
-                {/* 👉 치식 바로 옆, 오른쪽 끝에 원래 크기의 큼직한 버튼 안착! */}
-                <div className="ml-auto flex gap-2 pl-4 shrink-0 border-l border-slate-200">
-                    <Button onClick={handleSave} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
-                    <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-white text-slate-700 border hover:bg-slate-50"><Layout className="w-4 h-4"/> Checklist View</Button>
-                </div>
-           </div>{/* ✨ 치식 줄 오른쪽 끝으로 버튼 이사 완료! */}
-           <div className="flex-1 p-6 flex flex-row gap-4 bg-slate-100">
-              <div className="w-28 flex flex-col gap-2 shrink-0">
-                  {slides.map((slide, index) => (
-                      <SlideThumbnail 
-                          key={slide.id} items={slide.items} penStrokes={slide.penStrokes} isActive={currentSlideIndex === index} index={index}
-                          onClick={() => { setCurrentSlideIndex(index); setHistory([]); setHistoryIndex(-1); }}
-                          onDelete={(e:any) => { e.stopPropagation(); deleteSlide(index); }}
-                          onDuplicate={(e:any) => duplicateSlide(e, index)} 
-                          onDragStart={() => {}} onDrop={handleSlideDrop} 
-                      />
-                  ))}
-                  <Button variant="outline" className="w-full border-dashed h-20" onClick={addSlide}><Plus className="w-4 h-4 mr-1"/> Add Slide</Button>
-              </div>
-
-              {/* ✨ 캔버스 컨테이너: min-h-[800px] 이상으로 늘어나서 자연스럽게 스크롤 생성 */}
-              <div className="flex-1 bg-white p-4 rounded-lg shadow-sm flex flex-col relative min-h-[800px]">
-                  
-                  {/* ✨ 툴바: 스크롤해도 상단에 착 달라붙게 sticky 설정 */}
-                  <div className="flex justify-between items-center mb-4 gap-2 sticky top-4 z-50 bg-white/95 backdrop-blur p-2 border shadow-sm rounded-lg overflow-x-auto no-scrollbar min-h-[64px] shrink-0">
-                     <div className="flex items-center gap-2 min-w-max">
-                         <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('select')} className={cn(currentTool === 'select' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Select"><MousePointer2 className="w-4 h-4"/></Button>
-                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                         <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('draw')} className={cn(currentTool === 'draw' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Pen"><PenTool className="w-4 h-4"/></Button>
-                         <Button variant={currentTool === 'highlighter' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('highlighter')} className={cn(currentTool === 'highlighter' && "bg-yellow-100 text-yellow-600 ring-2 ring-yellow-500")} title="Highlighter"><Highlighter className="w-4 h-4"/></Button>
-                         <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('eraser')} className={cn(currentTool === 'eraser' && "bg-pink-100 text-pink-600 ring-2 ring-pink-500")} title="Eraser"><Eraser className="w-4 h-4"/></Button>
-                         <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('line')} className={cn(currentTool === 'line' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
-                         <Button variant={currentTool === 'rect' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('rect')} className={cn(currentTool === 'rect' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Rectangle"><Square className="w-4 h-4"/></Button>
-                         <Button variant={currentTool === 'circle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('circle')} className={cn(currentTool === 'circle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Circle"><Circle className="w-4 h-4"/></Button>
-                         <Button variant={currentTool === 'triangle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('triangle')} className={cn(currentTool === 'triangle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Triangle"><Triangle className="w-4 h-4"/></Button>
-                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                         <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('text')} className={cn(currentTool === 'text' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Text"><Type className="w-4 h-4"/></Button>
-                         
-                         <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-                         <Button variant="ghost" size="icon" onClick={() => !isImageUploading && fileInputRef.current?.click()} title="Add Image" disabled={isImageUploading}>
-                             {isImageUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <ImageIcon className="w-4 h-4"/>}
-                         </Button>
-
-                         {selectedIds.length === 1 && items.find(i => i.id === selectedIds[0])?.type === 'image' && (
-                             <>
-                                <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                                <Button variant={cropModeId === selectedIds[0] ? 'secondary' : 'ghost'} size="sm" 
-                                    onClick={() => setCropModeId(cropModeId === selectedIds[0] ? null : selectedIds[0])} 
-                                    className={cn("h-8 gap-1", cropModeId === selectedIds[0] && "bg-green-100 text-green-700 ring-2 ring-green-500")}>
-                                    <Crop className="w-3.5 h-3.5"/> 자르기
-                                </Button>
-                                {cropModeId === selectedIds[0] && (
-                                    <Button variant="outline" size="sm" onClick={() => handleResetCrop()} className="h-8 gap-1 border-orange-200 text-orange-600 hover:bg-orange-50 ml-1">
-                                        <RotateCcw className="w-3.5 h-3.5"/> 원본 복원
-                                    </Button>
-                                )}
-                             </>
-                         )}
-                         
-                         {(isTextSelected || isShapeSelected) && (
-                            <div className="flex items-center gap-2 border px-2 py-1 rounded bg-slate-50 ml-2 shrink-0">
-                               <div className="flex flex-col items-center gap-0.5">
-                                   <span className="text-[8px] font-bold text-slate-400">Color</span>
-                                   <input type="color" value={styleSettings.strokeColor} onChange={(e) => handleStyleChange('strokeColor', e.target.value)} className="w-5 h-5 p-0 border-0 rounded cursor-pointer" title="Color"/>
-                               </div>
-                               
-                               {isShapeSelected && (['rect', 'circle', 'triangle'].includes(currentTool) || (currentTool === 'select' && items.some(i => selectedIds.includes(i.id) && ['rect', 'circle', 'triangle'].includes(i.type)))) && (
-                                   <div className="flex flex-col items-center gap-0.5">
-                                       <span className="text-[8px] font-bold text-slate-400">Fill</span>
-                                       <div className="relative w-5 h-5">
-                                           <input type="color" value={styleSettings.fillColor === 'transparent' ? '#ffffff' : styleSettings.fillColor} onChange={(e) => handleStyleChange('fillColor', e.target.value)} className="w-full h-full p-0 border-0 rounded cursor-pointer" />
-                                           <button onClick={() => handleStyleChange('fillColor', 'transparent')} className="absolute -top-3 -right-2 bg-white border rounded-[2px] text-[8px] px-0.5" title="Transparent">X</button>
-                                       </div>
-                                   </div>
-                               )}
-
-                               {isShapeSelected && (
-                                   <div className="flex flex-col items-center w-16">
-                                       <span className="text-[8px] font-bold text-slate-400">Width: {styleSettings.strokeWidth}</span>
-                                       <input type="range" min="1" max="50" value={styleSettings.strokeWidth} onChange={(e) => handleStyleChange('strokeWidth', Number(e.target.value))} className="w-full accent-blue-600 h-1.5" />
-                                   </div>
-                               )}
-
-                               {isTextSelected && (
-                                   <div className="flex flex-col items-center w-16">
-                                       <span className="text-[8px] font-bold text-slate-400">Size</span>
-                                       <input 
-                                           type="number" 
-                                           min="10" 
-                                           max="150" 
-                                           value={styleSettings.fontSize} 
-                                           onChange={(e) => handleStyleChange('fontSize', Number(e.target.value))} 
-                                           onWheel={(e) => {
-                                            e.preventDefault(); // ✨ NEW: 페이지 스크롤이 넘어가는 것을 콱! 막아줍니다.
-                                            const delta = e.deltaY < 0 ? 1 : -1;
-                                            handleStyleChange('fontSize', Math.max(10, Math.min(150, styleSettings.fontSize + delta)));
-                                        }}                                           className="w-12 h-6 text-center text-xs font-bold border rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" 
-                                           title="Font Size (Scroll to adjust)"
-                                       />
-                                   </div>
-                               )}
-                            </div>
-                         )}
-                     </div>
-                     
-                     <div className="flex gap-2 items-center min-w-max ml-auto">
-                        <div className="relative">
-                              <Button variant="ghost" size="icon" onClick={() => setIsEditMenuOpen(!isEditMenuOpen)} title="Edit Menu"><ChevronDown className="w-4 h-4"/></Button>
-                              {isEditMenuOpen && (
-                                  <div className="absolute right-0 top-full mt-1 bg-white border shadow-lg rounded-lg p-1 flex flex-col gap-1 z-50 min-w-[140px] animate-in fade-in zoom-in-95" onClick={() => setIsEditMenuOpen(false)}>
-                                      <div className="text-[10px] font-bold text-slate-400 px-2 py-1">CLIPBOARD</div>
-                                      <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleCopy} disabled={selectedIds.length === 0}><Copy className="w-3.5 h-3.5"/> Copy</button>
-                                      <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handlePaste} disabled={clipboard.length === 0}><Clipboard className="w-3.5 h-3.5"/> Paste</button>
-                                      <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleDuplicate} disabled={selectedIds.length === 0}><Plus className="w-3.5 h-3.5"/> Duplicate</button>
-                                  </div>
-                              )}
-                         </div>
-                         <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                         <Button variant="ghost" size="icon" onClick={handleUndo} title="Undo (Ctrl+Z)"><Undo className="w-4 h-4"/></Button>
-                         <Button variant="ghost" size="icon" onClick={handleRedo} title="Redo (Ctrl+Y)"><Redo className="w-4 h-4"/></Button>
-                        
-                        {selectedIds.length > 0 && (
-                            <>
-                                <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                                <Button variant="ghost" size="sm" onClick={() => moveLayer('up')} title="Bring Forward"><BringToFront className="w-4 h-4"/></Button>
-                                <Button variant="ghost" size="sm" onClick={() => moveLayer('down')} title="Send Backward"><SendToBack className="w-4 h-4"/></Button>
-                                <Button variant="ghost" size="sm" onClick={deleteSelectedItems} className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4"/></Button>
-                            </>
-                        )}
-                        <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                        <Button variant="ghost" size="sm" onClick={clearPenLayer} className="text-slate-500">Clear Pen</Button>
-                        <Button variant="ghost" size="sm" onClick={clearAll} className="text-red-400">Clear All</Button>
-                     </div>
-                  </div>
-
-{/* ✨ 핀셋 2: 드래그 마비 완벽 해결! 캔버스 껍데기 자체에 마우스 엔진을 달았습니다. */}
-<div className={cn("flex-1 relative bg-slate-50 overflow-hidden select-none", 
-                    ['draw', 'highlighter', 'line', 'rect', 'circle', 'triangle'].includes(currentTool) && "cursor-crosshair", 
-                    currentTool === 'eraser' && "cursor-cell", 
-                    currentTool === 'text' && "cursor-text", 
-                    currentTool === 'select' && "cursor-default",
-                    currentTool === 'sticker' && "cursor-crosshair"
-                  )} 
-                  ref={containerRef} 
-                  onMouseDown={handleMouseDown} 
-                  onMouseMove={handleMouseMove} 
-                  onMouseUp={handleMouseUp} 
-                  onMouseLeave={handleMouseUp}
-                  onDragOver={handleDrop} 
-                  onDrop={handleDrop}>
-                     
-                     {/* ✨ (주의!) 여기에 있던 dragState.isDragging 투명 필름 코드는 아예 삭제해 버렸습니다!! */}
-
-                     {items.map((item) => {
-                                                 if (textInput && textInput.id === item.id) return null;
-                         const isSelected = selectedIds.includes(item.id);
-                         const showResizeHandles = isSelected && selectedIds.length === 1 && cropModeId !== item.id; 
-                         const showCropHandles = cropModeId === item.id && item.type === 'image'; 
-                         const commonStyle: React.CSSProperties = { left: item.x, top: item.y, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' };
-                         
-                         const renderResizeHandles = () => {
-                            if (!showResizeHandles || currentTool !== 'select') return null;
-                            // ✨ 파워포인트처럼 텍스트 상자에도 8개 점 모두 부활!
-                            const handles = [ { pos: 'nw', style: { top: -4, left: -4, cursor: 'nw-resize' } }, { pos: 'n', style: { top: -4, left: '50%', transform: 'translateX(-50%)', cursor: 'n-resize' } }, { pos: 'ne', style: { top: -4, right: -4, cursor: 'ne-resize' } }, { pos: 'e', style: { top: '50%', right: -4, transform: 'translateY(-50%)', cursor: 'e-resize' } }, { pos: 'se', style: { bottom: -4, right: -4, cursor: 'se-resize' } }, { pos: 's', style: { bottom: -4, left: '50%', transform: 'translateX(-50%)', cursor: 's-resize' } }, { pos: 'sw', style: { bottom: -4, left: -4, cursor: 'sw-resize' } }, { pos: 'w', style: { top: '50%', left: -4, transform: 'translateY(-50%)', cursor: 'w-resize' } } ];
-                            return handles.map(h => ( <div key={h.pos} className="absolute w-2.5 h-2.5 bg-white border border-blue-500 z-50" style={h.style} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} /> ));
-                        };
-
-                         const renderCropHandles = () => {
-                            if (!showCropHandles || currentTool !== 'select') return null;
-                            const crops = [ 
-                                { pos: 'crop-t', area: { top: -6, left: 0, right: 0, height: 12, cursor: 'ns-resize' }, mark: { top: -3, left: '50%', transform: 'translateX(-50%)', width: 24, height: 6 } }, 
-                                { pos: 'crop-b', area: { bottom: -6, left: 0, right: 0, height: 12, cursor: 'ns-resize' }, mark: { bottom: -3, left: '50%', transform: 'translateX(-50%)', width: 24, height: 6 } }, 
-                                { pos: 'crop-l', area: { top: 0, bottom: 0, left: -6, width: 12, cursor: 'ew-resize' }, mark: { top: '50%', left: -3, transform: 'translateY(-50%)', width: 6, height: 24 } }, 
-                                { pos: 'crop-r', area: { top: 0, bottom: 0, right: -6, width: 12, cursor: 'ew-resize' }, mark: { top: '50%', right: -3, transform: 'translateY(-50%)', width: 6, height: 24 } } 
-                            ];
-                            return (
-                                <>
-                                    <div className="absolute inset-0 border-[3px] border-green-500 pointer-events-none z-40" />
-                                    {crops.map(h => ( 
-                                        <React.Fragment key={h.pos}>
-                                            <div className="absolute z-50 bg-transparent" style={h.area} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} title="Drag to crop" />
-                                            <div className="absolute bg-green-500 border border-white z-40 rounded-sm pointer-events-none shadow-sm" style={h.mark} />
-                                        </React.Fragment>
-                                    ))}
-                                </>
-                            );
-                         }
-                         
-                         if (item.type === 'image') { 
-                            const cl = item.cropL || 0, cr = item.cropR || 0, ct = item.cropT || 0, cb = item.cropB || 0;
-                            return ( 
-                                <div key={item.id} className={cn("absolute", isSelected && cropModeId !== item.id && "ring-1 ring-blue-500")} style={{ ...commonStyle, width: item.width, height: item.height, overflow: 'hidden' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
-                                    <img src={item.src} className="pointer-events-none" style={{ position: 'absolute', left: -cl, top: -ct, width: item.width! + cl + cr, height: item.height! + ct + cb, maxWidth: 'none' }} />
-                                    {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
-                                    {renderResizeHandles()} 
-                                    {renderCropHandles()} 
-                                </div> 
-                            ); 
-                         } 
-                 // ✨ [수술 2] 더블클릭 1단계 진입 확실하게 열어주기
-                 if (item.type === 'text') { 
-                    return ( 
-                        <div key={item.id} className={cn("absolute px-1 border border-transparent group", isSelected && "border-blue-500")} 
-                             style={{ 
-                                 ...commonStyle, color: item.strokeColor || item.color, fontSize: `${item.size || 20}px`, fontWeight: 'bold', lineHeight: '1.2',
-                                 width: item.width ? `${item.width}px` : 'max-content', // ✨ 가로길이가 없으면 글씨크기에 맞춰 무한히!
-                                 height: item.height || 'auto',
-                                 whiteSpace: item.width ? 'pre-wrap' : 'pre' // ✨ 스위치: 가로가 고정되면 자동 줄바꿈(pre-wrap), 아니면 그대로(pre)
-                             }} 
-                             onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} 
-                             onContextMenu={(e) => handleItemContextMenu(e, item.id)} 
-                             onDoubleClick={(e) => { 
-                                 e.preventDefault(); e.stopPropagation(); 
-                                 setStyleSettings(prev => ({ ...prev, strokeColor: item.color || item.strokeColor || "#000", fontSize: item.size || 20 }));
-                                 setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width, height: item.height }); 
-                                 setCurrentTool('text');
-                             }}> 
-                            {item.text} 
-                            {item.text?.includes('http') && <div className="absolute -top-4 right-0 text-[9px] bg-black/60 text-white px-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap">Ctrl+Click to open link</div>} 
-                            {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
-                            {renderResizeHandles()} 
-                        </div> 
-                    ); 
-                }                         if (item.type === 'sticker') { 
-                             return ( 
-                                 <div key={item.id} className={cn("absolute flex items-center justify-center rounded-full", isSelected && "ring-1 ring-blue-500")} 
-                                      style={{ ...commonStyle, width: item.width, height: item.height, backgroundColor: 'transparent', color: item.color, fontSize: `${item.size}px`, fontWeight: '900', textShadow: '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff' }} 
-                                      onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
-                                     {item.text} 
-                                     {renderResizeHandles()} 
-                                 </div> 
-                             ); 
-                         }
-                         if (item.type === 'line') { 
-                             return ( 
-                                 <svg key={item.id} className="absolute overflow-visible" style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}> 
-                                     <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.strokeWidth || item.size || 3, 20)} className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} /> 
-                                     <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={isSelected ? "#3b82f6" : (item.strokeColor || item.color)} strokeWidth={item.strokeWidth || item.size} className={cn(currentTool === 'select' ? "pointer-events-none" : "")} /> 
-                                     {showResizeHandles && currentTool === 'select' && ( <> <circle cx={item.x} cy={item.y} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'start')} /> <circle cx={item.x2} cy={item.y2} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'end')} /> </> )} 
-                                 </svg> 
-                             ); 
-                         }
-                         if (['rect', 'circle', 'triangle'].includes(item.type)) { 
-                             return ( 
-                                 <div key={item.id} className="absolute" style={{ left: item.x, top: item.y, width: item.width, height: item.height, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
-                                     <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible"> 
-                                         {item.type === 'rect' && <rect x="0" y="0" width="100" height="100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
-                                         {item.type === 'circle' && <ellipse cx="50" cy="50" rx="50" ry="50" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
-                                         {item.type === 'triangle' && <polygon points="50,0 0,100 100,100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
-                                     </svg> 
-                                     {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
-                                     {renderResizeHandles()} 
-                                 </div> 
-                             ); 
-                         }
-                     })}
-                     {selectionBox && ( <div className="absolute border border-blue-500 bg-blue-200/30 z-[9999] pointer-events-none" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.w, height: selectionBox.h }} /> )}
-                     <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", (['draw', 'eraser', 'highlighter'].includes(currentTool)) ? "pointer-events-auto" : "pointer-events-none")} />
-                     
-               {/* ✨ [수술 3] 텍스트 입력창 증발 버그 완전 제거 */}
-{/* ✨ 핀셋 3: 타자치면 가로로 쭉쭉 늘어나는 자동폭 입력창! */}
-{textInput && ( 
-                         <textarea 
-                             id="active-text-editor"
-                             autoFocus 
-                             defaultValue={textInput.value}
-                             className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden select-text pointer-events-auto" 
-                             style={{ 
-                                 left: textInput.x, top: textInput.y, 
-                                 width: textInput.width ? `${textInput.width}px` : 'auto', minWidth: '20px', 
-                                 color: styleSettings.strokeColor, fontSize: `${styleSettings.fontSize || 20}px`, 
-                                 fontWeight: "bold", minHeight: textInput.height ? `${textInput.height}px` : "auto", lineHeight: '1.2',
-                                 whiteSpace: textInput.width ? 'pre-wrap' : 'pre' // ✨ 스위치
-                             }} 
-                             ref={(el) => {
-                                 if (el) {
-                                     el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px';
-                                     if (!textInput.width) { el.style.width = 'auto'; el.style.width = (el.scrollWidth + 10) + 'px'; }
-                                 }
-                             }}
-                             onMouseDown={(e) => e.stopPropagation()} 
-                             onInput={(e) => {
-                                 e.currentTarget.style.height = 'auto'; e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px'; 
-                                 if (!textInput.width) { e.currentTarget.style.width = 'auto'; e.currentTarget.style.width = (e.currentTarget.scrollWidth + 10) + 'px'; }
-                             }} 
-                             onKeyDown={(e) => { 
-                                 e.stopPropagation();
-                                 if (e.key === 'Enter' && !e.shiftKey) { 
-                                     e.preventDefault(); 
-                                     if(!e.nativeEvent.isComposing) confirmText(); 
-                                 } 
-                             }} 
-                         /> 
-                     )}
-                                          {contextMenu && (
-                         <>
-                             <div className="fixed inset-0 z-[10000]" onMouseDown={(e) => { e.stopPropagation(); setContextMenu(null); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu(null); }} />
-                             <div className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[120px] animate-in fade-in zoom-in-95 duration-100" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(e) => e.stopPropagation()}> 
-                                 {items.find(i => i.id === contextMenu.itemId)?.type === 'image' && (
-                                     <button className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-b" onClick={() => { setCropModeId(contextMenu.itemId); setContextMenu(null); }}> 
-                                         <Crop className="w-4 h-4"/> Crop 
-                                     </button> 
-                                 )}
-                                 <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2" onClick={handleDeleteFromMenu}> 
-                                     <Trash2 className="w-4 h-4"/> Delete 
-                                 </button> 
-                             </div> 
-                         </>
-                     )}
-                     {items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
-                 </div>
-              </div>
+           {/* ✨ 핀셋 1: 크롬 브라우저 스타일 탭 장착! (배경 흰색으로 변경 완료) */}
+           <div className="flex items-end px-6 pt-3 border-b border-slate-300 bg-white shrink-0">
+               <div className="flex items-center gap-1">
+                   <button 
+                       onClick={() => setActiveTab('summary')}
+                       className={cn("text-sm font-bold px-6 py-2.5 transition-all flex items-center gap-2 rounded-t-lg border-t border-x relative top-[1px]", 
+                           activeTab === 'summary' 
+                           ? "bg-white border-slate-300 text-blue-700 z-10 shadow-[0_-2px_5px_rgba(0,0,0,0.02)]" 
+                           : "bg-transparent border-transparent text-slate-500 hover:bg-slate-50 z-0")}
+                   >
+                       <FileImage className="w-4 h-4"/> Work Summary
+                   </button>
+                   <button 
+                       onClick={() => setActiveTab('records')}
+                       className={cn("text-sm font-bold px-6 py-2.5 transition-all flex items-center gap-2 rounded-t-lg border-t border-x relative top-[1px]", 
+                           activeTab === 'records' 
+                           ? "bg-white border-slate-300 text-blue-700 z-10 shadow-[0_-2px_5px_rgba(0,0,0,0.02)]" 
+                           : "bg-transparent border-transparent text-slate-500 hover:bg-slate-50 z-0")}
+                   >
+                       <Table className="w-4 h-4"/> Records
+                   </button>
+               </div>
            </div>
-        </div>
+
+           {/* ✨ 우측 화면 스위치 시작 */}
+           {activeTab === 'summary' ? (
+               <>
+                 {/* ✨ 치식과 큼직한 버튼을 한 줄에 완벽 정렬! */}
+                 <div className="px-4 py-3 bg-slate-100 border-b flex flex-nowrap items-center gap-4 overflow-x-auto shrink-0 select-none">
+                     <div className="flex items-center gap-1.5 border-r pr-4 shrink-0">
+                         <span className="text-[10px] font-bold text-blue-600 mr-1">MAXILLA</span>
+                         {UPPER_TEETH.map(num => (
+                             <div key={num} draggable onDragStart={(e) => e.dataTransfer.setData('sticker', num.toString())} 
+                                  onClick={() => { setActiveSticker({num: num.toString(), color: '#2563eb'}); setCurrentTool('sticker'); }}
+                                  className={cn("w-6 h-6 flex items-center justify-center rounded-full border bg-white text-xs font-bold cursor-pointer hover:bg-blue-50 hover:border-blue-300 text-blue-600 transition-colors", currentTool==='sticker' && activeSticker?.num === num.toString() && "bg-blue-500 text-white border-blue-600")}>
+                                 {num}
+                             </div>
+                         ))}
+                     </div>
+                     <div className="flex items-center gap-1.5 shrink-0">
+                         <span className="text-[10px] font-bold text-red-600 mr-1">MANDIBLE</span>
+                         {LOWER_TEETH.map(num => (
+                             <div key={num} draggable onDragStart={(e) => e.dataTransfer.setData('sticker', num.toString())} 
+                                  onClick={() => { setActiveSticker({num: num.toString(), color: '#dc2626'}); setCurrentTool('sticker'); }}
+                                  className={cn("w-6 h-6 flex items-center justify-center rounded-full border bg-white text-xs font-bold cursor-pointer hover:bg-red-50 hover:border-red-300 text-red-600 transition-colors", currentTool==='sticker' && activeSticker?.num === num.toString() && "bg-red-500 text-white border-red-600")}>
+                                 {num}
+                             </div>
+                         ))}
+                     </div>
+                     
+                     {/* 👉 치식 바로 옆, 오른쪽 끝에 원래 크기의 큼직한 버튼 안착! */}
+                     <div className="ml-auto flex gap-2 pl-4 shrink-0 border-l border-slate-200">
+                         <Button onClick={handleSave} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
+                         <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-white text-slate-700 border hover:bg-slate-50"><Layout className="w-4 h-4"/> Checklist View</Button>
+                     </div>
+                 </div>
+
+                 {/* 캔버스 썸네일 및 툴바 영역 */}
+                 <div className="flex-1 p-6 flex flex-row gap-4 bg-slate-100">
+                    <div className="w-28 flex flex-col gap-2 shrink-0">
+                        {slides.map((slide, index) => (
+                            <SlideThumbnail 
+                                key={slide.id} items={slide.items} penStrokes={slide.penStrokes} isActive={currentSlideIndex === index} index={index}
+                                onClick={() => { setCurrentSlideIndex(index); setHistory([]); setHistoryIndex(-1); }}
+                                onDelete={(e:any) => { e.stopPropagation(); deleteSlide(index); }}
+                                onDuplicate={(e:any) => duplicateSlide(e, index)} 
+                                onDragStart={() => {}} onDrop={handleSlideDrop} 
+                            />
+                        ))}
+                        <Button variant="outline" className="w-full border-dashed h-20" onClick={addSlide}><Plus className="w-4 h-4 mr-1"/> Add Slide</Button>
+                    </div>
+
+                    <div className="flex-1 bg-white p-4 rounded-lg shadow-sm flex flex-col relative min-h-[800px]">
+                        <div className="flex justify-between items-center mb-4 gap-2 sticky top-4 z-50 bg-white/95 backdrop-blur p-2 border shadow-sm rounded-lg overflow-x-auto no-scrollbar min-h-[64px] shrink-0">
+                           <div className="flex items-center gap-2 min-w-max">
+                               <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('select')} className={cn(currentTool === 'select' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Select"><MousePointer2 className="w-4 h-4"/></Button>
+                               <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                               <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('draw')} className={cn(currentTool === 'draw' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Pen"><PenTool className="w-4 h-4"/></Button>
+                               <Button variant={currentTool === 'highlighter' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('highlighter')} className={cn(currentTool === 'highlighter' && "bg-yellow-100 text-yellow-600 ring-2 ring-yellow-500")} title="Highlighter"><Highlighter className="w-4 h-4"/></Button>
+                               <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('eraser')} className={cn(currentTool === 'eraser' && "bg-pink-100 text-pink-600 ring-2 ring-pink-500")} title="Eraser"><Eraser className="w-4 h-4"/></Button>
+                               <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('line')} className={cn(currentTool === 'line' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
+                               <Button variant={currentTool === 'rect' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('rect')} className={cn(currentTool === 'rect' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Rectangle"><Square className="w-4 h-4"/></Button>
+                               <Button variant={currentTool === 'circle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('circle')} className={cn(currentTool === 'circle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Circle"><Circle className="w-4 h-4"/></Button>
+                               <Button variant={currentTool === 'triangle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('triangle')} className={cn(currentTool === 'triangle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Triangle"><Triangle className="w-4 h-4"/></Button>
+                               <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                               <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('text')} className={cn(currentTool === 'text' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Text"><Type className="w-4 h-4"/></Button>
+                               
+                               <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+                               <Button variant="ghost" size="icon" onClick={() => !isImageUploading && fileInputRef.current?.click()} title="Add Image" disabled={isImageUploading}>
+                                   {isImageUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <ImageIcon className="w-4 h-4"/>}
+                               </Button>
+
+                               {selectedIds.length === 1 && items.find(i => i.id === selectedIds[0])?.type === 'image' && (
+                                   <>
+                                      <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                                      <Button variant={cropModeId === selectedIds[0] ? 'secondary' : 'ghost'} size="sm" 
+                                          onClick={() => setCropModeId(cropModeId === selectedIds[0] ? null : selectedIds[0])} 
+                                          className={cn("h-8 gap-1", cropModeId === selectedIds[0] && "bg-green-100 text-green-700 ring-2 ring-green-500")}>
+                                          <Crop className="w-3.5 h-3.5"/> 자르기
+                                      </Button>
+                                      {cropModeId === selectedIds[0] && (
+                                          <Button variant="outline" size="sm" onClick={() => handleResetCrop()} className="h-8 gap-1 border-orange-200 text-orange-600 hover:bg-orange-50 ml-1">
+                                              <RotateCcw className="w-3.5 h-3.5"/> 원본 복원
+                                          </Button>
+                                      )}
+                                   </>
+                               )}
+                               
+                               {(isTextSelected || isShapeSelected) && (
+                                  <div className="flex items-center gap-2 border px-2 py-1 rounded bg-slate-50 ml-2 shrink-0">
+                                     <div className="flex flex-col items-center gap-0.5">
+                                         <span className="text-[8px] font-bold text-slate-400">Color</span>
+                                         <input type="color" value={styleSettings.strokeColor} onChange={(e) => handleStyleChange('strokeColor', e.target.value)} className="w-5 h-5 p-0 border-0 rounded cursor-pointer" title="Color"/>
+                                     </div>
+                                     
+                                     {isShapeSelected && (['rect', 'circle', 'triangle'].includes(currentTool) || (currentTool === 'select' && items.some(i => selectedIds.includes(i.id) && ['rect', 'circle', 'triangle'].includes(i.type)))) && (
+                                         <div className="flex flex-col items-center gap-0.5">
+                                             <span className="text-[8px] font-bold text-slate-400">Fill</span>
+                                             <div className="relative w-5 h-5">
+                                                 <input type="color" value={styleSettings.fillColor === 'transparent' ? '#ffffff' : styleSettings.fillColor} onChange={(e) => handleStyleChange('fillColor', e.target.value)} className="w-full h-full p-0 border-0 rounded cursor-pointer" />
+                                                 <button onClick={() => handleStyleChange('fillColor', 'transparent')} className="absolute -top-3 -right-2 bg-white border rounded-[2px] text-[8px] px-0.5" title="Transparent">X</button>
+                                             </div>
+                                         </div>
+                                     )}
+
+                                     {isShapeSelected && (
+                                         <div className="flex flex-col items-center w-16">
+                                             <span className="text-[8px] font-bold text-slate-400">Width: {styleSettings.strokeWidth}</span>
+                                             <input type="range" min="1" max="50" value={styleSettings.strokeWidth} onChange={(e) => handleStyleChange('strokeWidth', Number(e.target.value))} className="w-full accent-blue-600 h-1.5" />
+                                         </div>
+                                     )}
+
+                                     {isTextSelected && (
+                                         <div className="flex flex-col items-center w-16">
+                                             <span className="text-[8px] font-bold text-slate-400">Size</span>
+                                             <input 
+                                                 type="number" 
+                                                 min="10" 
+                                                 max="150" 
+                                                 value={styleSettings.fontSize} 
+                                                 onChange={(e) => handleStyleChange('fontSize', Number(e.target.value))} 
+                                                 onWheel={(e) => {
+                                                  e.preventDefault(); 
+                                                  const delta = e.deltaY < 0 ? 1 : -1;
+                                                  handleStyleChange('fontSize', Math.max(10, Math.min(150, styleSettings.fontSize + delta)));
+                                              }}                                           className="w-12 h-6 text-center text-xs font-bold border rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                                                 title="Font Size (Scroll to adjust)"
+                                             />
+                                         </div>
+                                     )}
+                                  </div>
+                               )}
+                           </div>
+                           
+                           <div className="flex gap-2 items-center min-w-max ml-auto">
+                              <div className="relative">
+                                    <Button variant="ghost" size="icon" onClick={() => setIsEditMenuOpen(!isEditMenuOpen)} title="Edit Menu"><ChevronDown className="w-4 h-4"/></Button>
+                                    {isEditMenuOpen && (
+                                        <div className="absolute right-0 top-full mt-1 bg-white border shadow-lg rounded-lg p-1 flex flex-col gap-1 z-50 min-w-[140px] animate-in fade-in zoom-in-95" onClick={() => setIsEditMenuOpen(false)}>
+                                            <div className="text-[10px] font-bold text-slate-400 px-2 py-1">CLIPBOARD</div>
+                                            <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleCopy} disabled={selectedIds.length === 0}><Copy className="w-3.5 h-3.5"/> Copy</button>
+                                            <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handlePaste} disabled={clipboard.length === 0}><Clipboard className="w-3.5 h-3.5"/> Paste</button>
+                                            <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleDuplicate} disabled={selectedIds.length === 0}><Plus className="w-3.5 h-3.5"/> Duplicate</button>
+                                        </div>
+                                    )}
+                               </div>
+                               <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                               <Button variant="ghost" size="icon" onClick={handleUndo} title="Undo (Ctrl+Z)"><Undo className="w-4 h-4"/></Button>
+                               <Button variant="ghost" size="icon" onClick={handleRedo} title="Redo (Ctrl+Y)"><Redo className="w-4 h-4"/></Button>
+                              
+                              {selectedIds.length > 0 && (
+                                  <>
+                                      <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                                      <Button variant="ghost" size="sm" onClick={() => moveLayer('up')} title="Bring Forward"><BringToFront className="w-4 h-4"/></Button>
+                                      <Button variant="ghost" size="sm" onClick={() => moveLayer('down')} title="Send Backward"><SendToBack className="w-4 h-4"/></Button>
+                                      <Button variant="ghost" size="sm" onClick={deleteSelectedItems} className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4"/></Button>
+                                  </>
+                              )}
+                              <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                              <Button variant="ghost" size="sm" onClick={clearPenLayer} className="text-slate-500">Clear Pen</Button>
+                              <Button variant="ghost" size="sm" onClick={clearAll} className="text-red-400">Clear All</Button>
+                           </div>
+                       </div>
+
+                       <div className={cn("flex-1 relative bg-slate-50 overflow-hidden select-none", 
+                           ['draw', 'highlighter', 'line', 'rect', 'circle', 'triangle'].includes(currentTool) && "cursor-crosshair", 
+                           currentTool === 'eraser' && "cursor-cell", 
+                           currentTool === 'text' && "cursor-text", 
+                           currentTool === 'select' && "cursor-default",
+                           currentTool === 'sticker' && "cursor-crosshair"
+                         )} 
+                         ref={containerRef} 
+                         onMouseDown={handleMouseDown} 
+                         onMouseMove={handleMouseMove} 
+                         onMouseUp={handleMouseUp} 
+                         onMouseLeave={handleMouseUp}
+                         onDragOver={handleDrop} 
+                         onDrop={handleDrop}>
+                            
+                            {items.map((item) => {
+                                if (textInput && textInput.id === item.id) return null;
+                                const isSelected = selectedIds.includes(item.id);
+                                const showResizeHandles = isSelected && selectedIds.length === 1 && cropModeId !== item.id; 
+                                const showCropHandles = cropModeId === item.id && item.type === 'image'; 
+                                const commonStyle: React.CSSProperties = { left: item.x, top: item.y, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' };
+                                
+                                const renderResizeHandles = () => {
+                                   if (!showResizeHandles || currentTool !== 'select') return null;
+                                   const handles = [ { pos: 'nw', style: { top: -4, left: -4, cursor: 'nw-resize' } }, { pos: 'n', style: { top: -4, left: '50%', transform: 'translateX(-50%)', cursor: 'n-resize' } }, { pos: 'ne', style: { top: -4, right: -4, cursor: 'ne-resize' } }, { pos: 'e', style: { top: '50%', right: -4, transform: 'translateY(-50%)', cursor: 'e-resize' } }, { pos: 'se', style: { bottom: -4, right: -4, cursor: 'se-resize' } }, { pos: 's', style: { bottom: -4, left: '50%', transform: 'translateX(-50%)', cursor: 's-resize' } }, { pos: 'sw', style: { bottom: -4, left: -4, cursor: 'sw-resize' } }, { pos: 'w', style: { top: '50%', left: -4, transform: 'translateY(-50%)', cursor: 'w-resize' } } ];
+                                   return handles.map(h => ( <div key={h.pos} className="absolute w-2.5 h-2.5 bg-white border border-blue-500 z-50" style={h.style} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} /> ));
+                                };
+
+                                 const renderCropHandles = () => {
+                                    if (!showCropHandles || currentTool !== 'select') return null;
+                                    const crops = [ 
+                                        { pos: 'crop-t', area: { top: -6, left: 0, right: 0, height: 12, cursor: 'ns-resize' }, mark: { top: -3, left: '50%', transform: 'translateX(-50%)', width: 24, height: 6 } }, 
+                                        { pos: 'crop-b', area: { bottom: -6, left: 0, right: 0, height: 12, cursor: 'ns-resize' }, mark: { bottom: -3, left: '50%', transform: 'translateX(-50%)', width: 24, height: 6 } }, 
+                                        { pos: 'crop-l', area: { top: 0, bottom: 0, left: -6, width: 12, cursor: 'ew-resize' }, mark: { top: '50%', left: -3, transform: 'translateY(-50%)', width: 6, height: 24 } }, 
+                                        { pos: 'crop-r', area: { top: 0, bottom: 0, right: -6, width: 12, cursor: 'ew-resize' }, mark: { top: '50%', right: -3, transform: 'translateY(-50%)', width: 6, height: 24 } } 
+                                    ];
+                                    return (
+                                        <>
+                                            <div className="absolute inset-0 border-[3px] border-green-500 pointer-events-none z-40" />
+                                            {crops.map(h => ( 
+                                                <React.Fragment key={h.pos}>
+                                                    <div className="absolute z-50 bg-transparent" style={h.area} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} title="Drag to crop" />
+                                                    <div className="absolute bg-green-500 border border-white z-40 rounded-sm pointer-events-none shadow-sm" style={h.mark} />
+                                                </React.Fragment>
+                                            ))}
+                                        </>
+                                    );
+                                 }
+                                 
+                                 if (item.type === 'image') { 
+                                    const cl = item.cropL || 0, cr = item.cropR || 0, ct = item.cropT || 0, cb = item.cropB || 0;
+                                    return ( 
+                                        <div key={item.id} className={cn("absolute", isSelected && cropModeId !== item.id && "ring-1 ring-blue-500")} style={{ ...commonStyle, width: item.width, height: item.height, overflow: 'hidden' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
+                                            <img src={item.src} className="pointer-events-none" style={{ position: 'absolute', left: -cl, top: -ct, width: item.width! + cl + cr, height: item.height! + ct + cb, maxWidth: 'none' }} />
+                                            {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
+                                            {renderResizeHandles()} 
+                                            {renderCropHandles()} 
+                                        </div> 
+                                    ); 
+                                 } 
+                                 if (item.type === 'text') { 
+                                    return ( 
+                                        <div key={item.id} className={cn("absolute px-1 border border-transparent group", isSelected && "border-blue-500")} 
+                                             style={{ 
+                                                 ...commonStyle, color: item.strokeColor || item.color, fontSize: `${item.size || 20}px`, fontWeight: 'bold', lineHeight: '1.2',
+                                                 width: item.width ? `${item.width}px` : 'max-content', 
+                                                 height: item.height || 'auto',
+                                                 whiteSpace: item.width ? 'pre-wrap' : 'pre'
+                                             }} 
+                                             onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} 
+                                             onContextMenu={(e) => handleItemContextMenu(e, item.id)} 
+                                             onDoubleClick={(e) => { 
+                                                 e.preventDefault(); e.stopPropagation(); 
+                                                 setStyleSettings(prev => ({ ...prev, strokeColor: item.color || item.strokeColor || "#000", fontSize: item.size || 20 }));
+                                                 setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width, height: item.height }); 
+                                                 setCurrentTool('text');
+                                             }}> 
+                                            {item.text} 
+                                            {item.text?.includes('http') && <div className="absolute -top-4 right-0 text-[9px] bg-black/60 text-white px-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap">Ctrl+Click to open link</div>} 
+                                            {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
+                                            {renderResizeHandles()} 
+                                        </div> 
+                                    ); 
+                                }                                 
+                                if (item.type === 'sticker') { 
+                                     return ( 
+                                         <div key={item.id} className={cn("absolute flex items-center justify-center rounded-full", isSelected && "ring-1 ring-blue-500")} 
+                                              style={{ ...commonStyle, width: item.width, height: item.height, backgroundColor: 'transparent', color: item.color, fontSize: `${item.size}px`, fontWeight: '900', textShadow: '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff' }} 
+                                              onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
+                                             {item.text} 
+                                             {renderResizeHandles()} 
+                                         </div> 
+                                     ); 
+                                 }
+                                 if (item.type === 'line') { 
+                                     return ( 
+                                         <svg key={item.id} className="absolute overflow-visible" style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}> 
+                                             <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.strokeWidth || item.size || 3, 20)} className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} /> 
+                                             <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={isSelected ? "#3b82f6" : (item.strokeColor || item.color)} strokeWidth={item.strokeWidth || item.size} className={cn(currentTool === 'select' ? "pointer-events-none" : "")} /> 
+                                             {showResizeHandles && currentTool === 'select' && ( <> <circle cx={item.x} cy={item.y} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'start')} /> <circle cx={item.x2} cy={item.y2} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'end')} /> </> )} 
+                                         </svg> 
+                                     ); 
+                                 }
+                                 if (['rect', 'circle', 'triangle'].includes(item.type)) { 
+                                     return ( 
+                                         <div key={item.id} className="absolute" style={{ left: item.x, top: item.y, width: item.width, height: item.height, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
+                                             <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible"> 
+                                                 {item.type === 'rect' && <rect x="0" y="0" width="100" height="100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
+                                                 {item.type === 'circle' && <ellipse cx="50" cy="50" rx="50" ry="50" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
+                                                 {item.type === 'triangle' && <polygon points="50,0 0,100 100,100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
+                                             </svg> 
+                                             {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
+                                             {renderResizeHandles()} 
+                                         </div> 
+                                     ); 
+                                 }
+                             })}
+                             {selectionBox && ( <div className="absolute border border-blue-500 bg-blue-200/30 z-[9999] pointer-events-none" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.w, height: selectionBox.h }} /> )}
+                             <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", (['draw', 'eraser', 'highlighter'].includes(currentTool)) ? "pointer-events-auto" : "pointer-events-none")} />
+                             
+                             {textInput && ( 
+                                 <textarea 
+                                     id="active-text-editor"
+                                     autoFocus 
+                                     defaultValue={textInput.value}
+                                     className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden select-text pointer-events-auto" 
+                                     style={{ 
+                                         left: textInput.x, top: textInput.y, 
+                                         width: textInput.width ? `${textInput.width}px` : 'auto', minWidth: '20px', 
+                                         color: styleSettings.strokeColor, fontSize: `${styleSettings.fontSize || 20}px`, 
+                                         fontWeight: "bold", minHeight: textInput.height ? `${textInput.height}px` : "auto", lineHeight: '1.2',
+                                         whiteSpace: textInput.width ? 'pre-wrap' : 'pre'
+                                     }} 
+                                     ref={(el) => {
+                                         if (el) {
+                                             el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px';
+                                             if (!textInput.width) { el.style.width = 'auto'; el.style.width = (el.scrollWidth + 10) + 'px'; }
+                                         }
+                                     }}
+                                     onMouseDown={(e) => e.stopPropagation()} 
+                                     onInput={(e) => {
+                                         e.currentTarget.style.height = 'auto'; e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px'; 
+                                         if (!textInput.width) { e.currentTarget.style.width = 'auto'; e.currentTarget.style.width = (e.currentTarget.scrollWidth + 10) + 'px'; }
+                                     }} 
+                                     onKeyDown={(e) => { 
+                                         e.stopPropagation();
+                                         if (e.key === 'Enter' && !e.shiftKey) { 
+                                             e.preventDefault(); 
+                                             if(!e.nativeEvent.isComposing) confirmText(); 
+                                         } 
+                                     }} 
+                                 /> 
+                             )}
+                             {contextMenu && (
+                                 <>
+                                     <div className="fixed inset-0 z-[10000]" onMouseDown={(e) => { e.stopPropagation(); setContextMenu(null); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu(null); }} />
+                                     <div className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[120px] animate-in fade-in zoom-in-95 duration-100" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(e) => e.stopPropagation()}> 
+                                         {items.find(i => i.id === contextMenu.itemId)?.type === 'image' && (
+                                             <button className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-b" onClick={() => { setCropModeId(contextMenu.itemId); setContextMenu(null); }}> 
+                                                 <Crop className="w-4 h-4"/> Crop 
+                                             </button> 
+                                         )}
+                                         <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2" onClick={handleDeleteFromMenu}> 
+                                             <Trash2 className="w-4 h-4"/> Delete 
+                                         </button> 
+                                     </div> 
+                                 </>
+                             )}
+                             {items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
+                         </div>
+                      </div>
+                   </div>
+               </>
+) : (
+    <div className="flex-1 p-4 bg-slate-50">
+      <RecordsSheet />
+    </div>
+  )}        </div>
       </div>
       {isGridOpen && renderFullScreenGrid()}
     </>
