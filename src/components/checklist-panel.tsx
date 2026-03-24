@@ -1023,15 +1023,19 @@ if (item.type === 'text') {
                     }
                     
                     if (item.type === 'image') {
-                        if (newW < 10) newW = 10; if (newH < 10) newH = 10;
-                        const scaleX = newW / init.width!;
-                        const scaleY = newH / init.height!;
-                        return { ...item, x: newX, y: newY, width: newW, height: newH, 
+                        // 🚨 캔버스를 뚫고 나가도 절대 에러가 나지 않도록 수학적 안전장치를 겹겹이 쳤습니다.
+                        newW = Math.max(10, newW || 10); 
+                        newH = Math.max(10, newH || 10);
+                        const safeInitW = Math.max(1, init.width || 1);
+                        const safeInitH = Math.max(1, init.height || 1);
+                        const scaleX = newW / safeInitW;
+                        const scaleY = newH / safeInitH;
+                        
+                        return { ...item, x: newX || 0, y: newY || 0, width: newW, height: newH, 
                             cropL: (init.cropL || 0) * scaleX, cropR: (init.cropR || 0) * scaleX, 
                             cropT: (init.cropT || 0) * scaleY, cropB: (init.cropB || 0) * scaleY 
                         };
                     }
-
                     if (Math.abs(newW) < 10) newW = 10 * (newW < 0 ? -1 : 1); if (Math.abs(newH) < 10) newH = 10 * (newH < 0 ? -1 : 1);
                     return { ...item, x: newX, y: newY, width: newW, height: newH }; 
                 }
@@ -1069,6 +1073,26 @@ if (item.type === 'text') {
       else recordHistory(); 
       setDragState({ ...dragState, isDragging: false, action: null, lockedAxis: null, isCloning: false }); 
   };
+
+  useEffect(() => {
+    if (!dragState.isDragging) return;
+
+    const handleGlobalMouseUp = () => handleMouseUp();
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+        // 마우스가 캔버스 '안'에 있을 때는 냅두고, '밖'으로 나갔을 때만 이 전역 센서가 낚아채서 처리합니다!
+        if (containerRef.current && containerRef.current.contains(e.target as Node)) return;
+        handleMouseMove(e);
+    };
+
+    // 마우스를 꾹 누르고 있을 때만 모니터 전체(window)에 센서를 켭니다.
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+
+    return () => {
+        window.removeEventListener('mouseup', handleGlobalMouseUp);
+        window.removeEventListener('mousemove', handleGlobalMouseMove);
+    };
+}); // 매 렌더링마다 최신 상태를 유지하기 위해 의존성 배열은 비워둡니다.
 
   const handleResetCrop = () => {
       const newItems = items.map(item => {
@@ -1689,7 +1713,6 @@ if (item.type === 'text') {
                          onMouseDown={handleMouseDown} 
                          onMouseMove={handleMouseMove} 
                          onMouseUp={handleMouseUp} 
-                         onMouseLeave={handleMouseUp}
                          onDragOver={handleDrop} 
                          onDrop={handleDrop}>
                             
