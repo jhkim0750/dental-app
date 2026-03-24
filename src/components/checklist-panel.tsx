@@ -1484,43 +1484,9 @@ if (item.type === 'text') {
         <h2 className="font-bold text-slate-700 flex items-center gap-2 text-lg border-b pb-3 tracking-tight">
             <Table className="w-5 h-5 text-slate-700"/> Records Tools
         </h2>
-        <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm flex flex-col gap-4">
-  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-100 pb-2">
-    ⌨️ 엑셀 단축키 가이드
-  </h3>
-  <div className="flex flex-col gap-3 text-[13px] text-slate-600">
-    <div className="flex items-center justify-between">
-      <span className="font-medium text-slate-700">선택된 행 삭제</span>
-      <span className="flex items-center gap-1">
-        <kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm font-sans font-medium text-xs">Shift</kbd>+<kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm font-sans font-medium text-xs">D</kbd>
-      </span>
-    </div>
-    <div className="flex items-center justify-between">
-      <span className="font-medium text-slate-700">오늘 날짜 입력</span>
-      <span className="flex items-center gap-1">
-        <kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm font-sans font-medium text-xs">Ctrl</kbd>+<kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm font-sans font-medium text-xs">;</kbd>
-      </span>
-    </div>
-    <div className="flex items-center justify-between">
-      <span className="font-medium text-slate-700">숫자 1씩 증가</span>
-      <span className="flex items-center gap-1">
-        <kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm font-sans font-medium text-xs">Ctrl</kbd>+<span className="text-slate-500 text-xs">아래로 드래그</span>
-      </span>
-    </div>
-    <div className="flex items-center justify-between">
-      <span className="font-medium text-slate-700">실행 취소 / 다시 실행</span>
-      <span className="flex items-center gap-1">
-        <kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm font-sans font-medium text-xs">Ctrl</kbd>+<kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm font-sans font-medium text-xs">Z</kbd> <span className="text-slate-400">/</span> <kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm font-sans font-medium text-xs">Y</kbd>
-      </span>
-    </div>
-    <div className="flex items-center justify-between">
-      <span className="font-medium text-slate-700">복사 / 잘라내기</span>
-      <span className="flex items-center gap-1">
-        <kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm font-sans font-medium text-xs">Ctrl</kbd>+<kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm font-sans font-medium text-xs">C</kbd> <span className="text-slate-400">/</span> <kbd className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-sm font-sans font-medium text-xs">X</kbd>
-      </span>
-    </div>
-  </div>
-</div>
+        <div className="p-4 bg-slate-50 rounded border border-slate-200 text-sm text-slate-500 shadow-inner">
+            Admin conditional formatting, quick format buttons, and data filters will be placed here.
+        </div>
     </div>
 )}{/* ✨ 핀셋 2-2: 왼쪽 패널 스위치 종료 */}
 </div>
