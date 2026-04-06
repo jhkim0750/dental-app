@@ -285,8 +285,8 @@ const compressImage = async (file: File): Promise<Blob> => {
   });
 };
 
-// ✨ NEW: 더블클릭 시 캔버스 제자리에서 바로 메모를 입력할 수 있는 인라인 에디터
-const InlineNoteEdit = ({ rule, store, patientId, itemColor }: { rule: Rule, store: any, patientId: string, itemColor: string }) => {
+// ✨ 상/하악을 구분해서 DOM 순서를 맞춰주는 만능 인라인 에디터
+const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: Rule, store: any, patientId: string, itemColor: string, isUpper?: boolean }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [tempNote, setTempNote] = useState(rule.note || "");
 
@@ -297,36 +297,66 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor }: { rule: Rule, sto
         }
     };
 
+    const typeEl = <div className="font-extrabold text-[15px] tracking-tight" style={{ color: itemColor }}>{getAbbreviation(rule.type)}</div>;
+    
+    // 💡 텍스트 너비를 w-[80px]에서 w-full로 변경하여 부모 박스(48px)에 딱 맞춥니다.
+    // (치아 사이의 8px 기본 간격이 보장되어 절대 겹치지 않습니다)
+    const noteTextEl = rule.note ? (
+        <div className="w-full text-[12px] text-slate-700 font-extrabold leading-tight text-center break-words whitespace-pre-wrap px-0.5">
+            {rule.note}
+        </div>
+    ) : null;
+    
+    // 💡 에디트 입력창 역시 w-full로 변경하여 일치시킵니다.
+    const inputEl = (
+        <textarea 
+            autoFocus
+            className="w-full text-[12px] text-center border-b-2 border-blue-400 bg-blue-50/50 outline-none font-extrabold text-slate-800 leading-tight px-0.5 py-0 rounded-none resize-none overflow-hidden whitespace-pre-wrap break-words custom-scrollbar block"
+            style={{ height: 'auto', minHeight: '18px' }}
+            value={tempNote}
+            onChange={(e) => {
+                setTempNote(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
+            onFocus={(e) => {
+                e.target.style.height = 'auto';
+                e.target.style.height = `${e.target.scrollHeight}px`;
+                const val = e.target.value;
+                e.target.value = '';
+                e.target.value = val;
+            }}
+            onBlur={handleSave}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                    if (!e.shiftKey) {
+                        e.preventDefault();
+                        handleSave();
+                    }
+                }
+                if (e.key === 'Escape') setIsEditing(false);
+            }}
+            placeholder="입력..."
+            rows={1}
+        />
+    );
+
     if (isEditing) {
         return (
-            <div className="flex flex-col items-center w-full bg-blue-50 rounded py-1 z-50 shadow-sm border border-blue-300 mt-0.5 relative">
-                <div className="font-extrabold text-[15px] tracking-tight" style={{ color: itemColor }}>{getAbbreviation(rule.type)}</div>
-                <input 
-                    autoFocus
-                    className="w-[80px] text-[12px] text-center border-b border-blue-400 outline-none bg-transparent mt-0.5 font-extrabold text-slate-800 pb-0.5"
-                    value={tempNote}
-                    onChange={(e) => setTempNote(e.target.value)}
-                    onBlur={handleSave}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleSave();
-                        if (e.key === 'Escape') setIsEditing(false);
-                    }}
-                    placeholder="입력..."
-                />
+            <div className="flex flex-col items-center w-full relative gap-0.5 mt-0.5 z-50">
+                {isUpper ? <>{inputEl}{typeEl}</> : <>{typeEl}{inputEl}</>}
             </div>
         );
     }
 
     return (
-        <div className="flex flex-col items-center w-full cursor-pointer hover:bg-blue-50/50 rounded transition-colors py-0.5" 
-             title="더블클릭하여 메모 수정"
+        <div className="flex flex-col items-center w-full cursor-pointer hover:bg-blue-50/50 rounded transition-colors py-0.5 gap-0.5" 
+             title="더블클릭 수정 (저장: Enter, 줄바꿈: Shift+Enter)"
              onDoubleClick={() => { setTempNote(rule.note || ""); setIsEditing(true); }}>
-            <div className="font-extrabold text-[15px] tracking-tight mt-0.5" style={{ color: itemColor }}>{getAbbreviation(rule.type)}</div>
-            {rule.note && <div className="text-[12px] text-slate-700 font-extrabold leading-tight text-center break-words whitespace-pre-wrap w-full px-0.5 mt-0.5">{rule.note}</div>}
+            {isUpper ? <>{noteTextEl}{typeEl}</> : <>{typeEl}{noteTextEl}</>}
         </div>
     );
 };
-
 export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const store = usePatientStoreHydrated();
   const [isGridOpen, setIsGridOpen] = useState(false);
@@ -529,7 +559,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); handleDuplicate(); }
 
           if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-              // ✨ 스마트 대시보드 모드일 때는 방향키로 단계 이동
               if (currentSlideIndex === SMART_DASHBOARD_INDEX) {
                   if (e.key === 'ArrowLeft') { e.preventDefault(); setSmartStage(prev => Math.max(0, prev - 1)); }
                   if (e.key === 'ArrowRight') { e.preventDefault(); setSmartStage(prev => Math.min(totalSteps, prev + 1)); }
@@ -1361,7 +1390,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                               if (step > totalSteps) return <div key={`header-blank-${step}`} className="opacity-0 w-full"/>; 
                               
                               const { genRules, upperRules, lowerRules, attRules } = getGroupedRules(step); 
-                              const allRulesInStep = [...genRules, ...upperRules, lowerRules, ...attRules]; 
+                              const allRulesInStep = [...genRules, ...upperRules, ...lowerRules, ...attRules]; 
                               const isStepComplete = allRulesInStep.length > 0 && allRulesInStep.every(r => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === r.id && s.checked)); 
                               return (
                                   <div key={`header-${step}`} className={cn("p-2 font-bold text-xs text-center rounded-lg border flex justify-between items-center transition-colors", isStepComplete ? "bg-blue-600 text-white border-blue-600 shadow-md" : (step===0?"bg-yellow-100":"bg-white"))}>
@@ -1640,8 +1669,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                      </div>
                  </div>
 
-                 <div className="flex-1 p-6 flex flex-row gap-4 bg-[#f8fafc]"> 
-                    <div className="w-28 flex flex-col gap-2 shrink-0">
+                 <div className="flex-1 p-6 flex flex-row gap-4 bg-slate-100 relative"> 
+                    <div className="w-28 flex flex-col gap-2 shrink-0 z-10 relative">
                         {slides.map((slide, index) => (
                             <SlideThumbnail 
                                 key={slide.id} items={slide.items} penStrokes={slide.penStrokes} isActive={currentSlideIndex === index} index={index}
@@ -1665,15 +1694,15 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                 Smart<br/>Summary
                             </span>
                         </div>
-                        <Button variant="outline" className="w-full border-dashed h-20 text-slate-500 mt-2 bg-white/50" onClick={addSlide}><Plus className="w-4 h-4 mr-1"/> Add Slide</Button>
+                        <Button variant="outline" className={cn("w-full border-dashed h-20", currentSlideIndex === SMART_DASHBOARD_INDEX && "text-slate-500 mt-2 bg-white/50")} onClick={addSlide}><Plus className="w-4 h-4 mr-1"/> Add Slide</Button>
                     </div>
 
-                    <div className={cn("flex-1 bg-transparent p-0 flex flex-col relative min-h-[800px]", currentSlideIndex === SMART_DASHBOARD_INDEX ? "overflow-visible" : "overflow-hidden")}>
+                    <div className={cn("flex-1 flex flex-col relative", currentSlideIndex === SMART_DASHBOARD_INDEX ? "" : "bg-white p-4 rounded-lg shadow-sm overflow-hidden min-h-[800px]")}>
                         
                         {currentSlideIndex === SMART_DASHBOARD_INDEX ? (
                             
-                            <div className="flex w-full min-h-[800px] h-auto items-stretch gap-4"> 
-                                <div className="w-[300px] bg-white border border-slate-200 rounded-xl flex flex-col shrink-0 h-auto shadow-sm overflow-hidden"> 
+                            <div className="absolute inset-0 flex gap-4 overflow-hidden pl-2"> 
+                                <div className="w-[300px] bg-white border border-slate-200 rounded-xl flex flex-col shrink-0 h-full shadow-sm overflow-hidden"> 
                                     <div className="text-sm font-bold text-slate-700 border-b p-3 flex items-center justify-between shrink-0 sticky top-0 bg-white z-10 shadow-sm">
                                         <div className="flex items-center gap-1.5"><ListTree className="w-4 h-4 text-slate-500"/> 전체 치료 타임라인</div>
                                     </div>
@@ -1744,9 +1773,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                     </div>
                                 </div>
 
-                                <div className="flex-1 flex flex-col border border-slate-200 rounded-xl bg-[#fcfcfc] relative h-auto shadow-[inset_0_2px_20px_rgba(0,0,0,0.02)] overflow-visible">
+                                <div className="flex-1 flex flex-col border border-slate-200 rounded-xl bg-[#fcfcfc] relative h-full shadow-[inset_0_2px_20px_rgba(0,0,0,0.02)] overflow-hidden">
                                     
-                                    <div className="p-5 border-b border-slate-200 bg-white/95 backdrop-blur flex flex-col items-center justify-center gap-4 shrink-0 z-30 sticky top-0 rounded-t-xl shadow-sm">
+                                    <div className="p-5 border-b border-slate-200 bg-white/95 backdrop-blur flex flex-col items-center justify-center gap-4 shrink-0 z-30 shadow-sm">
                                         <div className="flex items-center justify-center">
                                             <div className="px-3 py-1.5 bg-white border-[1.5px] border-[#2563eb] rounded-full shadow-sm ring-[3px] ring-[#dbeafe] flex items-center gap-3">
                                                 <button onClick={() => setSmartStage(p => Math.max(0, p - 1))} className="text-[#2563eb] hover:text-blue-700 hover:bg-blue-50 rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors">&lt;</button>
@@ -1793,11 +1822,16 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                         </div>                                    
                                     </div>
 
-                                    <div className="flex-1 relative flex items-center justify-center p-6 min-h-[500px]"> 
+{/* 💡 캔버스 스크롤 구역 */}
+<div className="flex-1 overflow-y-auto custom-scrollbar relative bg-[#fcfcfc]"> 
                                         
-                                        <div className="w-full relative flex flex-col items-center justify-center min-w-[700px]">
-                                            <div className="absolute h-full w-[1px] bg-slate-200 top-0 left-1/2 -translate-x-1/2 z-0" />
+                                        {/* 💡 캔버스 본체: 최소 600px 유지, 상하단 안전 여백 확보! */}
+                                        {/* ⚠️ 핀셋 수정: justify-center를 지우고 min-h-full을 줘서 위가 뚫고 나가는 버그 완벽 차단 */}
+                                        <div className="w-full relative flex flex-col items-center justify-start min-w-[700px] min-h-full py-16 px-8">
                                             
+                                            {/* 세로 십자선 (진하게 복구) */}
+                                            <div className="absolute h-full w-[2px] bg-slate-300 top-0 left-1/2 -translate-x-1/2 z-0" />
+
                                             {(() => {
                                                 const activeRules = safeRules.filter((r: Rule) => smartStage >= r.startStep && smartStage <= r.endStep);
 
@@ -1806,60 +1840,59 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                 const manRulesList = activeRules.filter((r: Rule) => r.tooth === 30);
 
                                                 const renderVerticalStack = (rules: Rule[], tooth: number, isUpper: boolean) => {
-                                                    const InfoBlock = () => (
-                                                        <div className={cn("flex flex-col w-12 px-0.5", isUpper ? "items-center justify-end" : "items-center justify-start")}>
-                                                            {rules.map((r, idx) => {
-                                                                const itemColor = getExpertTypeColor(r.type);
-                                                                const RangeEl = (
-                                                                    <div key={`range-${r.id}`} className="text-[11px] font-mono font-extrabold tracking-tighter" style={{ color: `${itemColor}E6` }}>
-                                                                        ({r.startStep}-{r.endStep})
-                                                                    </div>
-                                                                );
-                                                                
-                                                                const ItemContentEl = <InlineNoteEdit key={`item-content-${r.id}`} rule={r} store={store} patientId={patient.id} itemColor={itemColor} />;
-                                                                
-                                                                const Divider = idx !== rules.length - 1 ? <div key={`div-${r.id}`} className="w-6 h-[1.5px] bg-slate-200 my-1.5" /> : null;
+                                                    const InfoBlock = () => {
+                                                        const rulesToRender = isUpper ? [...rules].reverse() : rules;
+                                                        return (
+                                                            <div className={cn("flex flex-col w-12 px-0.5", isUpper ? "items-center justify-end" : "items-center justify-start")}>
+                                                                {rulesToRender.map((r, idx) => {
+                                                                    const itemColor = getExpertTypeColor(r.type);
+                                                                    const RangeEl = (
+                                                                        <div key={`range-${r.id}`} className="text-[11px] font-mono font-extrabold tracking-tighter" style={{ color: `${itemColor}E6` }}>
+                                                                            ({r.startStep}-{r.endStep})
+                                                                        </div>
+                                                                    );
+                                                                    
+                                                                    const ItemContentEl = <InlineNoteEdit key={`item-content-${r.id}`} rule={r} store={store} patientId={patient.id} itemColor={itemColor} isUpper={isUpper} />;
+                                                                    
+                                                                    const Divider = idx !== rulesToRender.length - 1 ? <div key={`div-${r.id}`} className="w-6 h-[1.5px] bg-slate-200 my-1" /> : null;
 
-                                                                return (
-                                                                    <div key={r.id} className={cn("flex flex-col items-center w-full bg-transparent py-0.5 relative", isUpper ? "mb-1" : "mt-1")}>
-                                                                        {isUpper ? (
-                                                                            <>
-                                                                                {RangeEl}
-                                                                                {ItemContentEl}
-                                                                            </>
-                                                                        ) : (
-                                                                            <>
-                                                                                {ItemContentEl}
-                                                                                {RangeEl}
-                                                                            </>
-                                                                        )}
-                                                                        {Divider}
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    );
+                                                                    return (
+                                                                        <div key={r.id} className={cn("flex flex-col items-center w-full bg-transparent py-0.5 relative", isUpper ? "mb-0.5" : "mt-0.5")}>
+                                                                            {isUpper ? (
+                                                                                <>
+                                                                                    {RangeEl}
+                                                                                    {ItemContentEl}
+                                                                                </>
+                                                                            ) : (
+                                                                                <>
+                                                                                    {ItemContentEl}
+                                                                                    {RangeEl}
+                                                                                </>
+                                                                            )}
+                                                                            {Divider}
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        );
+                                                    };
 
-                                                    if (rules.length === 0) {
-                                                        return <div className="w-12 flex flex-col items-center shrink-0"></div>;
-                                                    }
-
-                                                    const toothIconColor = "#38bdf8"; 
+                                                    const toothIconColor = rules.length > 0 ? "#38bdf8" : "#e2e8f0"; 
 
                                                     return (
-                                                        <div className="flex flex-col items-center w-12 shrink-0">
-                                                            {isUpper && <InfoBlock />}
+                                                        <div className="flex flex-col items-center w-12 shrink-0 z-10 relative">
+                                                            {isUpper && rules.length > 0 && <InfoBlock />}
                                                             
                                                             <div className={cn("relative w-10 h-10 flex items-center justify-center shrink-0 z-10", isUpper ? "mt-0.5" : "mb-0.5")}>
                                                                 <svg viewBox="0 0 24 24" fill="white" stroke={toothIconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="absolute inset-0 w-full h-full drop-shadow-sm">
                                                                     <path d="M12 5.5C10.5 3 8 2 5.5 3.5C3.5 4.5 2 7 2 10C2 14 4 18 5.5 20.5C6.5 22 8 22 9.5 20.5C10.5 19 11 17 12 15C13 17 13.5 19 14.5 20.5C16 22 17.5 22 18.5 20.5C20 18 22 14 22 10C22 7 20.5 4.5 18.5 3.5C16 2 13.5 3 12 5.5Z" />
                                                                 </svg>
                                                                 <span className="relative z-10 font-extrabold text-[12px] mb-1" style={{ color: toothIconColor }}>
-                                                                    {tooth === 10 ? 'MAX' : tooth === 30 ? 'MAN' : tooth}
+                                                                    {tooth}
                                                                 </span>
                                                             </div>
 
-                                                            {!isUpper && <InfoBlock />}
+                                                            {!isUpper && rules.length > 0 && <InfoBlock />}
                                                         </div>
                                                     );
                                                 };
@@ -1869,49 +1902,74 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                 const lrTeeth = [48, 47, 46, 45, 44, 43, 42, 41];
                                                 const llTeeth = [31, 32, 33, 34, 35, 36, 37, 38];
 
-                                                const renderFixedQuadrant = (teethArray: number[], isUpper: boolean, justify: 'start'|'end') => {
-                                                    return teethArray.map(toothNum => {
-                                                        const toothRules = activeRules.filter((r: Rule) => r.tooth === toothNum);
-                                                        return <React.Fragment key={toothNum}>{renderVerticalStack(toothRules, toothNum, isUpper)}</React.Fragment>;
-                                                    });
-                                                };
-
                                                 return (
                                                     <>
-                                                        <div className="flex w-full items-end justify-center pb-1 z-10">
-                                                            <div className="w-1/2 flex justify-end pr-6 gap-2">{renderFixedQuadrant(urTeeth, true, 'end')}</div>
-                                                            <div className="w-1/2 flex justify-start pl-6 gap-2">{renderFixedQuadrant(ulTeeth, true, 'start')}</div>
-                                                        </div>
-
-                                                        <div className="w-[90%] h-[1px] bg-slate-200 shrink-0 z-0" />
-
-                                                        <div className="flex w-full items-start justify-center pt-1 z-10">
-                                                            <div className="w-1/2 flex justify-end pr-6 gap-2">{renderFixedQuadrant(lrTeeth, false, 'end')}</div>
-                                                            <div className="w-1/2 flex justify-start pl-6 gap-2">{renderFixedQuadrant(llTeeth, false, 'start')}</div>
-                                                        </div>
-
-                                                        <div className="absolute top-4 left-4 z-20 flex flex-col gap-1.5">
+                                                        {/* 공통 룰 영역 (상단 모서리 밀착) */}
+                                                        <div className="absolute top-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
                                                             {maxRulesList.map((r: Rule) => (
-                                                                <div key={`max-${r.id}`} className="flex items-center gap-1 text-[10px] font-bold">
+                                                                <div key={`max-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold">
+                                                                    <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">MAX</span>
                                                                     <span style={{ color: getExpertTypeColor(r.type) }}>{getAbbreviation(r.type)}</span>
-                                                                    {r.note && <span className="text-slate-500">- {r.note}</span>}
+                                                                    {r.note && <span className="text-slate-700">- {r.note}</span>}
                                                                     <span className="text-slate-400 font-mono">- ({r.startStep}-{r.endStep})</span>
                                                                 </div>
                                                             ))}
                                                             {genRulesList.map((r: Rule) => (
-                                                                <div key={`gen-${r.id}`} className="flex items-center gap-1 text-[10px] font-bold">
+                                                                <div key={`gen-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold">
+                                                                    <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">Gen</span>
                                                                     <span style={{ color: getExpertTypeColor(r.type) }}>{getAbbreviation(r.type)}</span>
-                                                                    {r.note && <span className="text-slate-500">- {r.note}</span>}
+                                                                    {r.note && <span className="text-slate-700">- {r.note}</span>}
                                                                     <span className="text-slate-400 font-mono">- ({r.startStep}-{r.endStep})</span>
                                                                 </div>
                                                             ))}
                                                         </div>
 
-                                                        <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-1.5">
+                                                        {/* 💡 상악 치아 배열: flex-1 추가로 십자선 자동 중앙 정렬, items-end로 치아는 무조건 바닥 정렬 */}
+                                                        <div className="flex w-full items-end justify-center pb-2 z-10 flex-1">
+                                                            <div className="w-1/2 flex items-end justify-end space-x-2 pr-6">
+                                                                {urTeeth.map(num => {
+                                                                    const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                                    if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
+                                                                    return <React.Fragment key={num}>{renderVerticalStack(rules, num, true)}</React.Fragment>;
+                                                                })}
+                                                            </div>
+                                                            <div className="w-1/2 flex items-end justify-start space-x-2 pl-6">
+                                                                {ulTeeth.map(num => {
+                                                                    const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                                    if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
+                                                                    return <React.Fragment key={num}>{renderVerticalStack(rules, num, true)}</React.Fragment>;
+                                                                })}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* 가로 십자선 */}
+                                                        <div className="w-[90%] h-[2px] bg-slate-300 shrink-0 z-0 my-2 rounded-full" />
+
+                                                        {/* 💡 하악 치아 배열: flex-1 추가로 십자선 자동 중앙 정렬, items-start로 치아는 무조건 천장 정렬 */}
+                                                        <div className="flex w-full items-start justify-center pt-2 z-10 flex-1">
+                                                            <div className="w-1/2 flex items-start justify-end space-x-2 pr-6">
+                                                                {lrTeeth.map(num => {
+                                                                    const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                                    if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
+                                                                    return <React.Fragment key={num}>{renderVerticalStack(rules, num, false)}</React.Fragment>;
+                                                                })}
+                                                            </div>
+                                                            <div className="w-1/2 flex items-start justify-start space-x-2 pl-6">
+                                                                {llTeeth.map(num => {
+                                                                    const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                                    if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
+                                                                    return <React.Fragment key={num}>{renderVerticalStack(rules, num, false)}</React.Fragment>;
+                                                                })}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* 하악 공통 룰 (하단 모서리 밀착) */}
+                                                        <div className="absolute bottom-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
                                                             {manRulesList.map((r: Rule) => (
-                                                                <div key={`man-${r.id}`} className="flex items-center gap-1 text-[10px] font-bold">
+                                                                <div key={`man-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold">
+                                                                    <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">MAN</span>
                                                                     <span style={{ color: getExpertTypeColor(r.type) }}>{getAbbreviation(r.type)}</span>
-                                                                    {r.note && <span className="text-slate-500">- {r.note}</span>}
+                                                                    {r.note && <span className="text-slate-700">- {r.note}</span>}
                                                                     <span className="text-slate-400 font-mono">- ({r.startStep}-{r.endStep})</span>
                                                                 </div>
                                                             ))}
@@ -1921,7 +1979,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                             })()}
                                         </div>
                                     </div>
-                                </div>
+                                                                    </div>
                             </div>
                             
                         ) : (
@@ -2128,7 +2186,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                               onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
                                              {item.text} 
                                              {renderResizeHandles()} 
-                                        </div> 
+                                         </div> 
                                      ); 
                                  }
                                  if (item.type === 'line') { 
@@ -2214,7 +2272,6 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                </>
 ) : (
     <div className="flex-1 w-full h-full relative overflow-y-auto bg-white p-6">
-        {/* ✨ 수정: 타입 에러를 피하기 위해 patient 프롭을 제거했습니다 */}
         <RecordsSheet />
     </div>
 )}        </div>
