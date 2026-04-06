@@ -385,6 +385,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   const SMART_DASHBOARD_INDEX = -999;
   const [smartStage, setSmartStage] = useState(1);
+  const [isAllView, setIsAllView] = useState(false); // ✨ NEW: 전체 보기(ALL) 상태 추가
 
   const currentSlide = slides[currentSlideIndex] || { items: [], penStrokes: [] };
   const items = currentSlide.items || [];
@@ -1701,7 +1702,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         
                         {currentSlideIndex === SMART_DASHBOARD_INDEX ? (
                             
-                            <div className="absolute inset-0 flex gap-4 overflow-hidden pl-2"> 
+<div className="absolute inset-0 flex gap-4 overflow-hidden pl-2"> 
                                 <div className="w-[300px] bg-white border border-slate-200 rounded-xl flex flex-col shrink-0 h-full shadow-sm overflow-hidden"> 
                                     <div className="text-sm font-bold text-slate-700 border-b p-3 flex items-center justify-between shrink-0 sticky top-0 bg-white z-10 shadow-sm">
                                         <div className="flex items-center gap-1.5"><ListTree className="w-4 h-4 text-slate-500"/> 전체 치료 타임라인</div>
@@ -1710,8 +1711,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                     <div className="flex-1 overflow-y-auto pr-1 pl-1 py-2 space-y-2 custom-scrollbar"> 
                                         {(() => {
                                             const sortedRules = [...safeRules].sort((a, b) => {
-                                                const aActive = smartStage >= a.startStep && smartStage <= a.endStep;
-                                                const bActive = smartStage >= b.startStep && smartStage <= b.endStep;
+                                                // ✨ 수정: ALL 모드일 때는 모든 룰을 활성 상태로 간주하여 정렬
+                                                const aActive = isAllView || (smartStage >= a.startStep && smartStage <= a.endStep);
+                                                const bActive = isAllView || (smartStage >= b.startStep && smartStage <= b.endStep);
                                                 if (aActive && !bActive) return -1; 
                                                 if (!aActive && bActive) return 1;  
                                                 return a.startStep - b.startStep;   
@@ -1722,7 +1724,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                             }
 
                                             return sortedRules.map(rule => {
-                                                const isActive = smartStage >= rule.startStep && smartStage <= rule.endStep;
+                                                // ✨ 수정: ALL 모드일 때는 무조건 활성(색상 진하게) 처리
+                                                const isActive = isAllView || (smartStage >= rule.startStep && smartStage <= rule.endStep);
                                                 const leftPercent = ((rule.startStep - 1) / (totalSteps - 1)) * 100;
                                                 const widthPercent = ((rule.endStep - rule.startStep) / (totalSteps - 1)) * 100;
                                                 
@@ -1743,7 +1746,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                             borderColor: borderColorRGBA,
                                                             backgroundColor: bgColorRGBA,
                                                         }}
-                                                        onClick={() => setSmartStage(rule.startStep)}
+                                                        onClick={() => {
+                                                            setSmartStage(rule.startStep);
+                                                            setIsAllView(false); // 타임라인 항목 클릭 시 ALL 모드 해제 및 해당 단계로 이동
+                                                        }}
                                                     >
                                                         <div className="flex justify-between items-center">
                                                             <div className="flex items-center gap-1.5 text-[11px]">
@@ -1776,8 +1782,23 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                 <div className="flex-1 flex flex-col border border-slate-200 rounded-xl bg-[#fcfcfc] relative h-full shadow-[inset_0_2px_20px_rgba(0,0,0,0.02)] overflow-hidden">
                                     
                                     <div className="p-5 border-b border-slate-200 bg-white/95 backdrop-blur flex flex-col items-center justify-center gap-4 shrink-0 z-30 shadow-sm">
-                                        <div className="flex items-center justify-center">
-                                            <div className="px-3 py-1.5 bg-white border-[1.5px] border-[#2563eb] rounded-full shadow-sm ring-[3px] ring-[#dbeafe] flex items-center gap-3">
+                                        <div className="flex items-center justify-center gap-4">
+                                            
+                                            {/* ✨ NEW: ALL (전체 보기) 토글 버튼 추가 */}
+                                            <button
+                                                onClick={() => setIsAllView(!isAllView)}
+                                                className={cn(
+                                                    "px-5 py-1.5 rounded-full font-extrabold text-sm transition-all border-[1.5px] shadow-sm tracking-wide",
+                                                    isAllView 
+                                                        ? "bg-[#2563eb] text-white border-[#2563eb] ring-[3px] ring-[#dbeafe]" 
+                                                        : "bg-white text-slate-500 border-slate-200 hover:border-[#2563eb] hover:text-[#2563eb]"
+                                                )}
+                                            >
+                                                ALL
+                                            </button>
+
+                                            {/* ✨ 수정: ALL 모드 켜지면 반투명해지고 클릭 불가능하게 처리 */}
+                                            <div className={cn("px-3 py-1.5 bg-white border-[1.5px] border-[#2563eb] rounded-full shadow-sm ring-[3px] ring-[#dbeafe] flex items-center gap-3 transition-opacity", isAllView && "opacity-40 pointer-events-none")}>
                                                 <button onClick={() => setSmartStage(p => Math.max(0, p - 1))} className="text-[#2563eb] hover:text-blue-700 hover:bg-blue-50 rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors">&lt;</button>
                                                 <span className="font-bold text-[#2563eb] text-sm tracking-wide flex items-center gap-1">
                                                     현재 단계: 
@@ -1797,7 +1818,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                             </div>
                                         </div>
                                         
-                                        <div className="relative w-full max-w-[75%] pt-2 pb-6 group">
+                                        {/* ✨ 수정: ALL 모드 켜지면 슬라이더 반투명해지고 클릭 불가능하게 처리 */}
+                                        <div className={cn("relative w-full max-w-[75%] pt-2 pb-6 group transition-opacity", isAllView && "opacity-40 pointer-events-none")}>
                                             <input 
                                                 type="range" 
                                                 min="0" max={totalSteps} 
@@ -1822,18 +1844,19 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                         </div>                                    
                                     </div>
 
-{/* 💡 캔버스 스크롤 구역 */}
-<div className="flex-1 overflow-y-auto custom-scrollbar relative bg-[#fcfcfc]"> 
+                                    {/* 💡 캔버스 스크롤 구역 */}
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar relative bg-[#fcfcfc]"> 
                                         
-                                        {/* 💡 캔버스 본체: 최소 600px 유지, 상하단 안전 여백 확보! */}
-                                        {/* ⚠️ 핀셋 수정: justify-center를 지우고 min-h-full을 줘서 위가 뚫고 나가는 버그 완벽 차단 */}
                                         <div className="w-full relative flex flex-col items-center justify-start min-w-[700px] min-h-full py-16 px-8">
                                             
                                             {/* 세로 십자선 (진하게 복구) */}
                                             <div className="absolute h-full w-[2px] bg-slate-300 top-0 left-1/2 -translate-x-1/2 z-0" />
 
                                             {(() => {
-                                                const activeRules = safeRules.filter((r: Rule) => smartStage >= r.startStep && smartStage <= r.endStep);
+                                                // ✨ 수정: ALL 모드일 때는 필터링 없이 safeRules 전체를 activeRules로 덮어씌움
+                                                const activeRules = isAllView 
+                                                    ? safeRules 
+                                                    : safeRules.filter((r: Rule) => smartStage >= r.startStep && smartStage <= r.endStep);
 
                                                 const genRulesList = activeRules.filter((r: Rule) => r.tooth === 0);
                                                 const maxRulesList = activeRules.filter((r: Rule) => r.tooth === 10);
@@ -1924,7 +1947,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                             ))}
                                                         </div>
 
-                                                        {/* 💡 상악 치아 배열: flex-1 추가로 십자선 자동 중앙 정렬, items-end로 치아는 무조건 바닥 정렬 */}
+                                                        {/* 💡 상악 치아 배열 */}
                                                         <div className="flex w-full items-end justify-center pb-2 z-10 flex-1">
                                                             <div className="w-1/2 flex items-end justify-end space-x-2 pr-6">
                                                                 {urTeeth.map(num => {
@@ -1945,7 +1968,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                         {/* 가로 십자선 */}
                                                         <div className="w-[90%] h-[2px] bg-slate-300 shrink-0 z-0 my-2 rounded-full" />
 
-                                                        {/* 💡 하악 치아 배열: flex-1 추가로 십자선 자동 중앙 정렬, items-start로 치아는 무조건 천장 정렬 */}
+                                                        {/* 💡 하악 치아 배열 */}
                                                         <div className="flex w-full items-start justify-center pt-2 z-10 flex-1">
                                                             <div className="w-1/2 flex items-start justify-end space-x-2 pr-6">
                                                                 {lrTeeth.map(num => {
@@ -1979,9 +2002,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                             })()}
                                         </div>
                                     </div>
-                                                                    </div>
-                            </div>
-                            
+                                </div>
+                            </div>                            
                         ) : (
                             
                             <>
