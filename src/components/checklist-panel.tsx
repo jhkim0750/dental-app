@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { usePatientStoreHydrated, Rule } from "@/hooks/use-patient-store";
+import { createPortal } from "react-dom";
 import { 
   CheckCheck, Plus, Trash2, Pencil, Save, Layout, FileImage, 
   Type, Eraser, PenTool, Minus, Undo, Redo, CheckSquare,
@@ -285,10 +286,11 @@ const compressImage = async (file: File): Promise<Blob> => {
   });
 };
 
-// ✨ 상/하악을 구분해서 DOM 순서를 맞춰주는 만능 인라인 에디터
+// 상/하악을 구분해서 DOM 순서를 맞춰주는 만능 인라인 에디터 (Textarea 버전 & Portal 최상단 팝업)
 const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: Rule, store: any, patientId: string, itemColor: string, isUpper?: boolean }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [tempNote, setTempNote] = useState(rule.note || "");
+    const [showPopup, setShowPopup] = useState(false); 
 
     const handleSave = () => {
         setIsEditing(false);
@@ -297,21 +299,67 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: 
         }
     };
 
-    const typeEl = <div className="font-extrabold text-[15px] tracking-tight" style={{ color: itemColor }}>{getAbbreviation(rule.type)}</div>;
+    const typeEl = (
+        <div 
+            className="font-extrabold text-[15px] tracking-tight flex items-center justify-center gap-0.5 relative cursor-pointer" 
+            style={{ color: itemColor }}
+            onClick={(e) => {
+                if (rule.imageUrl) {
+                    e.stopPropagation(); 
+                    setShowPopup(!showPopup); 
+                }
+            }}
+        >
+            {getAbbreviation(rule.type)}
+            
+            {/* ✨ 수정 1: 두꺼운 선을 가진 진한 빨간색 고정 별표(SVG) */}
+            {rule.imageUrl && (
+                <div className="absolute -top-1.5 -right-3 drop-shadow-md" title="Reference Image">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444" stroke="#991b1b" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                    </svg>
+                </div>
+            )}
+
+            {/* ✨ 수정 2: Portal을 사용하여 팝업을 레이어 감옥에서 꺼내 브라우저 최상단에 부착 */}
+            {rule.imageUrl && showPopup && typeof document !== "undefined" && createPortal(
+                <div 
+                    className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] cursor-default" 
+                    onClick={(e) => { e.stopPropagation(); setShowPopup(false); }}
+                >
+                    <div 
+                        className="bg-white p-3 rounded-2xl border-4 border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col items-center animate-in fade-in zoom-in-95 duration-100 relative" 
+                        onClick={(e) => e.stopPropagation()} // 사진 안쪽 클릭 시 닫히지 않게 보호
+                    >
+                        <img 
+                            src={rule.imageUrl} 
+                            alt="Reference" 
+                            className="w-[900px] max-w-[90vw] max-h-[85vh] rounded-lg object-contain" 
+                        />
+                        {/* 직관성을 위해 우측 상단에 닫기(X) 버튼도 하나 띄워드렸습니다! */}
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setShowPopup(false); }}
+                            className="absolute -top-4 -right-4 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-slate-800 hover:bg-slate-50 font-bold"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>,
+                document.body
+            )}
+        </div>
+    );
     
-    // 💡 텍스트 너비를 w-[80px]에서 w-full로 변경하여 부모 박스(48px)에 딱 맞춥니다.
-    // (치아 사이의 8px 기본 간격이 보장되어 절대 겹치지 않습니다)
     const noteTextEl = rule.note ? (
-        <div className="w-full text-[12px] text-slate-700 font-extrabold leading-tight text-center break-words whitespace-pre-wrap px-0.5">
+        <div className="w-[80px] text-[12px] text-slate-700 font-extrabold leading-tight text-center break-words whitespace-pre-wrap px-0.5">
             {rule.note}
         </div>
     ) : null;
     
-    // 💡 에디트 입력창 역시 w-full로 변경하여 일치시킵니다.
     const inputEl = (
         <textarea 
             autoFocus
-            className="w-full text-[12px] text-center border-b-2 border-blue-400 bg-blue-50/50 outline-none font-extrabold text-slate-800 leading-tight px-0.5 py-0 rounded-none resize-none overflow-hidden whitespace-pre-wrap break-words custom-scrollbar block"
+            className="w-[80px] text-[12px] text-center border-b-2 border-blue-400 bg-blue-50/50 outline-none font-extrabold text-slate-800 leading-tight px-0.5 py-0 rounded-none resize-none overflow-hidden whitespace-pre-wrap break-words custom-scrollbar block"
             style={{ height: 'auto', minHeight: '18px' }}
             value={tempNote}
             onChange={(e) => {
@@ -357,6 +405,7 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: 
         </div>
     );
 };
+
 export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const store = usePatientStoreHydrated();
   const [isGridOpen, setIsGridOpen] = useState(false);
@@ -371,6 +420,33 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [startStep, setStartStep] = useState(1);
   const [endStep, setEndStep] = useState(10);
   const [note, setNote] = useState("");
+// ✨ NEW: 이미지 업로드 관련 상태 및 로직 (복붙, 드래그 지원)
+const [ruleImage, setRuleImage] = useState<string | null>(null);
+const [isRuleImageUploading, setIsRuleImageUploading] = useState(false);
+const ruleFileInputRef = useRef<HTMLInputElement>(null);
+
+const processRuleImageFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    setIsRuleImageUploading(true);
+    try {
+        const compressedBlob = await compressImage(file);
+        const storageRef = ref(storage, `patients/${patient.id}/rule_images/${Date.now()}_${file.name || 'pasted_image.png'}`);
+        await uploadBytes(storageRef, compressedBlob);
+        const url = await getDownloadURL(storageRef);
+        setRuleImage(url);
+    } catch (error) {
+        console.error("Rule image upload error:", error);
+        alert("이미지 업로드 실패");
+    } finally {
+        setIsRuleImageUploading(false);
+    }
+};
+
+const handleRuleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processRuleImageFile(file);
+    e.target.value = "";
+};
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null); 
@@ -385,7 +461,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
   const SMART_DASHBOARD_INDEX = -999;
   const [smartStage, setSmartStage] = useState(1);
-  const [isAllView, setIsAllView] = useState(false); // ✨ NEW: 전체 보기(ALL) 상태 추가
+// ✨ NEW: ALL 모드 상태와 필터링 상태 추가
+ const [isAllView, setIsAllView] = useState(false); 
+ const [activeFilters, setActiveFilters] = useState<string[]>([]);
 
   const currentSlide = slides[currentSlideIndex] || { items: [], penStrokes: [] };
   const items = currentSlide.items || [];
@@ -1275,40 +1353,42 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   
   const handleSaveRules = async () => { 
-      const finalType = selectedType === "기타" ? customType : selectedType; 
-      const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t)); 
-      if (editingRuleId) { 
-          if(store) await store.updateRule(patient.id, { id: editingRuleId, type: finalType, tooth: teethToSave[0], startStep, endStep, note }); 
-          setEditingRuleId(null); 
-      } else { 
-          for (const tooth of teethToSave) { 
-              if(store) await store.addRule(patient.id, { type: finalType, tooth, startStep, endStep, note }); 
-          } 
-      } 
-      setSelectedTeeth([]); 
-      setNote(""); 
-      if (selectedType === "기타") setCustomType(""); 
-  };
-  
-  const handleEditClick = (e: React.MouseEvent, rule: Rule) => { 
-      e.stopPropagation(); 
-      setEditingRuleId(rule.id); 
-      if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } 
-      else { setSelectedType("기타"); setCustomType(rule.type); } 
-      setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]); 
-      setStartStep(rule.startStep); 
-      setEndStep(rule.endStep); 
-      setNote(rule.note || ""); 
-      
-      if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-  };
-  
-  const cancelEdit = () => { 
-      setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); 
-  };
-   
+    const finalType = selectedType === "기타" ? customType : selectedType; 
+    const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t)); 
+    if (editingRuleId) { 
+        if(store) await store.updateRule(patient.id, { id: editingRuleId, type: finalType, tooth: teethToSave[0], startStep, endStep, note, imageUrl: ruleImage || undefined }); 
+        setEditingRuleId(null); 
+    } else { 
+        for (const tooth of teethToSave) { 
+            if(store) await store.addRule(patient.id, { type: finalType, tooth, startStep, endStep, note, imageUrl: ruleImage || undefined }); 
+        } 
+    } 
+    setSelectedTeeth([]); 
+    setNote(""); 
+    setRuleImage(null); // ✨ 업로드 후 썸네일 초기화
+    if (selectedType === "기타") setCustomType(""); 
+};
+
+const handleEditClick = (e: React.MouseEvent, rule: Rule) => { 
+    e.stopPropagation(); 
+    setEditingRuleId(rule.id); 
+    if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } 
+    else { setSelectedType("기타"); setCustomType(rule.type); } 
+    setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]); 
+    setStartStep(rule.startStep); 
+    setEndStep(rule.endStep); 
+    setNote(rule.note || ""); 
+    setRuleImage(rule.imageUrl || null); // ✨ 수정 시 기존 사진 불러오기
+    
+    if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+};
+
+const cancelEdit = () => { 
+    setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); setRuleImage(null); // ✨ 취소 시 썸네일 날리기
+};
+
   const handleDeleteMultiRules = async () => {
       if (selectedRuleIds.length === 0) return;
       if (confirm(`선택한 ${selectedRuleIds.length}개의 규칙을 삭제하시겠습니까?`)) {
@@ -1501,8 +1581,48 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
               <div className="flex gap-2">
                  <div className="flex-1"><Label className="text-xs font-bold text-slate-500">Start</Label><input type="number" className="w-full border p-2 rounded" value={startStep} onChange={(e) => setStartStep(Number(e.target.value))} onWheel={(e) => e.preventDefault()} /></div>
                  <div className="flex-1"><Label className="text-xs font-bold text-slate-500">End</Label><div className="flex gap-1"><input type="number" className="w-full border p-2 rounded" value={endStep} onChange={(e) => setEndStep(Number(e.target.value))} onWheel={(e) => e.preventDefault()} /><Button variant="outline" className="px-2 text-xs" onClick={() => setEndStep(totalSteps)}>End</Button></div></div>
-              </div>              <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Note</Label><input className="w-full border p-2 rounded" placeholder="e.g. Mesial" value={note} onChange={(e) => setNote(e.target.value)} /></div>
-              <div className="flex gap-2">
+              </div>              
+              <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Note</Label><input className="w-full border p-2 rounded" placeholder="e.g. Mesial" value={note} onChange={(e) => setNote(e.target.value)} /></div>
+              
+{/* ✨ NEW: 레퍼런스 사진 업로드 영역 (드래그, 복붙 지원) */}
+              <div 
+                  className="space-y-2 p-3 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50 transition-all focus-within:border-blue-400 focus-within:bg-blue-50/50 hover:bg-slate-100 outline-none"
+                  tabIndex={0}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={(e) => {
+                      e.preventDefault(); e.stopPropagation();
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) processRuleImageFile(file);
+                  }}
+                  onPaste={(e) => {
+                      const file = e.clipboardData.files?.[0];
+                      if (file && file.type.startsWith('image/')) {
+                          e.preventDefault(); e.stopPropagation();
+                          processRuleImageFile(file);
+                      }
+                  }}
+              >
+                  <div className="flex justify-between items-center">
+                      <Label className="text-xs font-bold text-slate-500">Reference Image</Label>
+                      <span className="text-[9px] font-bold text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded">Ctrl+V / Drop</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                      <input type="file" accept="image/*" className="hidden" ref={ruleFileInputRef} onChange={handleRuleImageUpload} />
+                      <Button variant="outline" size="sm" onClick={() => !isRuleImageUploading && ruleFileInputRef.current?.click()} disabled={isRuleImageUploading} className="flex-1 bg-white text-slate-500 hover:text-slate-700 h-9 border-slate-300">
+                          {isRuleImageUploading ? <Loader2 className="w-4 h-4 animate-spin mr-1"/> : <ImageIcon className="w-4 h-4 mr-1"/>}
+                          {ruleImage ? "사진 변경" : "클릭하여 첨부"}
+                      </Button>
+                      {ruleImage && (
+                          <div className="relative w-9 h-9 shrink-0 border border-slate-200 rounded-md group overflow-hidden shadow-sm">
+                              <img src={ruleImage} className="w-full h-full object-cover" alt="Rule Ref" />
+                              <button onClick={() => setRuleImage(null)} className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X className="w-4 h-4"/></button>
+                          </div>
+                      )}
+                  </div>
+              </div>
+
+              <div className="flex gap-2 mt-2">                                
                 {editingRuleId && <Button variant="outline" onClick={cancelEdit} className="flex-1">Cancel</Button>}
                 <Button onClick={handleSaveRules} className={cn("flex-1 gap-2", editingRuleId ? "bg-orange-500 hover:bg-orange-600" : "")}>{editingRuleId ? <><Save className="w-4 h-4"/> Update</> : <><Plus className="w-4 h-4"/> Add Rule</>}</Button>
               </div>
@@ -1702,7 +1822,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                         
                         {currentSlideIndex === SMART_DASHBOARD_INDEX ? (
                             
-<div className="absolute inset-0 flex gap-4 overflow-hidden pl-2"> 
+<div className="absolute inset-0 flex gap-4 overflow-hidden pl-2 animate-in fade-in-50"> 
                                 <div className="w-[300px] bg-white border border-slate-200 rounded-xl flex flex-col shrink-0 h-full shadow-sm overflow-hidden"> 
                                     <div className="text-sm font-bold text-slate-700 border-b p-3 flex items-center justify-between shrink-0 sticky top-0 bg-white z-10 shadow-sm">
                                         <div className="flex items-center gap-1.5"><ListTree className="w-4 h-4 text-slate-500"/> 전체 치료 타임라인</div>
@@ -1711,9 +1831,9 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                     <div className="flex-1 overflow-y-auto pr-1 pl-1 py-2 space-y-2 custom-scrollbar"> 
                                         {(() => {
                                             const sortedRules = [...safeRules].sort((a, b) => {
-                                                // ✨ 수정: ALL 모드일 때는 모든 룰을 활성 상태로 간주하여 정렬
-                                                const aActive = isAllView || (smartStage >= a.startStep && smartStage <= a.endStep);
-                                                const bActive = isAllView || (smartStage >= b.startStep && smartStage <= b.endStep);
+                                                // ✨ 수정: ALL 모드일 때는 필터에 포함되어 있는지 확인
+                                                const aActive = isAllView ? activeFilters.includes(a.type) : (smartStage >= a.startStep && smartStage <= a.endStep);
+                                                const bActive = isAllView ? activeFilters.includes(b.type) : (smartStage >= b.startStep && smartStage <= b.endStep);
                                                 if (aActive && !bActive) return -1; 
                                                 if (!aActive && bActive) return 1;  
                                                 return a.startStep - b.startStep;   
@@ -1724,8 +1844,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                             }
 
                                             return sortedRules.map(rule => {
-                                                // ✨ 수정: ALL 모드일 때는 무조건 활성(색상 진하게) 처리
-                                                const isActive = isAllView || (smartStage >= rule.startStep && smartStage <= rule.endStep);
+                                                // ✨ 수정: 필터가 꺼지면 타임라인에서도 회색으로 비활성화 처리됨
+                                                const isActive = isAllView ? activeFilters.includes(rule.type) : (smartStage >= rule.startStep && smartStage <= rule.endStep);
                                                 const leftPercent = ((rule.startStep - 1) / (totalSteps - 1)) * 100;
                                                 const widthPercent = ((rule.endStep - rule.startStep) / (totalSteps - 1)) * 100;
                                                 
@@ -1740,7 +1860,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                             "p-2.5 rounded-lg border-[1.5px] flex flex-col gap-1.5 transition-all cursor-pointer",
                                                             isActive 
                                                                 ? "shadow-[0_4px_10px_rgba(0,0,0,0.08)] scale-[1.02]" 
-                                                                : "shadow-none opacity-80 hover:opacity-100" 
+                                                                : "shadow-none opacity-50 hover:opacity-80" 
                                                         )}
                                                         style={{ 
                                                             borderColor: borderColorRGBA,
@@ -1748,7 +1868,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                         }}
                                                         onClick={() => {
                                                             setSmartStage(rule.startStep);
-                                                            setIsAllView(false); // 타임라인 항목 클릭 시 ALL 모드 해제 및 해당 단계로 이동
+                                                            setIsAllView(false); // 타임라인 클릭 시 ALL 모드 종료
                                                         }}
                                                     >
                                                         <div className="flex justify-between items-center">
@@ -1781,12 +1901,20 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
 
                                 <div className="flex-1 flex flex-col border border-slate-200 rounded-xl bg-[#fcfcfc] relative h-full shadow-[inset_0_2px_20px_rgba(0,0,0,0.02)] overflow-hidden">
                                     
-                                    <div className="p-5 border-b border-slate-200 bg-white/95 backdrop-blur flex flex-col items-center justify-center gap-4 shrink-0 z-30 shadow-sm">
+                                    <div className="p-4 border-b border-slate-200 bg-white/95 backdrop-blur flex flex-col items-center justify-center shrink-0 z-30 shadow-sm">
                                         <div className="flex items-center justify-center gap-4">
                                             
-                                            {/* ✨ NEW: ALL (전체 보기) 토글 버튼 추가 */}
+                                            {/* ✨ NEW: ALL (전체 보기) 토글 버튼 */}
                                             <button
-                                                onClick={() => setIsAllView(!isAllView)}
+                                                onClick={() => {
+                                                    const next = !isAllView;
+                                                    setIsAllView(next);
+                                                    if (next) {
+                                                        // ALL 버튼을 켤 때 모든 존재하는 아이템 타입을 배열로 추출하여 필터 꽉 채우기
+                                                        const uniqueTypes = Array.from(new Set(safeRules.map((r: Rule) => r.type))) as string[];
+                                                        setActiveFilters(uniqueTypes);
+                                                    }
+                                                }}
                                                 className={cn(
                                                     "px-5 py-1.5 rounded-full font-extrabold text-sm transition-all border-[1.5px] shadow-sm tracking-wide",
                                                     isAllView 
@@ -1797,7 +1925,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                 ALL
                                             </button>
 
-                                            {/* ✨ 수정: ALL 모드 켜지면 반투명해지고 클릭 불가능하게 처리 */}
+                                            {/* 슬라이더 컨트롤 (ALL 모드 켜지면 조작 금지) */}
                                             <div className={cn("px-3 py-1.5 bg-white border-[1.5px] border-[#2563eb] rounded-full shadow-sm ring-[3px] ring-[#dbeafe] flex items-center gap-3 transition-opacity", isAllView && "opacity-40 pointer-events-none")}>
                                                 <button onClick={() => setSmartStage(p => Math.max(0, p - 1))} className="text-[#2563eb] hover:text-blue-700 hover:bg-blue-50 rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors">&lt;</button>
                                                 <span className="font-bold text-[#2563eb] text-sm tracking-wide flex items-center gap-1">
@@ -1818,8 +1946,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                             </div>
                                         </div>
                                         
-                                        {/* ✨ 수정: ALL 모드 켜지면 슬라이더 반투명해지고 클릭 불가능하게 처리 */}
-                                        <div className={cn("relative w-full max-w-[75%] pt-2 pb-6 group transition-opacity", isAllView && "opacity-40 pointer-events-none")}>
+                                        <div className={cn("relative w-full max-w-[75%] pt-4 group transition-all", isAllView ? "pb-0 opacity-0 h-0 overflow-hidden pointer-events-none" : "pb-4 opacity-100")}>
                                             <input 
                                                 type="range" 
                                                 min="0" max={totalSteps} 
@@ -1841,21 +1968,59 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                     );
                                                 })}
                                             </div>
-                                        </div>                                    
-                                    </div>
+                                        </div> 
+
+                                        {isAllView && (
+                                            <div className="w-full max-w-[75%] flex flex-wrap items-center justify-center gap-2 pt-3 animate-in fade-in slide-in-from-top-2">
+                                                
+                                                {/* ✨ 스마트 전체 선택/해제 버튼 */}
+                                                <button
+                                                    onClick={() => setActiveFilters(activeFilters.length > 0 ? [] : Array.from(new Set(safeRules.map((r: Rule) => r.type))) as string[])}
+                                                    className="flex items-center gap-1 px-3 py-1 text-[11px] font-extrabold rounded-md transition-all border-[1.5px] border-slate-300 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-700 shadow-sm"
+                                                >
+                                                    {activeFilters.length > 0 ? <><X className="w-3 h-3"/> 전체 해제</> : <><CheckCheck className="w-3 h-3"/> 전체 선택</>}
+                                                </button>
+
+                                                <div className="w-px h-4 bg-slate-300 mx-1"></div> {/* 시각적 구분선 */}
+
+                                                {/* 개별 컬러 필터 버튼들 */}
+                                                {Array.from(new Set(safeRules.map((r: Rule) => r.type))).map(type => {
+                                                    const isFilterActive = activeFilters.includes(type as string);
+                                                    const color = getExpertTypeColor(type as string);
+                                                    return (
+                                                        <button
+                                                            key={type as string}
+                                                            onClick={() => setActiveFilters(p => p.includes(type as string) ? p.filter(t => t !== type) : [...p, type as string])}
+                                                            className={cn(
+                                                                "px-3 py-1 text-[11px] font-extrabold rounded-md transition-all border-[1.5px]",
+                                                                isFilterActive ? "shadow-sm scale-100" : "bg-transparent hover:bg-slate-50 opacity-60 hover:opacity-100 scale-[0.98]"
+                                                            )}
+                                                            style={{
+                                                                backgroundColor: isFilterActive ? color : 'transparent',
+                                                                borderColor: color,
+                                                                color: isFilterActive ? 'white' : color,
+                                                            }}
+                                                        >
+                                                            {getAbbreviation(type as string)}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                   </div>
 
                                     {/* 💡 캔버스 스크롤 구역 */}
                                     <div className="flex-1 overflow-y-auto custom-scrollbar relative bg-[#fcfcfc]"> 
                                         
                                         <div className="w-full relative flex flex-col items-center justify-start min-w-[700px] min-h-full py-16 px-8">
                                             
-                                            {/* 세로 십자선 (진하게 복구) */}
+                                            {/* 세로 십자선 */}
                                             <div className="absolute h-full w-[2px] bg-slate-300 top-0 left-1/2 -translate-x-1/2 z-0" />
 
                                             {(() => {
-                                                // ✨ 수정: ALL 모드일 때는 필터링 없이 safeRules 전체를 activeRules로 덮어씌움
+                                                // ✨ 수정: ALL 모드일 때는 켜져 있는 필터(activeFilters)만 화면에 그림!
                                                 const activeRules = isAllView 
-                                                    ? safeRules 
+                                                    ? safeRules.filter((r: Rule) => activeFilters.includes(r.type))
                                                     : safeRules.filter((r: Rule) => smartStage >= r.startStep && smartStage <= r.endStep);
 
                                                 const genRulesList = activeRules.filter((r: Rule) => r.tooth === 0);
@@ -1880,7 +2045,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                                     const Divider = idx !== rulesToRender.length - 1 ? <div key={`div-${r.id}`} className="w-6 h-[1.5px] bg-slate-200 my-1" /> : null;
 
                                                                     return (
-                                                                        <div key={r.id} className={cn("flex flex-col items-center w-full bg-transparent py-0.5 relative", isUpper ? "mb-0.5" : "mt-0.5")}>
+                                                                        <div key={r.id} className={cn("flex flex-col items-center w-full bg-transparent py-0.5 relative animate-in fade-in zoom-in-95", isUpper ? "mb-0.5" : "mt-0.5")}>
                                                                             {isUpper ? (
                                                                                 <>
                                                                                     {RangeEl}
@@ -1906,11 +2071,11 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                         <div className="flex flex-col items-center w-12 shrink-0 z-10 relative">
                                                             {isUpper && rules.length > 0 && <InfoBlock />}
                                                             
-                                                            <div className={cn("relative w-10 h-10 flex items-center justify-center shrink-0 z-10", isUpper ? "mt-0.5" : "mb-0.5")}>
-                                                                <svg viewBox="0 0 24 24" fill="white" stroke={toothIconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="absolute inset-0 w-full h-full drop-shadow-sm">
+                                                            <div className={cn("relative w-10 h-10 flex items-center justify-center shrink-0 z-10 transition-colors", isUpper ? "mt-0.5" : "mb-0.5")}>
+                                                                <svg viewBox="0 0 24 24" fill="white" stroke={toothIconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="absolute inset-0 w-full h-full drop-shadow-sm transition-colors">
                                                                     <path d="M12 5.5C10.5 3 8 2 5.5 3.5C3.5 4.5 2 7 2 10C2 14 4 18 5.5 20.5C6.5 22 8 22 9.5 20.5C10.5 19 11 17 12 15C13 17 13.5 19 14.5 20.5C16 22 17.5 22 18.5 20.5C20 18 22 14 22 10C22 7 20.5 4.5 18.5 3.5C16 2 13.5 3 12 5.5Z" />
                                                                 </svg>
-                                                                <span className="relative z-10 font-extrabold text-[12px] mb-1" style={{ color: toothIconColor }}>
+                                                                <span className="relative z-10 font-extrabold text-[12px] mb-1 transition-colors" style={{ color: toothIconColor }}>
                                                                     {tooth}
                                                                 </span>
                                                             </div>
@@ -1930,7 +2095,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                         {/* 공통 룰 영역 (상단 모서리 밀착) */}
                                                         <div className="absolute top-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
                                                             {maxRulesList.map((r: Rule) => (
-                                                                <div key={`max-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold">
+                                                                <div key={`max-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold animate-in fade-in slide-in-from-left-2">
                                                                     <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">MAX</span>
                                                                     <span style={{ color: getExpertTypeColor(r.type) }}>{getAbbreviation(r.type)}</span>
                                                                     {r.note && <span className="text-slate-700">- {r.note}</span>}
@@ -1938,7 +2103,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                                 </div>
                                                             ))}
                                                             {genRulesList.map((r: Rule) => (
-                                                                <div key={`gen-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold">
+                                                                <div key={`gen-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold animate-in fade-in slide-in-from-left-2">
                                                                     <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">Gen</span>
                                                                     <span style={{ color: getExpertTypeColor(r.type) }}>{getAbbreviation(r.type)}</span>
                                                                     {r.note && <span className="text-slate-700">- {r.note}</span>}
@@ -1947,7 +2112,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                             ))}
                                                         </div>
 
-                                                        {/* 💡 상악 치아 배열 */}
+                                                        {/* 상악 치아 배열 */}
                                                         <div className="flex w-full items-end justify-center pb-2 z-10 flex-1">
                                                             <div className="w-1/2 flex items-end justify-end space-x-2 pr-6">
                                                                 {urTeeth.map(num => {
@@ -1968,7 +2133,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                         {/* 가로 십자선 */}
                                                         <div className="w-[90%] h-[2px] bg-slate-300 shrink-0 z-0 my-2 rounded-full" />
 
-                                                        {/* 💡 하악 치아 배열 */}
+                                                        {/* 하악 치아 배열 */}
                                                         <div className="flex w-full items-start justify-center pt-2 z-10 flex-1">
                                                             <div className="w-1/2 flex items-start justify-end space-x-2 pr-6">
                                                                 {lrTeeth.map(num => {
@@ -1986,10 +2151,10 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                                             </div>
                                                         </div>
 
-                                                        {/* 하악 공통 룰 (하단 모서리 밀착) */}
+                                                        {/* 하악 공통 룰 */}
                                                         <div className="absolute bottom-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
                                                             {manRulesList.map((r: Rule) => (
-                                                                <div key={`man-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold">
+                                                                <div key={`man-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold animate-in fade-in slide-in-from-left-2">
                                                                     <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">MAN</span>
                                                                     <span style={{ color: getExpertTypeColor(r.type) }}>{getAbbreviation(r.type)}</span>
                                                                     {r.note && <span className="text-slate-700">- {r.note}</span>}
@@ -2003,8 +2168,8 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
                                         </div>
                                     </div>
                                 </div>
-                            </div>                            
-                        ) : (
+                            </div>
+                     ) : (
                             
                             <>
                                 <div className="flex justify-between items-center mb-4 gap-2 sticky top-4 z-50 bg-white/95 backdrop-blur p-2 border shadow-sm rounded-lg overflow-x-auto no-scrollbar min-h-[64px] shrink-0">

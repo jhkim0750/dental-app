@@ -28,6 +28,7 @@ export interface Rule {
   startStep: number;
   endStep: number;
   note?: string;
+  imageUrl?: string; // ✨ NEW: 각 룰에 사진 링크를 저장할 수 있는 공간 추가
 }
 
 export interface ChecklistStatus {
