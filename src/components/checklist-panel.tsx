@@ -351,7 +351,7 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: 
     );
     
     const noteTextEl = rule.note ? (
-        <div className="w-[80px] text-[12px] text-slate-700 font-extrabold leading-tight text-center break-words whitespace-pre-wrap px-0.5">
+        <div className="w-[60px] text-[12px] text-slate-700 font-extrabold leading-tight text-center break-words whitespace-pre-wrap px-0.5">
             {rule.note}
         </div>
     ) : null;
@@ -359,7 +359,7 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: 
     const inputEl = (
         <textarea 
             autoFocus
-            className="w-[80px] text-[12px] text-center border-b-2 border-blue-400 bg-blue-50/50 outline-none font-extrabold text-slate-800 leading-tight px-0.5 py-0 rounded-none resize-none overflow-hidden whitespace-pre-wrap break-words custom-scrollbar block"
+            className="w-[60px] text-[12px] text-center border-b-2 border-blue-400 bg-blue-50/50 outline-none font-extrabold text-slate-800 leading-tight px-0.5 py-0 rounded-none resize-none overflow-hidden whitespace-pre-wrap break-words custom-scrollbar block"
             style={{ height: 'auto', minHeight: '18px' }}
             value={tempNote}
             onChange={(e) => {
@@ -1706,16 +1706,19 @@ const cancelEdit = () => {
                     <span className="text-slate-400 text-[10px]">({rule.startStep}-{rule.endStep})</span>
                                              </div>
                                              {isQuickEdit ? (
-                                                 <input className="w-full mt-1 border-b border-dashed outline-none focus:border-blue-500 bg-transparent text-[11px] pointer-events-auto" 
-                                                        defaultValue={rule.note} 
-                                                        onClick={(e) => e.stopPropagation()} 
-                                                        onChange={(e) => setEditBuffer(p => ({...p, [rule.id]: {note: e.target.value}}))} 
-                                                        placeholder="Note..." />
-                                             ) : (
-                                                 rule.note && <div className="text-[10px] text-slate-500 truncate mt-0.5">{rule.note}</div>
-                                             )}
-                                         </div>
-                                         
+    <input className="w-full mt-1 border-b border-dashed outline-none focus:border-blue-500 bg-transparent text-[11px] pointer-events-auto" 
+           defaultValue={rule.note} 
+           onClick={(e) => e.stopPropagation()} 
+           onChange={(e) => setEditBuffer(p => ({...p, [rule.id]: {note: e.target.value}}))} 
+           placeholder="Note..." />
+) : (
+    rule.note ? (
+        <div className="text-[10px] text-slate-500 truncate mt-0.5" title={rule.note}>
+            {rule.note.split('\n').join(' ')}
+        </div>
+    ) : null
+)} 
+</div>                                        
                                          {!isQuickEdit && (
                                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
                                                  <button onClick={(e) => handleEditClick(e, rule)} className="text-slate-400 hover:text-blue-500 p-1"><Pencil className="w-3 h-3"/></button>
@@ -1842,7 +1845,7 @@ const cancelEdit = () => {
                         {currentSlideIndex === SMART_DASHBOARD_INDEX ? (
                             
 <div className="absolute inset-0 flex gap-4 overflow-hidden pl-2 animate-in fade-in-50"> 
-                                <div className="w-[300px] bg-white border border-slate-200 rounded-xl flex flex-col shrink-0 h-full shadow-sm overflow-hidden"> 
+<div className="w-[220px] bg-white border border-slate-200 rounded-xl flex flex-col shrink-0 h-full shadow-sm overflow-hidden">
                                     <div className="text-sm font-bold text-slate-700 border-b p-3 flex items-center justify-between shrink-0 sticky top-0 bg-white z-10 shadow-sm">
                                         <div className="flex items-center gap-1.5"><ListTree className="w-4 h-4 text-slate-500"/> 전체 치료 타임라인</div>
                                     </div>
@@ -2041,11 +2044,10 @@ const cancelEdit = () => {
                                    </div>
 
                                     {/* 💡 캔버스 스크롤 구역 */}
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar relative bg-[#fcfcfc]"> 
-                                        
-                                        <div className="w-full relative flex flex-col items-center justify-start min-w-[700px] min-h-full py-16 px-8">
-                                            
-                                            {/* 세로 십자선 */}
+                                    <div className="flex-1 overflow-auto custom-scrollbar relative bg-[#fcfcfc]"> 
+
+                                    <div className="w-full relative flex flex-col items-center justify-start min-w-[900px] min-h-full py-16 px-2">
+                                                                                    {/* 세로 십자선 */}
                                             <div className="absolute h-full w-[2px] bg-slate-300 top-0 left-1/2 -translate-x-1/2 z-0" />
 
                                             {(() => {
@@ -2145,14 +2147,14 @@ const cancelEdit = () => {
 
                                                         {/* 상악 치아 배열 */}
                                                         <div className="flex w-full items-end justify-center pb-2 z-10 flex-1">
-                                                            <div className="w-1/2 flex items-end justify-end space-x-2 pr-6">
+                                                            <div className="w-1/2 flex items-end justify-end space-x-5 pr-3">
                                                                 {urTeeth.map(num => {
                                                                     const rules = activeRules.filter((r: Rule) => r.tooth === num);
                                                                     if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
                                                                     return <React.Fragment key={num}>{renderVerticalStack(rules, num, true)}</React.Fragment>;
                                                                 })}
                                                             </div>
-                                                            <div className="w-1/2 flex items-end justify-start space-x-2 pl-6">
+                                                            <div className="w-1/2 flex items-end justify-start space-x-5 pl-3">
                                                                 {ulTeeth.map(num => {
                                                                     const rules = activeRules.filter((r: Rule) => r.tooth === num);
                                                                     if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
@@ -2166,14 +2168,14 @@ const cancelEdit = () => {
 
                                                         {/* 하악 치아 배열 */}
                                                         <div className="flex w-full items-start justify-center pt-2 z-10 flex-1">
-                                                            <div className="w-1/2 flex items-start justify-end space-x-2 pr-6">
+                                                            <div className="w-1/2 flex items-start justify-end space-x-5 pr-3">
                                                                 {lrTeeth.map(num => {
                                                                     const rules = activeRules.filter((r: Rule) => r.tooth === num);
                                                                     if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
                                                                     return <React.Fragment key={num}>{renderVerticalStack(rules, num, false)}</React.Fragment>;
                                                                 })}
                                                             </div>
-                                                            <div className="w-1/2 flex items-start justify-start space-x-2 pl-6">
+                                                            <div className="w-1/2 flex items-start justify-start space-x-5 pl-3">
                                                                 {llTeeth.map(num => {
                                                                     const rules = activeRules.filter((r: Rule) => r.tooth === num);
                                                                     if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
