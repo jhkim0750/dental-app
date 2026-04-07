@@ -1355,17 +1355,27 @@ const handleRuleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
   const handleSaveRules = async () => { 
     const finalType = selectedType === "기타" ? customType : selectedType; 
     const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t)); 
+    
+    // ✨ 안정 장치: 이미지가 없으면 아예 필드 자체를 빼고 전송 (Firebase 에러 방지)
+    const ruleData: any = { 
+        type: finalType, 
+        startStep, 
+        endStep, 
+        note 
+    };
+    if (ruleImage) ruleData.imageUrl = ruleImage;
+
     if (editingRuleId) { 
-        if(store) await store.updateRule(patient.id, { id: editingRuleId, type: finalType, tooth: teethToSave[0], startStep, endStep, note, imageUrl: ruleImage || undefined }); 
+        if(store) await store.updateRule(patient.id, { id: editingRuleId, ...ruleData, tooth: teethToSave[0] }); 
         setEditingRuleId(null); 
     } else { 
         for (const tooth of teethToSave) { 
-            if(store) await store.addRule(patient.id, { type: finalType, tooth, startStep, endStep, note, imageUrl: ruleImage || undefined }); 
+            if(store) await store.addRule(patient.id, { ...ruleData, tooth }); 
         } 
     } 
     setSelectedTeeth([]); 
     setNote(""); 
-    setRuleImage(null); // ✨ 업로드 후 썸네일 초기화
+    setRuleImage(null); 
     if (selectedType === "기타") setCustomType(""); 
 };
 
@@ -1680,11 +1690,20 @@ const cancelEdit = () => {
                                          )}
 
                                          <div className="flex-1 overflow-hidden pointer-events-none">
-                                             <div className="flex items-center gap-1">
-                                                 <span className={cn("font-bold", getTypeColor(rule.type))}>
-                                                    {rule.tooth === 0 ? "Gen" : rule.tooth === 10 ? "MAX" : rule.tooth === 30 ? "MAN" : `#${rule.tooth}`} {rule.type}
-                                                 </span>
-                                                 <span className="text-slate-400 text-[10px]">({rule.startStep}-{rule.endStep})</span>
+                                         <div className="flex items-center gap-1 relative pr-4">
+                    <span className={cn("font-bold", getTypeColor(rule.type))}>
+                        {rule.tooth === 0 ? "Gen" : rule.tooth === 10 ? "MAX" : rule.tooth === 30 ? "MAN" : `#${rule.tooth}`} {rule.type}
+                    </span>
+                    
+                    {/* ✨ NEW: 리스트용 빨간 별표 (이미지가 있을 때만 노출) */}
+                    {rule.imageUrl && (
+                        <div className="absolute top-0 right-0 drop-shadow-sm" title="Reference Image">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444" stroke="#991b1b" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                            </svg>
+                        </div>
+                    )}                                                 
+                    <span className="text-slate-400 text-[10px]">({rule.startStep}-{rule.endStep})</span>
                                              </div>
                                              {isQuickEdit ? (
                                                  <input className="w-full mt-1 border-b border-dashed outline-none focus:border-blue-500 bg-transparent text-[11px] pointer-events-auto" 
@@ -1876,8 +1895,20 @@ const cancelEdit = () => {
                                                                 <span className={cn("font-bold px-1.5 py-0.5 rounded border-[1.5px]", isActive ? "bg-white text-[#2563eb] border-[#2563eb]" : "bg-slate-50 text-slate-500 border-slate-200")}>
                                                                     {rule.tooth === 0 ? 'Gen' : rule.tooth === 10 ? 'MAX' : rule.tooth === 30 ? 'MAN' : `#${rule.tooth}`}
                                                                 </span>
-                                                                <span className="font-extrabold truncate max-w-[120px] tracking-tight" style={{ color: itemColor }}>{getAbbreviation(rule.type)}</span>
-                                                            </div>
+                                                                <div className="flex items-center max-w-[120px]">
+    <span className="font-extrabold truncate tracking-tight" style={{ color: itemColor }}>
+        {getAbbreviation(rule.type)}
+    </span>
+
+    {rule.imageUrl && (
+        <div className="drop-shadow-md shrink-0 ml-0.5 -translate-y-[2px]" title="Reference Image">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="#ef4444" stroke="#991b1b" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+        </div>
+    )}
+</div>
+ </div>
                                                             <span className={cn("text-[11px] font-mono font-extrabold tracking-tighter", isActive ? "text-[#2563eb]" : "text-slate-500")}>
                                                                 ({rule.startStep}-{rule.endStep})
                                                             </span>                                                        
