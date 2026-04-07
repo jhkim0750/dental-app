@@ -406,6 +406,55 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: 
     );
 };
 
+const CornerRuleItem = ({ rule, label }: { rule: Rule; label: string }) => {
+    const [showPopup, setShowPopup] = useState(false);
+    const itemColor = getExpertTypeColor(rule.type);
+
+    return (
+        <div className="flex items-center gap-1.5 text-[11px] font-extrabold animate-in fade-in slide-in-from-left-2">
+            <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">{label}</span>
+            
+            {/* 텍스트 + 빨간 별 (클릭 영역) */}
+            <div 
+                className={cn("flex items-center relative cursor-pointer hover:opacity-70 transition-opacity", rule.imageUrl && "pr-3")}
+                onClick={(e) => {
+                    if (rule.imageUrl) {
+                        e.stopPropagation();
+                        setShowPopup(!showPopup);
+                    }
+                }}
+            >
+                <span style={{ color: itemColor }}>{getAbbreviation(rule.type)}</span>
+                
+                {rule.imageUrl && (
+                    <div className="absolute -top-1 right-0 drop-shadow-md" title="Reference Image">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="#ef4444" stroke="#991b1b" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                    </div>
+                )}
+            </div>
+
+            {rule.note && <span className="text-slate-700">- {rule.note}</span>}
+            <span className="text-slate-400 font-mono">- ({rule.startStep}-{rule.endStep})</span>
+
+            {/* 팝업 포탈 */}
+            {rule.imageUrl && showPopup && typeof document !== "undefined" && createPortal(
+                <div 
+                    className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] cursor-default" 
+                    onClick={(e) => { e.stopPropagation(); setShowPopup(false); }}
+                >
+                    <div className="bg-white p-3 rounded-2xl border-4 border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col items-center animate-in fade-in zoom-in-95 duration-100 relative" onClick={(e) => e.stopPropagation()}>
+                        <img src={rule.imageUrl} alt="Reference" className="w-[900px] max-w-[90vw] max-h-[85vh] rounded-lg object-contain" />
+                        <button onClick={(e) => { e.stopPropagation(); setShowPopup(false); }} className="absolute -top-4 -right-4 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-slate-800 hover:bg-slate-50 font-bold">✕</button>
+                    </div>
+                </div>,
+                document.body
+            )}
+        </div>
+    );
+};
+
 export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const store = usePatientStoreHydrated();
   const [isGridOpen, setIsGridOpen] = useState(false);
@@ -2125,25 +2174,11 @@ const cancelEdit = () => {
 
                                                 return (
                                                     <>
-                                                        {/* 공통 룰 영역 (상단 모서리 밀착) */}
-                                                        <div className="absolute top-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
-                                                            {maxRulesList.map((r: Rule) => (
-                                                                <div key={`max-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold animate-in fade-in slide-in-from-left-2">
-                                                                    <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">MAX</span>
-                                                                    <span style={{ color: getExpertTypeColor(r.type) }}>{getAbbreviation(r.type)}</span>
-                                                                    {r.note && <span className="text-slate-700">- {r.note}</span>}
-                                                                    <span className="text-slate-400 font-mono">- ({r.startStep}-{r.endStep})</span>
-                                                                </div>
-                                                            ))}
-                                                            {genRulesList.map((r: Rule) => (
-                                                                <div key={`gen-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold animate-in fade-in slide-in-from-left-2">
-                                                                    <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">Gen</span>
-                                                                    <span style={{ color: getExpertTypeColor(r.type) }}>{getAbbreviation(r.type)}</span>
-                                                                    {r.note && <span className="text-slate-700">- {r.note}</span>}
-                                                                    <span className="text-slate-400 font-mono">- ({r.startStep}-{r.endStep})</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
+{/* 공통 룰 영역 (상단 모서리 밀착) */}
+<div className="absolute top-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
+    {maxRulesList.map((r: Rule) => <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" />)}
+    {genRulesList.map((r: Rule) => <CornerRuleItem key={`gen-${r.id}`} rule={r} label="Gen" />)}
+</div>
 
                                                         {/* 상악 치아 배열 */}
                                                         <div className="flex w-full items-end justify-center pb-2 z-10 flex-1">
@@ -2184,17 +2219,10 @@ const cancelEdit = () => {
                                                             </div>
                                                         </div>
 
-                                                        {/* 하악 공통 룰 */}
-                                                        <div className="absolute bottom-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
-                                                            {manRulesList.map((r: Rule) => (
-                                                                <div key={`man-${r.id}`} className="flex items-center gap-1.5 text-[11px] font-extrabold animate-in fade-in slide-in-from-left-2">
-                                                                    <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">MAN</span>
-                                                                    <span style={{ color: getExpertTypeColor(r.type) }}>{getAbbreviation(r.type)}</span>
-                                                                    {r.note && <span className="text-slate-700">- {r.note}</span>}
-                                                                    <span className="text-slate-400 font-mono">- ({r.startStep}-{r.endStep})</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
+{/* 하악 공통 룰 */}
+<div className="absolute bottom-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
+    {manRulesList.map((r: Rule) => <CornerRuleItem key={`man-${r.id}`} rule={r} label="MAN" />)}
+</div>
                                                     </>
                                                 );
                                             })()}
