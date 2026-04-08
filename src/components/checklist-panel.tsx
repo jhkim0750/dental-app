@@ -1772,7 +1772,7 @@ const cancelEdit = () => {
                     
                     {/* ✨ NEW: 리스트용 빨간 별표 (이미지가 있을 때만 노출) */}
                     {rule.imageUrl && (
-                        <div className="absolute top-0 right-0 drop-shadow-sm" title="Reference Image">
+                        <div className="absolute top-0 right-0 drop-shadow-md" title="Reference Image">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444" stroke="#991b1b" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
                                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                             </svg>
@@ -1814,7 +1814,7 @@ const cancelEdit = () => {
                  {!isQuickEdit && (
                      <div onDragOver={(e)=>e.preventDefault()} onDrop={handleRulesDrop} className="mt-6 border-2 border-dashed border-red-200 rounded-lg p-4 flex flex-col items-center justify-center text-red-400 hover:bg-red-50 transition-colors">
                          <Trash2 className="w-6 h-6 mb-1 opacity-50"/>
-                         <span className="text-[10px] font-bold">Drag checked items here to Delete</span>
+                         <span className="text-[10px] font-bold">Drag 단어를 여기에 삭제</span>
                      </div>
                  )}
               </div>
@@ -1917,669 +1917,698 @@ const cancelEdit = () => {
 
                     <div className={cn("flex-1 flex flex-col relative", currentSlideIndex === SMART_DASHBOARD_INDEX ? "" : "bg-white p-4 rounded-lg shadow-sm overflow-hidden min-h-[800px]")}>
                         
-                        {currentSlideIndex === SMART_DASHBOARD_INDEX ? (
-                            
-<div className="absolute inset-0 flex gap-4 overflow-hidden pl-2 animate-in fade-in-50"> 
-<div className="w-[220px] bg-white border border-slate-200 rounded-xl flex flex-col shrink-0 h-full shadow-sm overflow-hidden">
-                                    <div className="text-sm font-bold text-slate-700 border-b p-3 flex items-center justify-between shrink-0 sticky top-0 bg-white z-10 shadow-sm">
-                                        <div className="flex items-center gap-1.5"><ListTree className="w-4 h-4 text-slate-500"/> 전체 치료 타임라인</div>
-                                    </div>
-                                    
-                                    <div className="flex-1 overflow-y-auto pr-1 pl-1 py-2 space-y-2 custom-scrollbar"> 
-                                        {(() => {
-                                            const sortedRules = [...safeRules].sort((a, b) => {
-                                                // ✨ 수정: ALL 모드일 때는 필터에 포함되어 있는지 확인
-                                                const aActive = isAllView ? activeFilters.includes(a.type) : (smartStage >= a.startStep && smartStage <= a.endStep);
-                                                const bActive = isAllView ? activeFilters.includes(b.type) : (smartStage >= b.startStep && smartStage <= b.endStep);
-                                                if (aActive && !bActive) return -1; 
-                                                if (!aActive && bActive) return 1;  
-                                                return a.startStep - b.startStep;   
-                                            });
-
-                                            if (sortedRules.length === 0) {
-                                                return <div className="text-center text-xs text-slate-400 mt-10">등록된 룰이 없습니다.</div>;
-                                            }
-
-                                            return sortedRules.map(rule => {
-                                                // ✨ 수정: 필터가 꺼지면 타임라인에서도 회색으로 비활성화 처리됨
-                                                const isActive = isAllView ? activeFilters.includes(rule.type) : (smartStage >= rule.startStep && smartStage <= rule.endStep);
-                                                const leftPercent = ((rule.startStep - 1) / (totalSteps - 1)) * 100;
-                                                const widthPercent = ((rule.endStep - rule.startStep) / (totalSteps - 1)) * 100;
-                                                
-                                                const itemColor = getExpertTypeColor(rule.type);
-                                                const borderColorRGBA = isActive ? itemColor : hexToRgba(itemColor, 0.4);
-                                                const bgColorRGBA = isActive ? hexToRgba(itemColor, 0.05) : 'white';
-
-                                                return (
-                                                    <div 
-                                                        key={rule.id} 
-                                                        className={cn(
-                                                            "p-2.5 rounded-lg border-[1.5px] flex flex-col gap-1.5 transition-all cursor-pointer",
-                                                            isActive 
-                                                                ? "shadow-[0_4px_10px_rgba(0,0,0,0.08)] scale-[1.02]" 
-                                                                : "shadow-none opacity-50 hover:opacity-80" 
-                                                        )}
-                                                        style={{ 
-                                                            borderColor: borderColorRGBA,
-                                                            backgroundColor: bgColorRGBA,
-                                                        }}
-                                                        onClick={() => {
-                                                            setSmartStage(rule.startStep);
-                                                            setIsAllView(false); // 타임라인 클릭 시 ALL 모드 종료
-                                                        }}
-                                                    >
-                                                        <div className="flex justify-between items-center">
-                                                            <div className="flex items-center gap-1.5 text-[11px]">
-                                                                <span className={cn("font-bold px-1.5 py-0.5 rounded border-[1.5px]", isActive ? "bg-white text-[#2563eb] border-[#2563eb]" : "bg-slate-50 text-slate-500 border-slate-200")}>
-                                                                    {rule.tooth === 0 ? 'Gen' : rule.tooth === 10 ? 'MAX' : rule.tooth === 30 ? 'MAN' : `#${rule.tooth}`}
-                                                                </span>
-                                                                <div className="flex items-center max-w-[120px]">
-    <span className="font-extrabold truncate tracking-tight" style={{ color: itemColor }}>
-        {getAbbreviation(rule.type)}
-    </span>
-
-    {rule.imageUrl && (
-        <div className="drop-shadow-md shrink-0 ml-0.5 -translate-y-[2px]" title="Reference Image">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="#ef4444" stroke="#991b1b" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-            </svg>
-        </div>
-    )}
-</div>
- </div>
-                                                            <span className={cn("text-[11px] font-mono font-extrabold tracking-tighter", isActive ? "text-[#2563eb]" : "text-slate-500")}>
-                                                                ({rule.startStep}-{rule.endStep})
-                                                            </span>                                                        
-                                                        </div>
-                                                        {rule.note && (
-                                                            <div className="text-[11px] font-bold text-slate-500 px-1 whitespace-pre-wrap break-words leading-tight mt-0.5">
-                                                                {rule.note}
-                                                            </div>
-                                                        )}
-                                                        <div className="h-[5px] w-full bg-slate-100 rounded-full mt-0.5 relative overflow-hidden border border-slate-200/50">                                                            <div 
-                                                                className="absolute h-full rounded-full transition-all"
-                                                                style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, backgroundColor: itemColor }}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                );
-                                            });                                        
-                                        })()}
-                                    </div>
-                                </div>
-
-                                <div className="flex-1 flex flex-col border border-slate-200 rounded-xl bg-[#fcfcfc] relative h-full shadow-[inset_0_2px_20px_rgba(0,0,0,0.02)] overflow-hidden">
-                                    
-                                    <div className="p-4 border-b border-slate-200 bg-white/95 backdrop-blur flex flex-col items-center justify-center shrink-0 z-30 shadow-sm">
-                                    <div className="flex items-center justify-center gap-4 w-full relative">
-    
-    {/* ✨ NEW: ALL (전체 보기) 토글 버튼 */}
-    <button
-        onClick={() => {
-            const next = !isAllView;
-            setIsAllView(next);
-            if (next) {
-                const uniqueTypes = Array.from(new Set(safeRules.map((r: Rule) => r.type))) as string[];
-                setActiveFilters(uniqueTypes);
-            }
-        }}
-        className={cn(
-            "px-5 py-1.5 rounded-full font-extrabold text-sm transition-all border-[1.5px] shadow-sm tracking-wide",
-            isAllView 
-                ? "bg-[#2563eb] text-white border-[#2563eb] ring-[3px] ring-[#dbeafe]" 
-                : "bg-white text-slate-500 border-slate-200 hover:border-[#2563eb] hover:text-[#2563eb]"
-        )}
-    >
-        ALL
-    </button>
-
-    {/* 슬라이더 컨트롤 (ALL 모드 켜지면 조작 금지) */}
-    <div className={cn("px-3 py-1.5 bg-white border-[1.5px] border-[#2563eb] rounded-full shadow-sm ring-[3px] ring-[#dbeafe] flex items-center gap-3 transition-opacity", isAllView && "opacity-40 pointer-events-none")}>
-        <button onClick={() => setSmartStage(p => Math.max(0, p - 1))} className="text-[#2563eb] hover:text-blue-700 hover:bg-blue-50 rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors">&lt;</button>
-        <span className="font-bold text-[#2563eb] text-sm tracking-wide flex items-center gap-1">
-            현재 단계: 
-            <input 
-                type="number" 
-                value={smartStage}
-                onChange={(e) => {
-                    let val = parseInt(e.target.value);
-                    if (!isNaN(val)) setSmartStage(Math.max(0, Math.min(totalSteps, val)));
-                }}
-                className="w-8 text-center bg-transparent border-b-2 border-[#2563eb]/30 focus:border-[#2563eb] outline-none appearance-none ml-1 hide-arrows"
-                style={{ WebkitAppearance: 'none', margin: 0 }}
-            />
-            <span className="opacity-70">/ {totalSteps}</span>
-        </span>
-        <button onClick={() => setSmartStage(p => Math.min(totalSteps, p + 1))} className="text-[#2563eb] hover:text-blue-700 hover:bg-blue-50 rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors">&gt;</button>
-    </div>
-
-    {/* ✨ NEW: 우측 끝에 붙는 세련된 슬라이드 토글 스위치 */}
-    {!isAllView && (
-        <div 
-            className="absolute right-4 flex items-center gap-2 cursor-pointer group animate-in fade-in" 
-            onClick={() => setShowCheckedStatus(!showCheckedStatus)}
-        >
-            <span className={cn("text-[11px] font-bold transition-colors duration-300", showCheckedStatus ? "text-green-600" : "text-slate-400")}>
-                완료 표시
-            </span>
-            <div className={cn(
-                "w-12 h-5 rounded-full p-1 transition-colors duration-300 ease-in-out relative flex items-center shadow-inner overflow-hidden",
-                showCheckedStatus ? "bg-green-500" : "bg-slate-200"
-            )}>
-                <span className={cn("absolute left-1.5 text-[9px] font-extrabold text-white transition-opacity duration-300", showCheckedStatus ? "opacity-100" : "opacity-0")}>ON</span>
-                <span className={cn("absolute right-1 text-[9px] font-extrabold text-slate-400 transition-opacity duration-300", showCheckedStatus ? "opacity-0" : "opacity-100")}>OFF</span>
-                <div 
-                    className="bg-white w-3.5 h-3.5 rounded-full shadow-sm transform transition-transform duration-300 ease-in-out z-10"
-                    style={{ transform: showCheckedStatus ? 'translateX(26px)' : 'translateX(0px)' }} 
-                />
+                    {currentSlideIndex === SMART_DASHBOARD_INDEX ? (
+    <div className="absolute inset-0 flex gap-4 overflow-hidden pl-2 animate-in fade-in-50"> 
+        <div className="w-[220px] bg-white border border-slate-200 rounded-xl flex flex-col shrink-0 h-full shadow-sm overflow-hidden">
+            <div className="text-sm font-bold text-slate-700 border-b p-3 flex items-center justify-between shrink-0 sticky top-0 bg-white z-10 shadow-sm">
+                <div className="flex items-center gap-1.5"><ListTree className="w-4 h-4 text-slate-500"/> 전체 치료 타임라인</div>
             </div>
-        </div>
-    )}
-</div>
+            
+            <div className="flex-1 overflow-y-auto pr-1 pl-1 py-2 space-y-2 custom-scrollbar"> 
+                {(() => {
+                    const sortedRules = [...safeRules].sort((a, b) => {
+                        // ✨ 수정: ALL 모드일 때는 필터에 포함되어 있는지 확인
+                        const aActive = isAllView ? activeFilters.includes(a.type) : (smartStage >= a.startStep && smartStage <= a.endStep);
+                        const bActive = isAllView ? activeFilters.includes(b.type) : (smartStage >= b.startStep && smartStage <= b.endStep);
+                        if (aActive && !bActive) return -1; 
+                        if (!aActive && bActive) return 1;  
+                        return a.startStep - b.startStep;   
+                    });
 
-                                        <div className={cn("relative w-full max-w-[75%] pt-4 group transition-all", isAllView ? "pb-0 opacity-0 h-0 overflow-hidden pointer-events-none" : "pb-4 opacity-100")}>
-                                            <input 
-                                                type="range" 
-                                                min="0" max={totalSteps} 
-                                                value={smartStage} 
-                                                onChange={(e) => setSmartStage(Number(e.target.value))}
-                                                className="w-full h-[2.5px] bg-slate-200 rounded-full appearance-none cursor-pointer relative z-20 accent-[#2563eb] group-hover:accent-[#1d4ed8] transition-all" 
-                                            />                                            
-                                            <div className="absolute top-[22px] left-0 w-full flex justify-between px-[1px] pointer-events-none z-10">
-                                                {Array.from({ length: totalSteps + 1 }).map((_, i) => {
-                                                    const stepNum = i;
-                                                    const isMajorTick = stepNum % 5 === 0 || stepNum === totalSteps;
-                                                    return (
-                                                        <div key={i} className="flex flex-col items-center relative" style={{ width: '0px' }}>
-                                                            <div className={cn("w-[1px] bg-slate-300 rounded-full", isMajorTick ? "h-[6px]" : "h-[3px]")} />
-                                                            {isMajorTick && (
-                                                                <span className="text-[10px] text-slate-400 font-medium mt-1 absolute translate-y-[8px] whitespace-nowrap">{stepNum}</span>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div> 
+                    if (sortedRules.length === 0) {
+                        return <div className="text-center text-xs text-slate-400 mt-10">등록된 룰이 없습니다.</div>;
+                    }
 
-                                        {isAllView && (
-                                            <div className="w-full max-w-[75%] flex flex-wrap items-center justify-center gap-2 pt-3 animate-in fade-in slide-in-from-top-2">
-                                                
-                                                {/* ✨ 스마트 전체 선택/해제 버튼 */}
-                                                <button
-                                                    onClick={() => setActiveFilters(activeFilters.length > 0 ? [] : Array.from(new Set(safeRules.map((r: Rule) => r.type))) as string[])}
-                                                    className="flex items-center gap-1 px-3 py-1 text-[11px] font-extrabold rounded-md transition-all border-[1.5px] border-slate-300 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-700 shadow-sm"
-                                                >
-                                                    {activeFilters.length > 0 ? <><X className="w-3 h-3"/> 전체 해제</> : <><CheckCheck className="w-3 h-3"/> 전체 선택</>}
-                                                </button>
+                    return sortedRules.map(rule => {
+                        // ✨ 수정: 필터가 꺼지면 타임라인에서도 회색으로 비활성화 처리됨
+                        const isActive = isAllView ? activeFilters.includes(rule.type) : (smartStage >= rule.startStep && smartStage <= rule.endStep);
+                        const leftPercent = ((rule.startStep - 1) / (totalSteps - 1)) * 100;
+                        const widthPercent = ((rule.endStep - rule.startStep) / (totalSteps - 1)) * 100;
+                        
+                        const itemColor = getExpertTypeColor(rule.type);
+                        const borderColorRGBA = isActive ? itemColor : hexToRgba(itemColor, 0.4);
+                        const bgColorRGBA = isActive ? hexToRgba(itemColor, 0.05) : 'white';
 
-                                                <div className="w-px h-4 bg-slate-300 mx-1"></div> {/* 시각적 구분선 */}
+                        return (
+                            <div 
+                                key={rule.id} 
+                                className={cn(
+                                    "p-2.5 rounded-lg border-[1.5px] flex flex-col gap-1.5 transition-all cursor-pointer",
+                                    isActive 
+                                        ? "shadow-[0_4px_10px_rgba(0,0,0,0.08)] scale-[1.02]" 
+                                        : "shadow-none opacity-50 hover:opacity-80" 
+                                )}
+                                style={{ 
+                                    borderColor: borderColorRGBA,
+                                    backgroundColor: bgColorRGBA,
+                                }}
+                                onClick={() => {
+                                    setSmartStage(rule.startStep);
+                                    setIsAllView(false); // 타임라인 클릭 시 ALL 모드 종료
+                                }}
+                            >
+                                <div className="flex justify-between items-center">
+                                    <div className="flex items-center gap-1.5 text-[11px]">
+                                        <span className={cn("font-bold px-1.5 py-0.5 rounded border-[1.5px]", isActive ? "bg-white text-[#2563eb] border-[#2563eb]" : "bg-slate-50 text-slate-500 border-slate-200")}>
+                                            {rule.tooth === 0 ? 'Gen' : rule.tooth === 10 ? 'MAX' : rule.tooth === 30 ? 'MAN' : `#${rule.tooth}`}
+                                        </span>
+                                        <div className="flex items-center max-w-[120px]">
+                                            <span className="font-extrabold truncate tracking-tight" style={{ color: itemColor }}>
+                                                {getAbbreviation(rule.type)}
+                                            </span>
 
-                                                {/* 개별 컬러 필터 버튼들 */}
-                                                {Array.from(new Set(safeRules.map((r: Rule) => r.type))).map(type => {
-                                                    const isFilterActive = activeFilters.includes(type as string);
-                                                    const color = getExpertTypeColor(type as string);
-                                                    return (
-                                                        <button
-                                                            key={type as string}
-                                                            onClick={() => setActiveFilters(p => p.includes(type as string) ? p.filter(t => t !== type) : [...p, type as string])}
-                                                            className={cn(
-                                                                "px-3 py-1 text-[11px] font-extrabold rounded-md transition-all border-[1.5px]",
-                                                                isFilterActive ? "shadow-sm scale-100" : "bg-transparent hover:bg-slate-50 opacity-60 hover:opacity-100 scale-[0.98]"
-                                                            )}
-                                                            style={{
-                                                                backgroundColor: isFilterActive ? color : 'transparent',
-                                                                borderColor: color,
-                                                                color: isFilterActive ? 'white' : color,
-                                                            }}
-                                                        >
-                                                            {getAbbreviation(type as string)}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                   </div>
-
-                                    {/* 💡 캔버스 스크롤 구역 */}
-                                    <div className="flex-1 overflow-auto custom-scrollbar relative bg-[#fcfcfc]"> 
-
-                                    <div className="w-full relative flex flex-col items-center justify-start min-w-[900px] min-h-full py-16 px-2">
-                                                                                    {/* 세로 십자선 */}
-                                            <div className="absolute h-full w-[2px] bg-slate-300 top-0 left-1/2 -translate-x-1/2 z-0" />
-
-                                            {(() => {
-                                                // ✨ 수정: ALL 모드일 때는 켜져 있는 필터(activeFilters)만 화면에 그림!
-                                                const activeRules = isAllView 
-                                                    ? safeRules.filter((r: Rule) => activeFilters.includes(r.type))
-                                                    : safeRules.filter((r: Rule) => smartStage >= r.startStep && smartStage <= r.endStep);
-
-                                                const genRulesList = activeRules.filter((r: Rule) => r.tooth === 0);
-                                                const maxRulesList = activeRules.filter((r: Rule) => r.tooth === 10);
-                                                const manRulesList = activeRules.filter((r: Rule) => r.tooth === 30);
-
-                                                const renderVerticalStack = (rules: Rule[], tooth: number, isUpper: boolean) => {
-                                                    const InfoBlock = () => {
-                                                        const rulesToRender = isUpper ? [...rules].reverse() : rules;
-                                                        return (
-                                                            <div className={cn("flex flex-col w-12 px-0.5", isUpper ? "items-center justify-end" : "items-center justify-start")}>
-                                                                {rulesToRender.map((r, idx) => {
-                                                                    const itemColor = getExpertTypeColor(r.type);
-// ✨ 체크 여부 확인 (RangeEl보다 위로 올립니다)
-const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
-
-// ✨ 범위 텍스트에도 투명도/밑줄 적용
-const RangeEl = (
-    <div key={`range-${r.id}`} className={cn("text-[11px] font-mono font-extrabold tracking-tighter transition-all duration-300", isRuleChecked && "opacity-40 line-through")} style={{ color: `${itemColor}E6` }}>
-        ({r.startStep}-{r.endStep})
-    </div>
-);
-
-// ✨ 토글 함수 전달
-const ItemContentEl = <InlineNoteEdit key={`item-content-${r.id}`} rule={r} store={store} patientId={patient.id} itemColor={itemColor} isUpper={isUpper} isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
-
-                                                                    const Divider = idx !== rulesToRender.length - 1 ? <div key={`div-${r.id}`} className="w-6 h-[1.5px] bg-slate-200 my-1" /> : null;
-
-                                                                    return (
-                                                                        <div key={r.id} className={cn("flex flex-col items-center w-full bg-transparent py-0.5 relative animate-in fade-in zoom-in-95", isUpper ? "mb-0.5" : "mt-0.5")}>
-                                                                            {isUpper ? (
-                                                                                <>
-                                                                                    {RangeEl}
-                                                                                    {ItemContentEl}
-                                                                                </>
-                                                                            ) : (
-                                                                                <>
-                                                                                    {ItemContentEl}
-                                                                                    {RangeEl}
-                                                                                </>
-                                                                            )}
-                                                                            {Divider}
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        );
-                                                    };
-
-                                                    const toothIconColor = rules.length > 0 ? "#38bdf8" : "#e2e8f0"; 
-                                                    // ✨ 현재 치아에 있는 모든 룰이 체크되었는지 확인
-                                                    const isToothAllChecked = rules.length > 0 && rules.every(r => !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked));
-                                                    
-                                                    return (
-                                                        <div className="flex flex-col items-center w-12 shrink-0 z-10 relative">
-                                                            {isUpper && rules.length > 0 && <InfoBlock />}
-                                                            
-                                                            {/* ✨ 모든 룰이 체크되었다면 치아 아이콘 박스에도 opacity-40 적용 */}
-                                                            <div className={cn("relative w-10 h-10 flex items-center justify-center shrink-0 z-10 transition-colors", isUpper ? "mt-0.5" : "mb-0.5", isToothAllChecked && "opacity-40")}>
-                                                                                                                                <svg viewBox="0 0 24 24" fill="white" stroke={toothIconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="absolute inset-0 w-full h-full drop-shadow-sm transition-colors">
-                                                                    <path d="M12 5.5C10.5 3 8 2 5.5 3.5C3.5 4.5 2 7 2 10C2 14 4 18 5.5 20.5C6.5 22 8 22 9.5 20.5C10.5 19 11 17 12 15C13 17 13.5 19 14.5 20.5C16 22 17.5 22 18.5 20.5C20 18 22 14 22 10C22 7 20.5 4.5 18.5 3.5C16 2 13.5 3 12 5.5Z" />
-                                                                </svg>
-                                                                <span className="relative z-10 font-extrabold text-[12px] mb-1 transition-colors" style={{ color: toothIconColor }}>
-                                                                    {tooth}
-                                                                </span>
-                                                            </div>
-
-                                                            {!isUpper && rules.length > 0 && <InfoBlock />}
-                                                        </div>
-                                                    );
-                                                };
-
-                                                const urTeeth = [18, 17, 16, 15, 14, 13, 12, 11];
-                                                const ulTeeth = [21, 22, 23, 24, 25, 26, 27, 28];
-                                                const lrTeeth = [48, 47, 46, 45, 44, 43, 42, 41];
-                                                const llTeeth = [31, 32, 33, 34, 35, 36, 37, 38];
-
-                                                return (
-                                                    <>
-{/* 공통 룰 영역 (상단 모서리 밀착) */}
-<div className="absolute top-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
-    {maxRulesList.map((r: Rule) => {
-        const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
-        return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
-            })}
-    {genRulesList.map((r: Rule) => {
-        const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
-        return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
-            })}
-</div>
-
-                                                        {/* 상악 치아 배열 */}
-                                                        <div className="flex w-full items-end justify-center pb-2 z-10 flex-1">
-                                                            <div className="w-1/2 flex items-end justify-end space-x-5 pr-3">
-                                                                {urTeeth.map(num => {
-                                                                    const rules = activeRules.filter((r: Rule) => r.tooth === num);
-                                                                    if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                                    return <React.Fragment key={num}>{renderVerticalStack(rules, num, true)}</React.Fragment>;
-                                                                })}
-                                                            </div>
-                                                            <div className="w-1/2 flex items-end justify-start space-x-5 pl-3">
-                                                                {ulTeeth.map(num => {
-                                                                    const rules = activeRules.filter((r: Rule) => r.tooth === num);
-                                                                    if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                                    return <React.Fragment key={num}>{renderVerticalStack(rules, num, true)}</React.Fragment>;
-                                                                })}
-                                                            </div>
-                                                        </div>
-
-                                                        {/* 가로 십자선 */}
-                                                        <div className="w-[90%] h-[2px] bg-slate-300 shrink-0 z-0 my-2 rounded-full" />
-
-                                                        {/* 하악 치아 배열 */}
-                                                        <div className="flex w-full items-start justify-center pt-2 z-10 flex-1">
-                                                            <div className="w-1/2 flex items-start justify-end space-x-5 pr-3">
-                                                                {lrTeeth.map(num => {
-                                                                    const rules = activeRules.filter((r: Rule) => r.tooth === num);
-                                                                    if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                                    return <React.Fragment key={num}>{renderVerticalStack(rules, num, false)}</React.Fragment>;
-                                                                })}
-                                                            </div>
-                                                            <div className="w-1/2 flex items-start justify-start space-x-5 pl-3">
-                                                                {llTeeth.map(num => {
-                                                                    const rules = activeRules.filter((r: Rule) => r.tooth === num);
-                                                                    if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                                    return <React.Fragment key={num}>{renderVerticalStack(rules, num, false)}</React.Fragment>;
-                                                                })}
-                                                            </div>
-                                                        </div>
-
-{/* 하악 공통 룰 */}
-<div className="absolute bottom-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
-    {manRulesList.map((r: Rule) => {
-        const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
-        return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
-            })}
-</div>
-                                                    </>
-                                                );
-                                            })()}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                     ) : (
-                            
-                            <>
-                                <div className="flex justify-between items-center mb-4 gap-2 sticky top-4 z-50 bg-white/95 backdrop-blur p-2 border shadow-sm rounded-lg overflow-x-auto no-scrollbar min-h-[64px] shrink-0">
-                                   <div className="flex items-center gap-2 min-w-max">
-                                       <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('select')} className={cn(currentTool === 'select' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Select"><MousePointer2 className="w-4 h-4"/></Button>
-                                       <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                                       <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('draw')} className={cn(currentTool === 'draw' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Pen"><PenTool className="w-4 h-4"/></Button>
-                                       <Button variant={currentTool === 'highlighter' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('highlighter')} className={cn(currentTool === 'highlighter' && "bg-yellow-100 text-yellow-600 ring-2 ring-yellow-500")} title="Highlighter"><Highlighter className="w-4 h-4"/></Button>
-                                       <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('eraser')} className={cn(currentTool === 'eraser' && "bg-pink-100 text-pink-600 ring-2 ring-pink-500")} title="Eraser"><Eraser className="w-4 h-4"/></Button>
-                                       <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('line')} className={cn(currentTool === 'line' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
-                                       <Button variant={currentTool === 'rect' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('rect')} className={cn(currentTool === 'rect' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Rectangle"><Square className="w-4 h-4"/></Button>
-                                       <Button variant={currentTool === 'circle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('circle')} className={cn(currentTool === 'circle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Circle"><Circle className="w-4 h-4"/></Button>
-                                       <Button variant={currentTool === 'triangle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('triangle')} className={cn(currentTool === 'triangle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Triangle"><Triangle className="w-4 h-4"/></Button>
-                                       <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                                       <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('text')} className={cn(currentTool === 'text' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Text"><Type className="w-4 h-4"/></Button>
-                                       
-                                       <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-                                       <Button variant="ghost" size="icon" onClick={() => !isImageUploading && fileInputRef.current?.click()} title="Add Image" disabled={isImageUploading}>
-                                           {isImageUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <ImageIcon className="w-4 h-4"/>}
-                                       </Button>
-
-                                       {selectedIds.length === 1 && items.find(i => i.id === selectedIds[0])?.type === 'image' && (
-                                           <>
-                                              <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                                              <Button variant={cropModeId === selectedIds[0] ? 'secondary' : 'ghost'} size="sm" 
-                                                  onClick={() => setCropModeId(cropModeId === selectedIds[0] ? null : selectedIds[0])} 
-                                                  className={cn("h-8 gap-1", cropModeId === selectedIds[0] && "bg-green-100 text-green-700 ring-2 ring-green-500")}>
-                                                  <Crop className="w-3.5 h-3.5"/> 자르기
-                                              </Button>
-                                              {cropModeId === selectedIds[0] && (
-                                                  <Button variant="outline" size="sm" onClick={() => handleResetCrop()} className="h-8 gap-1 border-orange-200 text-orange-600 hover:bg-orange-50 ml-1">
-                                                      <RotateCcw className="w-3.5 h-3.5"/> 원본 복원
-                                                  </Button>
-                                              )}
-                                           </>
-                                       )}
-                                       
-                                       {(isTextSelected || isShapeSelected) && (
-                                          <div className="flex items-center gap-2 border px-2 py-1 rounded bg-slate-50 ml-2 shrink-0">
-                                             <div className="flex flex-col items-center gap-0.5">
-                                                 <span className="text-[8px] font-bold text-slate-400">Color</span>
-                                                 <input type="color" value={styleSettings.strokeColor} onChange={(e) => handleStyleChange('strokeColor', e.target.value)} className="w-5 h-5 p-0 border-0 rounded cursor-pointer" title="Color"/>
-                                             </div>
-                                             
-                                             {isShapeSelected && (['rect', 'circle', 'triangle'].includes(currentTool) || (currentTool === 'select' && items.some(i => selectedIds.includes(i.id) && ['rect', 'circle', 'triangle'].includes(i.type)))) && (
-                                                 <div className="flex flex-col items-center gap-0.5">
-                                                     <span className="text-[8px] font-bold text-slate-400">Fill</span>
-                                                     <div className="relative w-5 h-5">
-                                                         <input type="color" value={styleSettings.fillColor === 'transparent' ? '#ffffff' : styleSettings.fillColor} onChange={(e) => handleStyleChange('fillColor', e.target.value)} className="w-full h-full p-0 border-0 rounded cursor-pointer" />
-                                                         <button onClick={() => handleStyleChange('fillColor', 'transparent')} className="absolute -top-3 -right-2 bg-white border rounded-[2px] text-[8px] px-0.5" title="Transparent">X</button>
-                                                     </div>
-                                                 </div>
-                                             )}
-
-                                             {isShapeSelected && (
-                                                 <div className="flex flex-col items-center w-16">
-                                                     <span className="text-[8px] font-bold text-slate-400">Width: {styleSettings.strokeWidth}</span>
-                                                     <input type="range" min="1" max="50" value={styleSettings.strokeWidth} onChange={(e) => handleStyleChange('strokeWidth', Number(e.target.value))} className="w-full accent-blue-600 h-1.5" />
-                                                 </div>
-                                             )}
-
-                                             {isTextSelected && (
-                                                 <div className="flex flex-col items-center w-16">
-                                                     <span className="text-[8px] font-bold text-slate-400">Size</span>
-                                                     <input 
-                                                         type="number" 
-                                                         min="10" 
-                                                         max="150" 
-                                                         value={styleSettings.fontSize} 
-                                                         onChange={(e) => handleStyleChange('fontSize', Number(e.target.value))} 
-                                                         onWheel={(e) => {
-                                                          e.preventDefault(); 
-                                                          const delta = e.deltaY < 0 ? 1 : -1;
-                                                          handleStyleChange('fontSize', Math.max(10, Math.min(150, styleSettings.fontSize + delta)));
-                                                      }}                                           className="w-12 h-6 text-center text-xs font-bold border rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" 
-                                                         title="Font Size (Scroll to adjust)"
-                                                     />
-                                                 </div>
-                                             )}
-                                          </div>
-                                       )}
-                                   </div>
-                                   
-                                   <div className="flex gap-2 items-center min-w-max ml-auto">
-                                      <div className="relative">
-                                            <Button variant="ghost" size="icon" onClick={() => setIsEditMenuOpen(!isEditMenuOpen)} title="Edit Menu"><ChevronDown className="w-4 h-4"/></Button>
-                                            {isEditMenuOpen && (
-                                                <div className="absolute right-0 top-full mt-1 bg-white border shadow-lg rounded-lg p-1 flex flex-col gap-1 z-50 min-w-[140px] animate-in fade-in zoom-in-95" onClick={() => setIsEditMenuOpen(false)}>
-                                                    <div className="text-[10px] font-bold text-slate-400 px-2 py-1">CLIPBOARD</div>
-                                                    <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleCopy} disabled={selectedIds.length === 0}><Copy className="w-3.5 h-3.5"/> Copy</button>
-                                                    <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handlePaste} disabled={clipboard.length === 0}><Clipboard className="w-3.5 h-3.5"/> Paste</button>
-                                                    <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleDuplicate} disabled={selectedIds.length === 0}><Plus className="w-3.5 h-3.5"/> Duplicate</button>
+                                            {rule.imageUrl && (
+                                                <div className="drop-shadow-md shrink-0 ml-0.5 -translate-y-[2px]" title="Reference Image">
+                                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="#ef4444" stroke="#991b1b" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
+                                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                                    </svg>
                                                 </div>
                                             )}
-                                       </div>
-                                       <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                                       <Button variant="ghost" size="icon" onClick={handleUndo} title="Undo (Ctrl+Z)"><Undo className="w-4 h-4"/></Button>
-                                       <Button variant="ghost" size="icon" onClick={handleRedo} title="Redo (Ctrl+Y)"><Redo className="w-4 h-4"/></Button>
-                                      
-                                      {selectedIds.length > 0 && (
-                                          <>
-                                              <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                                              <Button variant="ghost" size="sm" onClick={() => moveLayer('up')} title="Bring Forward"><BringToFront className="w-4 h-4"/></Button>
-                                              <Button variant="ghost" size="sm" onClick={() => moveLayer('down')} title="Send Backward"><SendToBack className="w-4 h-4"/></Button>
-                                              <Button variant="ghost" size="sm" onClick={deleteSelectedItems} className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4"/></Button>
-                                          </>
-                                      )}
-                                      <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                                      <Button variant="ghost" size="sm" onClick={clearPenLayer} className="text-slate-500">Clear Pen</Button>
-                                      <Button variant="ghost" size="sm" onClick={clearAll} className="text-red-400">Clear All</Button>
-                                   </div>
-                               </div>
+                                        </div>
+                                    </div>
+                                    <span className={cn("text-[11px] font-mono font-extrabold tracking-tighter", isActive ? "text-[#2563eb]" : "text-slate-500")}>
+                                        ({rule.startStep}-{rule.endStep})
+                                    </span>                                                        
+                                </div>
+                                {rule.note && (
+                                    <div className="text-[11px] font-bold text-slate-500 px-1 whitespace-pre-wrap break-words leading-tight mt-0.5">
+                                        {rule.note}
+                                    </div>
+                                )}
+                                <div className="h-[5px] w-full bg-slate-100 rounded-full mt-0.5 relative overflow-hidden border border-slate-200/50">                                                            
+                                    <div 
+                                        className="absolute h-full rounded-full transition-all"
+                                        style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, backgroundColor: itemColor }}
+                                    />
+                                </div>
+                            </div>
+                        );
+                    });                                        
+                })()}
+            </div>
+        </div>
 
-                               <div className={cn("flex-1 relative bg-slate-50 overflow-hidden select-none", 
-                                   ['draw', 'highlighter', 'line', 'rect', 'circle', 'triangle'].includes(currentTool) && "cursor-crosshair", 
-                                   currentTool === 'eraser' && "cursor-cell", 
-                                   currentTool === 'text' && "cursor-text", 
-                                   currentTool === 'select' && "cursor-default",
-                                   currentTool === 'sticker' && "cursor-crosshair"
-                                 )} 
-                                 ref={containerRef} 
-                                 onMouseDown={handleMouseDown} 
-                                 onMouseMove={handleMouseMove} 
-                                 onMouseUp={handleMouseUp} 
-                                 onDragOver={handleDrop} 
-                                 onDrop={handleDrop}>
-                                    
-                                    {items.map((item) => {
-                                        if (textInput && textInput.id === item.id) return null;
-                                        const isSelected = selectedIds.includes(item.id);
-                                        const showResizeHandles = isSelected && selectedIds.length === 1 && cropModeId !== item.id; 
-                                        const showCropHandles = cropModeId === item.id && item.type === 'image'; 
-                                        const commonStyle: React.CSSProperties = { left: item.x, top: item.y, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' };
-                                        
-                                        const renderResizeHandles = () => {
-                                           if (!showResizeHandles || currentTool !== 'select') return null;
-                                           const handles = [ { pos: 'nw', style: { top: -4, left: -4, cursor: 'nw-resize' } }, { pos: 'n', style: { top: -4, left: '50%', transform: 'translateX(-50%)', cursor: 'n-resize' } }, { pos: 'ne', style: { top: -4, right: -4, cursor: 'ne-resize' } }, { pos: 'e', style: { top: '50%', right: -4, transform: 'translateY(-50%)', cursor: 'e-resize' } }, { pos: 'se', style: { bottom: -4, right: -4, cursor: 'se-resize' } }, { pos: 's', style: { bottom: -4, left: '50%', transform: 'translateX(-50%)', cursor: 's-resize' } }, { pos: 'sw', style: { bottom: -4, left: -4, cursor: 'sw-resize' } }, { pos: 'w', style: { top: '50%', left: -4, transform: 'translateY(-50%)', cursor: 'w-resize' } } ];
-                                           return handles.map(h => ( <div key={h.pos} className="absolute w-2.5 h-2.5 bg-white border border-blue-500 z-50" style={h.style} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} /> ));
-                                        };
+{/* ✨ 핵심 수정: 6번 사진 전체 테두리 효과를 위해 최외곽을 묶고 isStepAllChecked를 계산합니다. */}
+{(() => {
+            const currentRules = safeRules.filter((r: Rule) => smartStage >= r.startStep && smartStage <= r.endStep);
+            const isStepAllChecked = currentRules.length > 0 && currentRules.every((r: Rule) => !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked));
 
-                                         const renderCropHandles = () => {
-                                            if (!showCropHandles || currentTool !== 'select') return null;
-                                            const crops = [ 
-                                                { pos: 'crop-t', area: { top: -6, left: 0, right: 0, height: 12, cursor: 'ns-resize' }, mark: { top: -3, left: '50%', transform: 'translateX(-50%)', width: 24, height: 6 } }, 
-                                                { pos: 'crop-b', area: { bottom: -6, left: 0, right: 0, height: 12, cursor: 'ns-resize' }, mark: { bottom: -3, left: '50%', transform: 'translateX(-50%)', width: 24, height: 6 } }, 
-                                                { pos: 'crop-l', area: { top: 0, bottom: 0, left: -6, width: 12, cursor: 'ew-resize' }, mark: { top: '50%', left: -3, transform: 'translateY(-50%)', width: 6, height: 24 } }, 
-                                                { pos: 'crop-r', area: { top: 0, bottom: 0, right: -6, width: 12, cursor: 'ew-resize' }, mark: { top: '50%', right: -3, transform: 'translateY(-50%)', width: 6, height: 24 } } 
-                                            ];
-                                            return (
-                                                <>
-                                                    <div className="absolute inset-0 border-[3px] border-green-500 pointer-events-none z-40" />
-                                                    {crops.map(h => ( 
-                                                        <React.Fragment key={h.pos}>
-                                                            <div className="absolute z-50 bg-transparent" style={h.area} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} title="Drag to crop" />
-                                                            <div className="absolute bg-green-500 border border-white z-40 rounded-sm pointer-events-none shadow-sm" style={h.mark} />
-                                                        </React.Fragment>
-                                                    ))}
-                                                </>
-                                            );
-                                         }
-                                         
-                                         if (item.type === 'image') { 
-                                            const cl = item.cropL || 0, cr = item.cropR || 0, ct = item.cropT || 0, cb = item.cropB || 0;
-                                            return ( 
-                                                <div key={item.id} className={cn("absolute", isSelected && cropModeId !== item.id && "ring-1 ring-blue-500")} style={{ ...commonStyle, width: item.width, height: item.height, overflow: 'hidden' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
-                                                    <img src={item.src} className="pointer-events-none" style={{ position: 'absolute', left: -cl, top: -ct, width: item.width! + cl + cr, height: item.height! + ct + cb, maxWidth: 'none' }} />
-                                                    {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
-                                                    {renderResizeHandles()} 
-                                                    {renderCropHandles()} 
-                                                </div> 
-                                            ); 
-                                         } 
-                                         if (item.type === 'text') { 
-                                            return ( 
-                                                <div key={item.id} className={cn("absolute px-1 border border-transparent group", isSelected && "border-blue-500")} 
-                                             style={{ 
-                                                 ...commonStyle, color: item.strokeColor || item.color, fontSize: `${item.size || 20}px`, fontWeight: 'bold', lineHeight: '1.2',
-                                                 width: item.width ? `${item.width}px` : 'max-content', 
-                                                 height: item.height || 'auto',
-                                                 whiteSpace: item.width ? 'pre-wrap' : 'pre'
-                                             }} 
-                                             onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} 
-                                             onContextMenu={(e) => handleItemContextMenu(e, item.id)} 
-                                             onDoubleClick={(e) => { 
-                                                 e.preventDefault(); e.stopPropagation(); 
-                                                 setStyleSettings(prev => ({ ...prev, strokeColor: item.color || item.strokeColor || "#000", fontSize: item.size || 20 }));
-                                                 setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width, height: item.height }); 
-                                                 setCurrentTool('text');
-                                             }}> 
-                                            {item.text} 
-                                            {item.text?.includes('http') && <div className="absolute -top-4 right-0 text-[9px] bg-black/60 text-white px-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap">Ctrl+Click to open link</div>} 
-                                            {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
-                                            {renderResizeHandles()} 
-                                        </div> 
-                                    ); 
-                                }                                 
-                                if (item.type === 'sticker') { 
-                                     return ( 
-                                         <div key={item.id} className={cn("absolute flex items-center justify-center rounded-full", isSelected && "ring-1 ring-blue-500")} 
-                                              style={{ ...commonStyle, width: item.width, height: item.height, backgroundColor: 'transparent', color: item.color, fontSize: `${item.size}px`, fontWeight: '900', textShadow: '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff' }} 
-                                              onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
-                                             {item.text} 
-                                             {renderResizeHandles()} 
-                                         </div> 
-                                     ); 
-                                 }
-                                 if (item.type === 'line') { 
-                                     return ( 
-                                         <svg key={item.id} className="absolute overflow-visible" style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}> 
-                                             <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.strokeWidth || item.size || 3, 20)} className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} /> 
-                                             <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={isSelected ? "#3b82f6" : (item.strokeColor || item.color)} strokeWidth={item.strokeWidth || item.size} className={cn(currentTool === 'select' ? "pointer-events-none" : "")} /> 
-                                             {showResizeHandles && currentTool === 'select' && ( <> <circle cx={item.x} cy={item.y} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'start')} /> <circle cx={item.x2} cy={item.y2} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'end')} /> </> )} 
-                                         </svg> 
-                                     ); 
-                                 }
-                                 if (['rect', 'circle', 'triangle'].includes(item.type)) { 
-                                     return ( 
-                                         <div key={item.id} className="absolute" style={{ left: item.x, top: item.y, width: item.width, height: item.height, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
-                                             <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible"> 
-                                                 {item.type === 'rect' && <rect x="0" y="0" width="100" height="100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
-                                                 {item.type === 'circle' && <ellipse cx="50" cy="50" rx="50" ry="50" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
-                                                 {item.type === 'triangle' && <polygon points="50,0 0,100 100,100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
-                                             </svg> 
-                                             {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
-                                             {renderResizeHandles()} 
-                                         </div> 
-                                     ); 
-                                 }
-                             })}
-                             {selectionBox && ( <div className="absolute border border-blue-500 bg-blue-200/30 z-[9999] pointer-events-none" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.w, height: selectionBox.h }} /> )}
-                             <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", (['draw', 'eraser', 'highlighter'].includes(currentTool)) ? "pointer-events-auto" : "pointer-events-none")} />
-                             
-                             {textInput && ( 
-                                 <textarea 
-                                     id="active-text-editor"
-                                     autoFocus 
-                                     defaultValue={textInput.value}
-                                     className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden select-text pointer-events-auto" 
-                                     style={{ 
-                                         left: textInput.x, top: textInput.y, 
-                                         width: textInput.width ? `${textInput.width}px` : 'auto', minWidth: '20px', 
-                                         color: styleSettings.strokeColor, fontSize: `${styleSettings.fontSize || 20}px`, 
-                                         fontWeight: "bold", minHeight: textInput.height ? `${textInput.height}px` : "auto", lineHeight: '1.2',
-                                         whiteSpace: textInput.width ? 'pre-wrap' : 'pre'
-                                     }} 
-                                     ref={(el) => {
-                                         if (el) {
-                                             el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px';
-                                             if (!textInput.width) { el.style.width = 'auto'; el.style.width = (el.scrollWidth + 10) + 'px'; }
-                                         }
-                                     }}
-                                     onMouseDown={(e) => e.stopPropagation()} 
-                                     onInput={(e) => {
-                                         e.currentTarget.style.height = 'auto'; e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px'; 
-                                         if (!textInput.width) { e.currentTarget.style.width = 'auto'; e.currentTarget.style.width = (e.currentTarget.scrollWidth + 10) + 'px'; }
-                                     }} 
-                                     onKeyDown={(e) => { 
-                                         e.stopPropagation();
-                                         if (e.key === 'Enter' && !e.shiftKey) { 
-                                             e.preventDefault(); 
-                                             if(!e.nativeEvent.isComposing) confirmText(); 
-                                         } 
-                                     }} 
-                                 /> 
-                             )}
-                             {contextMenu && (
-                                 <>
-                                     <div className="fixed inset-0 z-[10000]" onMouseDown={(e) => { e.stopPropagation(); setContextMenu(null); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu(null); }} />
-                                     <div className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[120px] animate-in fade-in zoom-in-95 duration-100" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(e) => e.stopPropagation()}> 
-                                         {items.find(i => i.id === contextMenu.itemId)?.type === 'image' && (
-                                             <button className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-b" onClick={() => { setCropModeId(contextMenu.itemId); setContextMenu(null); }}> 
-                                                 <Crop className="w-4 h-4"/> Crop 
-                                             </button> 
-                                         )}
-                                         <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2" onClick={handleDeleteFromMenu}> 
-                                             <Trash2 className="w-4 h-4"/> Delete 
-                                         </button> 
-                                     </div> 
-                                 </>
-                             )}
-                             {items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
-                                 </div>
-                            </>
+            return (
+                <div className={cn(
+                    "flex-1 flex flex-col rounded-xl relative h-full overflow-hidden transition-all duration-500",
+                    // ✨ 굵기 변화(border-[3px])를 없애 화면 꿀렁임을 차단하고, 현재 단계 박스와 동일한 ring 효과 적용!
+                    isStepAllChecked ? "bg-[#fcfcfc] border border-green-500 ring-[3px] ring-green-100 shadow-[inset_0_0_20px_rgba(220,252,231,0.5)]" : "bg-[#fcfcfc] border border-slate-200 shadow-[inset_0_2px_20px_rgba(0,0,0,0.02)]"
+                )}>
+                    
+                    <div className={cn(
+                        "p-4 border-b bg-white/95 backdrop-blur flex flex-col items-center justify-center shrink-0 z-30 shadow-sm transition-colors duration-500",
+                        isStepAllChecked ? "border-green-500" : "border-slate-200"
+                    )}>
+                                                <div className="flex items-center justify-center gap-4 w-full relative">
+
+                            {/* ✨ NEW: ALL (전체 보기) 토글 버튼 */}
+                            <button
+                                onClick={() => {
+                                    const next = !isAllView;
+                                    setIsAllView(next);
+                                    if (next) {
+                                        const uniqueTypes = Array.from(new Set(safeRules.map((r: Rule) => r.type))) as string[];
+                                        setActiveFilters(uniqueTypes);
+                                    }
+                                }}
+                                className={cn(
+                                    "px-5 py-1.5 rounded-full font-extrabold text-sm transition-all border-[1.5px] shadow-sm tracking-wide",
+                                    isAllView 
+                                        ? "bg-[#2563eb] text-white border-[#2563eb] ring-[3px] ring-[#dbeafe]" 
+                                        : "bg-white text-slate-500 border-slate-200 hover:border-[#2563eb] hover:text-[#2563eb]"
+                                )}
+                            >
+                                ALL
+                            </button>
+
+{/* 슬라이더 컨트롤 (ALL 모드 켜지면 조작 금지) - ❌ 불필요한 IIFE 제거, 원본 구조 복원 완료 */}
+<div className={cn(
+                                "px-3 py-1.5 bg-white border-[1.5px] rounded-full shadow-sm ring-[3px] flex items-center gap-3 transition-all duration-500",
+                                isAllView && "opacity-40 pointer-events-none",
+                                isStepAllChecked ? "border-green-500 ring-green-100" : "border-[#2563eb] ring-[#dbeafe]"
+                            )}>
+                                <button onClick={() => setSmartStage(p => Math.max(0, p - 1))} className={cn("rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors", isStepAllChecked ? "text-green-600 hover:bg-green-50" : "text-[#2563eb] hover:text-blue-700 hover:bg-blue-50")}>&lt;</button>
+                                <span className={cn("font-bold text-sm tracking-wide flex items-center gap-1 transition-colors duration-500", isStepAllChecked ? "text-green-600" : "text-[#2563eb]")}>
+                                    {isStepAllChecked && <CheckCheck className="w-4 h-4 mr-0.5 animate-in zoom-in" />}
+                                    현재 단계: 
+                                    <input 
+                                        type="number" 
+                                        value={smartStage}
+                                        onChange={(e) => {
+                                            let val = parseInt(e.target.value);
+                                            if (!isNaN(val)) setSmartStage(Math.max(0, Math.min(totalSteps, val)));
+                                        }}
+                                        className={cn("w-8 text-center bg-transparent border-b-2 outline-none appearance-none ml-1 hide-arrows transition-colors duration-500", isStepAllChecked ? "border-green-500/30 focus:border-green-500" : "border-[#2563eb]/30 focus:border-[#2563eb]")}
+                                        style={{ WebkitAppearance: 'none', margin: 0 }}
+                                    />
+                                    <span className="opacity-70">/ {totalSteps}</span>
+                                </span>
+                                <button onClick={() => setSmartStage(p => Math.min(totalSteps, p + 1))} className={cn("rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors", isStepAllChecked ? "text-green-600 hover:bg-green-50" : "text-[#2563eb] hover:text-blue-700 hover:bg-blue-50")}>&gt;</button>
+                                
+                                {/* ✨ NEW: 여기에 요청하신 '전체 체크' 버튼이 추가되었습니다! */}
+                                <div className={cn("w-px h-4 mx-0.5", isStepAllChecked ? "bg-green-200" : "bg-blue-200")}></div>
+                                <button 
+                                    onClick={() => store?.checkAllInStep(patient.id, smartStage)} 
+                                    className={cn("p-1 rounded-md transition-colors", isStepAllChecked ? "text-green-600 hover:bg-green-50" : "text-[#2563eb] hover:bg-blue-50")}
+                                    title="현재 단계 전체 체크"
+                                >
+                                    <CheckSquare className="w-4 h-4" />
+                                </button>
+                            </div>
+                            
+                            {/* ✨ NEW: 우측 끝에 붙는 세련된 슬라이드 토글 스위치 */}
+                            {!isAllView && (
+                                <div 
+                                    className="absolute right-4 flex items-center gap-2 cursor-pointer group animate-in fade-in" 
+                                    onClick={() => setShowCheckedStatus(!showCheckedStatus)}
+                                >
+                                    <span className={cn("text-[11px] font-bold transition-colors duration-300", showCheckedStatus ? "text-green-600" : "text-slate-400")}>
+                                        완료 표시
+                                    </span>
+                                    <div className={cn(
+                                        "w-12 h-5 rounded-full p-1 transition-colors duration-300 ease-in-out relative flex items-center shadow-inner overflow-hidden",
+                                        showCheckedStatus ? "bg-green-500" : "bg-slate-200"
+                                    )}>
+                                        <span className={cn("absolute left-1.5 text-[9px] font-extrabold text-white transition-opacity duration-300", showCheckedStatus ? "opacity-100" : "opacity-0")}>ON</span>
+                                        <span className={cn("absolute right-1 text-[9px] font-extrabold text-slate-400 transition-opacity duration-300", showCheckedStatus ? "opacity-0" : "opacity-100")}>OFF</span>
+                                        <div 
+                                            className="bg-white w-3.5 h-3.5 rounded-full shadow-sm transform transition-transform duration-300 ease-in-out z-10"
+                                            style={{ transform: showCheckedStatus ? 'translateX(26px)' : 'translateX(0px)' }} 
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className={cn("relative w-full max-w-[75%] pt-4 group transition-all", isAllView ? "pb-0 opacity-0 h-0 overflow-hidden pointer-events-none" : "pb-4 opacity-100")}>
+                            <input 
+                                type="range" 
+                                min="0" max={totalSteps} 
+                                value={smartStage} 
+                                onChange={(e) => setSmartStage(Number(e.target.value))}
+                                className="w-full h-[2.5px] bg-slate-200 rounded-full appearance-none cursor-pointer relative z-20 accent-[#2563eb] group-hover:accent-[#1d4ed8] transition-all" 
+                            />                                            
+                            <div className="absolute top-[22px] left-0 w-full flex justify-between px-[1px] pointer-events-none z-10">
+                                {Array.from({ length: totalSteps + 1 }).map((_, i) => {
+                                    const stepNum = i;
+                                    const isMajorTick = stepNum % 5 === 0 || stepNum === totalSteps;
+                                    return (
+                                        <div key={i} className="flex flex-col items-center relative" style={{ width: '0px' }}>
+                                            <div className={cn("w-[1px] bg-slate-300 rounded-full", isMajorTick ? "h-[6px]" : "h-[3px]")} />
+                                            {isMajorTick && (
+                                                <span className="text-[10px] text-slate-400 font-medium mt-1 absolute translate-y-[8px] whitespace-nowrap">{stepNum}</span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div> 
+
+                        {isAllView && (
+                            <div className="w-full max-w-[75%] flex flex-wrap items-center justify-center gap-2 pt-3 animate-in fade-in slide-in-from-top-2">
+                                
+                                {/* ✨ 스마트 전체 선택/해제 버튼 */}
+                                <button
+                                    onClick={() => setActiveFilters(activeFilters.length > 0 ? [] : Array.from(new Set(safeRules.map((r: Rule) => r.type))) as string[])}
+                                    className="flex items-center gap-1 px-3 py-1 text-[11px] font-extrabold rounded-md transition-all border-[1.5px] border-slate-300 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-700 shadow-sm"
+                                >
+                                    {activeFilters.length > 0 ? <><X className="w-3 h-3"/> 전체 해제</> : <><CheckCheck className="w-3 h-3"/> 전체 선택</>}
+                                </button>
+
+                                <div className="w-px h-4 bg-slate-300 mx-1"></div> {/* 시각적 구분선 */}
+
+                                {/* 개별 컬러 필터 버튼들 */}
+                                {Array.from(new Set(safeRules.map((r: Rule) => r.type))).map(type => {
+                                    const isFilterActive = activeFilters.includes(type as string);
+                                    const color = getExpertTypeColor(type as string);
+                                    return (
+                                        <button
+                                            key={type as string}
+                                            onClick={() => setActiveFilters(p => p.includes(type as string) ? p.filter(t => t !== type) : [...p, type as string])}
+                                            className={cn(
+                                                "px-3 py-1 text-[11px] font-extrabold rounded-md transition-all border-[1.5px]",
+                                                isFilterActive ? "shadow-sm scale-100" : "bg-transparent hover:bg-slate-50 opacity-60 hover:opacity-100 scale-[0.98]"
+                                            )}
+                                            style={{
+                                                backgroundColor: isFilterActive ? color : 'transparent',
+                                                borderColor: color,
+                                                color: isFilterActive ? 'white' : color,
+                                            }}
+                                        >
+                                            {getAbbreviation(type as string)}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         )}
+                    </div>
+
+                    {/* 💡 캔버스 스크롤 구역 - ❌ 원본 클래스 100% 복구 완료 (투명 테두리 삭제) */}
+                    <div className="flex-1 overflow-auto custom-scrollbar relative bg-[#fcfcfc]"> 
+
+                    <div className="w-full relative flex flex-col items-center justify-start min-w-[900px] min-h-full py-16 px-2">
+                        {/* 세로 십자선 */}
+                        <div className="absolute h-full w-[2px] bg-slate-300 top-0 left-1/2 -translate-x-1/2 z-0" />
+
+                        {(() => {
+                            // ✨ 수정: ALL 모드일 때는 켜져 있는 필터(activeFilters)만 화면에 그림!
+                            const activeRules = isAllView 
+                                ? safeRules.filter((r: Rule) => activeFilters.includes(r.type))
+                                : safeRules.filter((r: Rule) => smartStage >= r.startStep && smartStage <= r.endStep);
+
+                            const genRulesList = activeRules.filter((r: Rule) => r.tooth === 0);
+                            const maxRulesList = activeRules.filter((r: Rule) => r.tooth === 10);
+                            const manRulesList = activeRules.filter((r: Rule) => r.tooth === 30);
+
+                            const renderVerticalStack = (rules: Rule[], tooth: number, isUpper: boolean) => {
+                                const InfoBlock = () => {
+                                    const rulesToRender = isUpper ? [...rules].reverse() : rules;
+                                    return (
+                                        <div className={cn("flex flex-col w-12 px-0.5", isUpper ? "items-center justify-end" : "items-center justify-start")}>
+                                            {rulesToRender.map((r, idx) => {
+                                                const itemColor = getExpertTypeColor(r.type);
+                                                // ✨ 체크 여부 확인 (RangeEl보다 위로 올립니다)
+                                                const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
+
+                                                // ✨ 범위 텍스트에도 투명도/밑줄 적용
+                                                const RangeEl = (
+                                                    <div key={`range-${r.id}`} className={cn("text-[11px] font-mono font-extrabold tracking-tighter transition-all duration-300", isRuleChecked && "opacity-40 line-through")} style={{ color: `${itemColor}E6` }}>
+                                                        ({r.startStep}-{r.endStep})
+                                                    </div>
+                                                );
+
+                                                // ✨ 토글 함수 전달
+                                                const ItemContentEl = <InlineNoteEdit key={`item-content-${r.id}`} rule={r} store={store} patientId={patient.id} itemColor={itemColor} isUpper={isUpper} isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
+
+                                                const Divider = idx !== rulesToRender.length - 1 ? <div key={`div-${r.id}`} className="w-6 h-[1.5px] bg-slate-200 my-1" /> : null;
+
+                                                return (
+                                                    <div key={r.id} className={cn("flex flex-col items-center w-full bg-transparent py-0.5 relative animate-in fade-in zoom-in-95", isUpper ? "mb-0.5" : "mt-0.5")}>
+                                                        {isUpper ? (
+                                                            <>
+                                                                {RangeEl}
+                                                                {ItemContentEl}
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                {ItemContentEl}
+                                                                {RangeEl}
+                                                            </>
+                                                        )}
+                                                        {Divider}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                };
+
+                                const toothIconColor = rules.length > 0 ? "#38bdf8" : "#e2e8f0"; 
+                                // ✨ 현재 치아에 있는 모든 룰이 체크되었는지 확인
+                                const isToothAllChecked = rules.length > 0 && rules.every(r => !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked));
+                                
+                                return (
+                                    <div className="flex flex-col items-center w-12 shrink-0 z-10 relative">
+                                        {isUpper && rules.length > 0 && <InfoBlock />}
+                                        
+                                        {/* ✨ 모든 룰이 체크되었다면 치아 아이콘 박스에도 opacity-40 적용 */}
+                                        <div className={cn("relative w-10 h-10 flex items-center justify-center shrink-0 z-10 transition-colors", isUpper ? "mt-0.5" : "mb-0.5", isToothAllChecked && "opacity-40")}>
+                                            <svg viewBox="0 0 24 24" fill="white" stroke={toothIconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="absolute inset-0 w-full h-full drop-shadow-sm transition-colors">
+                                                <path d="M12 5.5C10.5 3 8 2 5.5 3.5C3.5 4.5 2 7 2 10C2 14 4 18 5.5 20.5C6.5 22 8 22 9.5 20.5C10.5 19 11 17 12 15C13 17 13.5 19 14.5 20.5C16 22 17.5 22 18.5 20.5C20 18 22 14 22 10C22 7 20.5 4.5 18.5 3.5C16 2 13.5 3 12 5.5Z" />
+                                            </svg>
+                                            <span className="relative z-10 font-extrabold text-[12px] mb-1 transition-colors" style={{ color: toothIconColor }}>
+                                                {tooth}
+                                            </span>
+                                        </div>
+
+                                        {!isUpper && rules.length > 0 && <InfoBlock />}
+                                    </div>
+                                );
+                            };
+
+                            const urTeeth = [18, 17, 16, 15, 14, 13, 12, 11];
+                            const ulTeeth = [21, 22, 23, 24, 25, 26, 27, 28];
+                            const lrTeeth = [48, 47, 46, 45, 44, 43, 42, 41];
+                            const llTeeth = [31, 32, 33, 34, 35, 36, 37, 38];
+
+                            return (
+                                <>
+                                    {/* 공통 룰 영역 (상단 모서리 밀착) */}
+                                    <div className="absolute top-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
+                                        {maxRulesList.map((r: Rule) => {
+                                            const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
+                                            return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
+                                                })}
+                                        {genRulesList.map((r: Rule) => {
+                                            const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
+                                            return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
+                                                })}
+                                    </div>
+
+                                    {/* 상악 치아 배열 */}
+                                    <div className="flex w-full items-end justify-center pb-2 z-10 flex-1">
+                                        <div className="w-1/2 flex items-end justify-end space-x-5 pr-3">
+                                            {urTeeth.map(num => {
+                                                const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
+                                                return <React.Fragment key={num}>{renderVerticalStack(rules, num, true)}</React.Fragment>;
+                                            })}
+                                        </div>
+                                        <div className="w-1/2 flex items-end justify-start space-x-5 pl-3">
+                                            {ulTeeth.map(num => {
+                                                const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
+                                                return <React.Fragment key={num}>{renderVerticalStack(rules, num, true)}</React.Fragment>;
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* 가로 십자선 */}
+                                    <div className="w-[90%] h-[2px] bg-slate-300 shrink-0 z-0 my-2 rounded-full" />
+
+                                    {/* 하악 치아 배열 */}
+                                    <div className="flex w-full items-start justify-center pt-2 z-10 flex-1">
+                                        <div className="w-1/2 flex items-start justify-end space-x-5 pr-3">
+                                            {lrTeeth.map(num => {
+                                                const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
+                                                return <React.Fragment key={num}>{renderVerticalStack(rules, num, false)}</React.Fragment>;
+                                            })}
+                                        </div>
+                                        <div className="w-1/2 flex items-start justify-start space-x-5 pl-3">
+                                            {llTeeth.map(num => {
+                                                const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
+                                                return <React.Fragment key={num}>{renderVerticalStack(rules, num, false)}</React.Fragment>;
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* 하악 공통 룰 */}
+                                    <div className="absolute bottom-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
+                                        {manRulesList.map((r: Rule) => {
+                                            const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
+                                            return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
+                                                })}
+                                    </div>
+                                </>
+                            );
+                        })()}
+                    </div>
+                </div>
+            </div>
+            );
+        })()}
+    </div>
+) : (
+    <>
+        <div className="flex justify-between items-center mb-4 gap-2 sticky top-4 z-50 bg-white/95 backdrop-blur p-2 border shadow-sm rounded-lg overflow-x-auto no-scrollbar min-h-[64px] shrink-0">
+           <div className="flex items-center gap-2 min-w-max">
+               <Button variant={currentTool === 'select' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('select')} className={cn(currentTool === 'select' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Select"><MousePointer2 className="w-4 h-4"/></Button>
+               <div className="w-px h-4 bg-slate-300 mx-1"></div>
+               <Button variant={currentTool === 'draw' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('draw')} className={cn(currentTool === 'draw' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Pen"><PenTool className="w-4 h-4"/></Button>
+               <Button variant={currentTool === 'highlighter' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('highlighter')} className={cn(currentTool === 'highlighter' && "bg-yellow-100 text-yellow-600 ring-2 ring-yellow-500")} title="Highlighter"><Highlighter className="w-4 h-4"/></Button>
+               <Button variant={currentTool === 'eraser' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('eraser')} className={cn(currentTool === 'eraser' && "bg-pink-100 text-pink-600 ring-2 ring-pink-500")} title="Eraser"><Eraser className="w-4 h-4"/></Button>
+               <Button variant={currentTool === 'line' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('line')} className={cn(currentTool === 'line' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Line"><Minus className="w-4 h-4 -rotate-45"/></Button>
+               <Button variant={currentTool === 'rect' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('rect')} className={cn(currentTool === 'rect' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Rectangle"><Square className="w-4 h-4"/></Button>
+               <Button variant={currentTool === 'circle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('circle')} className={cn(currentTool === 'circle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Circle"><Circle className="w-4 h-4"/></Button>
+               <Button variant={currentTool === 'triangle' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('triangle')} className={cn(currentTool === 'triangle' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Triangle"><Triangle className="w-4 h-4"/></Button>
+               <div className="w-px h-4 bg-slate-300 mx-1"></div>
+               <Button variant={currentTool === 'text' ? 'secondary' : 'ghost'} size="icon" onClick={() => changeTool('text')} className={cn(currentTool === 'text' && "bg-blue-100 text-blue-600 ring-2 ring-blue-500")} title="Text"><Type className="w-4 h-4"/></Button>
+               
+               <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+               <Button variant="ghost" size="icon" onClick={() => !isImageUploading && fileInputRef.current?.click()} title="Add Image" disabled={isImageUploading}>
+                   {isImageUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <ImageIcon className="w-4 h-4"/>}
+               </Button>
+
+               {selectedIds.length === 1 && items.find(i => i.id === selectedIds[0])?.type === 'image' && (
+                   <>
+                      <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                      <Button variant={cropModeId === selectedIds[0] ? 'secondary' : 'ghost'} size="sm" 
+                          onClick={() => setCropModeId(cropModeId === selectedIds[0] ? null : selectedIds[0])} 
+                          className={cn("h-8 gap-1", cropModeId === selectedIds[0] && "bg-green-100 text-green-700 ring-2 ring-green-500")}>
+                          <Crop className="w-3.5 h-3.5"/> 자르기
+                      </Button>
+                      {cropModeId === selectedIds[0] && (
+                          <Button variant="outline" size="sm" onClick={() => handleResetCrop()} className="h-8 gap-1 border-orange-200 text-orange-600 hover:bg-orange-50 ml-1">
+                              <RotateCcw className="w-3.5 h-3.5"/> 원본 복원
+                          </Button>
+                      )}
+                   </>
+               )}
+               
+               {(isTextSelected || isShapeSelected) && (
+                  <div className="flex items-center gap-2 border px-2 py-1 rounded bg-slate-50 ml-2 shrink-0">
+                     <div className="flex flex-col items-center gap-0.5">
+                         <span className="text-[8px] font-bold text-slate-400">Color</span>
+                         <input type="color" value={styleSettings.strokeColor} onChange={(e) => handleStyleChange('strokeColor', e.target.value)} className="w-5 h-5 p-0 border-0 rounded cursor-pointer" title="Color"/>
+                     </div>
+                     
+                     {isShapeSelected && (['rect', 'circle', 'triangle'].includes(currentTool) || (currentTool === 'select' && items.some(i => selectedIds.includes(i.id) && ['rect', 'circle', 'triangle'].includes(i.type)))) && (
+                         <div className="flex flex-col items-center gap-0.5">
+                             <span className="text-[8px] font-bold text-slate-400">Fill</span>
+                             <div className="relative w-5 h-5">
+                                 <input type="color" value={styleSettings.fillColor === 'transparent' ? '#ffffff' : styleSettings.fillColor} onChange={(e) => handleStyleChange('fillColor', e.target.value)} className="w-full h-full p-0 border-0 rounded cursor-pointer" />
+                                 <button onClick={() => handleStyleChange('fillColor', 'transparent')} className="absolute -top-3 -right-2 bg-white border rounded-[2px] text-[8px] px-0.5" title="Transparent">X</button>
+                             </div>
+                         </div>
+                     )}
+
+                     {isShapeSelected && (
+                         <div className="flex flex-col items-center w-16">
+                             <span className="text-[8px] font-bold text-slate-400">Width: {styleSettings.strokeWidth}</span>
+                             <input type="range" min="1" max="50" value={styleSettings.strokeWidth} onChange={(e) => handleStyleChange('strokeWidth', Number(e.target.value))} className="w-full accent-blue-600 h-1.5" />
+                         </div>
+                     )}
+
+                     {isTextSelected && (
+                         <div className="flex flex-col items-center w-16">
+                             <span className="text-[8px] font-bold text-slate-400">Size</span>
+                             <input 
+                                 type="number" 
+                                 min="10" 
+                                 max="150" 
+                                 value={styleSettings.fontSize} 
+                                 onChange={(e) => handleStyleChange('fontSize', Number(e.target.value))} 
+                                 onWheel={(e) => {
+                                  e.preventDefault(); 
+                                  const delta = e.deltaY < 0 ? 1 : -1;
+                                  handleStyleChange('fontSize', Math.max(10, Math.min(150, styleSettings.fontSize + delta)));
+                              }}                                           className="w-12 h-6 text-center text-xs font-bold border rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" 
+                                 title="Font Size (Scroll to adjust)"
+                             />
+                         </div>
+                     )}
+                  </div>
+               )}
+           </div>
+           
+           <div className="flex gap-2 items-center min-w-max ml-auto">
+              <div className="relative">
+                    <Button variant="ghost" size="icon" onClick={() => setIsEditMenuOpen(!isEditMenuOpen)} title="Edit Menu"><ChevronDown className="w-4 h-4"/></Button>
+                    {isEditMenuOpen && (
+                        <div className="absolute right-0 top-full mt-1 bg-white border shadow-lg rounded-lg p-1 flex flex-col gap-1 z-50 min-w-[140px] animate-in fade-in zoom-in-95" onClick={() => setIsEditMenuOpen(false)}>
+                            <div className="text-[10px] font-bold text-slate-400 px-2 py-1">CLIPBOARD</div>
+                            <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleCopy} disabled={selectedIds.length === 0}><Copy className="w-3.5 h-3.5"/> Copy</button>
+                            <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handlePaste} disabled={clipboard.length === 0}><Clipboard className="w-3.5 h-3.5"/> Paste</button>
+                            <button className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-100 rounded text-sm w-full text-left" onClick={handleDuplicate} disabled={selectedIds.length === 0}><Plus className="w-3.5 h-3.5"/> Duplicate</button>
+                        </div>
+                    )}
+               </div>
+               <div className="w-px h-4 bg-slate-300 mx-1"></div>
+               <Button variant="ghost" size="icon" onClick={handleUndo} title="Undo (Ctrl+Z)"><Undo className="w-4 h-4"/></Button>
+               <Button variant="ghost" size="icon" onClick={handleRedo} title="Redo (Ctrl+Y)"><Redo className="w-4 h-4"/></Button>
+              
+              {selectedIds.length > 0 && (
+                  <>
+                      <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                      <Button variant="ghost" size="sm" onClick={() => moveLayer('up')} title="Bring Forward"><BringToFront className="w-4 h-4"/></Button>
+                      <Button variant="ghost" size="sm" onClick={() => moveLayer('down')} title="Send Backward"><SendToBack className="w-4 h-4"/></Button>
+                      <Button variant="ghost" size="sm" onClick={deleteSelectedItems} className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4"/></Button>
+                  </>
+              )}
+              <div className="w-px h-4 bg-slate-300 mx-1"></div>
+              <Button variant="ghost" size="sm" onClick={clearPenLayer} className="text-slate-500">Clear Pen</Button>
+              <Button variant="ghost" size="sm" onClick={clearAll} className="text-red-400">Clear All</Button>
+           </div>
+       </div>
+
+       <div className={cn("flex-1 relative bg-slate-50 overflow-hidden select-none", 
+           ['draw', 'highlighter', 'line', 'rect', 'circle', 'triangle'].includes(currentTool) && "cursor-crosshair", 
+           currentTool === 'eraser' && "cursor-cell", 
+           currentTool === 'text' && "cursor-text", 
+           currentTool === 'select' && "cursor-default",
+           currentTool === 'sticker' && "cursor-crosshair"
+         )} 
+         ref={containerRef} 
+         onMouseDown={handleMouseDown} 
+         onMouseMove={handleMouseMove} 
+         onMouseUp={handleMouseUp} 
+         onDragOver={handleDrop} 
+         onDrop={handleDrop}>
+            
+            {items.map((item) => {
+                if (textInput && textInput.id === item.id) return null;
+                const isSelected = selectedIds.includes(item.id);
+                const showResizeHandles = isSelected && selectedIds.length === 1 && cropModeId !== item.id; 
+                const showCropHandles = cropModeId === item.id && item.type === 'image'; 
+                const commonStyle: React.CSSProperties = { left: item.x, top: item.y, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' };
+                
+                const renderResizeHandles = () => {
+                   if (!showResizeHandles || currentTool !== 'select') return null;
+                   const handles = [ { pos: 'nw', style: { top: -4, left: -4, cursor: 'nw-resize' } }, { pos: 'n', style: { top: -4, left: '50%', transform: 'translateX(-50%)', cursor: 'n-resize' } }, { pos: 'ne', style: { top: -4, right: -4, cursor: 'ne-resize' } }, { pos: 'e', style: { top: '50%', right: -4, transform: 'translateY(-50%)', cursor: 'e-resize' } }, { pos: 'se', style: { bottom: -4, right: -4, cursor: 'se-resize' } }, { pos: 's', style: { bottom: -4, left: '50%', transform: 'translateX(-50%)', cursor: 's-resize' } }, { pos: 'sw', style: { bottom: -4, left: -4, cursor: 'sw-resize' } }, { pos: 'w', style: { top: '50%', left: -4, transform: 'translateY(-50%)', cursor: 'w-resize' } } ];
+                   return handles.map(h => ( <div key={h.pos} className="absolute w-2.5 h-2.5 bg-white border border-blue-500 z-50" style={h.style} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} /> ));
+                };
+
+                 const renderCropHandles = () => {
+                    if (!showCropHandles || currentTool !== 'select') return null;
+                    const crops = [ 
+                        { pos: 'crop-t', area: { top: -6, left: 0, right: 0, height: 12, cursor: 'ns-resize' }, mark: { top: -3, left: '50%', transform: 'translateX(-50%)', width: 24, height: 6 } }, 
+                        { pos: 'crop-b', area: { bottom: -6, left: 0, right: 0, height: 12, cursor: 'ns-resize' }, mark: { bottom: -3, left: '50%', transform: 'translateX(-50%)', width: 24, height: 6 } }, 
+                        { pos: 'crop-l', area: { top: 0, bottom: 0, left: -6, width: 12, cursor: 'ew-resize' }, mark: { top: '50%', left: -3, transform: 'translateY(-50%)', width: 6, height: 24 } }, 
+                        { pos: 'crop-r', area: { top: 0, bottom: 0, right: -6, width: 12, cursor: 'ew-resize' }, mark: { top: '50%', right: -3, transform: 'translateY(-50%)', width: 6, height: 24 } } 
+                    ];
+                    return (
+                        <>
+                            <div className="absolute inset-0 border-[3px] border-green-500 pointer-events-none z-40" />
+                            {crops.map(h => ( 
+                                <React.Fragment key={h.pos}>
+                                    <div className="absolute z-50 bg-transparent" style={h.area} onMouseDown={(e) => handleResizeMouseDown(e, item, h.pos)} title="Drag to crop" />
+                                    <div className="absolute bg-green-500 border border-white z-40 rounded-sm pointer-events-none shadow-sm" style={h.mark} />
+                                </React.Fragment>
+                            ))}
+                        </>
+                    );
+                 }
+                 
+                 if (item.type === 'image') { 
+                    const cl = item.cropL || 0, cr = item.cropR || 0, ct = item.cropT || 0, cb = item.cropB || 0;
+                    return ( 
+                        <div key={item.id} className={cn("absolute", isSelected && cropModeId !== item.id && "ring-1 ring-blue-500")} style={{ ...commonStyle, width: item.width, height: item.height, overflow: 'hidden' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
+                            <img src={item.src} className="pointer-events-none" style={{ position: 'absolute', left: -cl, top: -ct, width: item.width! + cl + cr, height: item.height! + ct + cb, maxWidth: 'none' }} />
+                            {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
+                            {renderResizeHandles()} 
+                            {renderCropHandles()} 
+                        </div> 
+                    ); 
+                 } 
+                 if (item.type === 'text') { 
+                    return ( 
+                        <div key={item.id} className={cn("absolute px-1 border border-transparent group", isSelected && "border-blue-500")} 
+                     style={{ 
+                         ...commonStyle, color: item.strokeColor || item.color, fontSize: `${item.size || 20}px`, fontWeight: 'bold', lineHeight: '1.2',
+                         width: item.width ? `${item.width}px` : 'max-content', 
+                         height: item.height || 'auto',
+                         whiteSpace: item.width ? 'pre-wrap' : 'pre'
+                     }} 
+                     onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} 
+                     onContextMenu={(e) => handleItemContextMenu(e, item.id)} 
+                     onDoubleClick={(e) => { 
+                         e.preventDefault(); e.stopPropagation(); 
+                         setStyleSettings(prev => ({ ...prev, strokeColor: item.color || item.strokeColor || "#000", fontSize: item.size || 20 }));
+                         setTextInput({ id: item.id, x: item.x, y: item.y, value: item.text || "", width: item.width, height: item.height }); 
+                         setCurrentTool('text');
+                     }}> 
+                    {item.text} 
+                    {item.text?.includes('http') && <div className="absolute -top-4 right-0 text-[9px] bg-black/60 text-white px-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap">Ctrl+Click to open link</div>} 
+                    {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
+                    {renderResizeHandles()} 
+                </div> 
+            ); 
+        }                                 
+        if (item.type === 'sticker') { 
+             return ( 
+                 <div key={item.id} className={cn("absolute flex items-center justify-center rounded-full", isSelected && "ring-1 ring-blue-500")} 
+                      style={{ ...commonStyle, width: item.width, height: item.height, backgroundColor: 'transparent', color: item.color, fontSize: `${item.size}px`, fontWeight: '900', textShadow: '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff' }} 
+                      onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
+                     {item.text} 
+                     {renderResizeHandles()} 
+                 </div> 
+             ); 
+         }
+         if (item.type === 'line') { 
+             return ( 
+                 <svg key={item.id} className="absolute overflow-visible" style={{ left: 0, top: 0, width: '100%', height: '100%', zIndex: items.indexOf(item) + 1, pointerEvents: 'none' }}> 
+                     <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke="transparent" strokeWidth={Math.max(item.strokeWidth || item.size || 3, 20)} className={cn(currentTool === 'select' ? "pointer-events-auto cursor-move" : "")} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)} /> 
+                     <line x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={isSelected ? "#3b82f6" : (item.strokeColor || item.color)} strokeWidth={item.strokeWidth || item.size} className={cn(currentTool === 'select' ? "pointer-events-none" : "")} /> 
+                     {showResizeHandles && currentTool === 'select' && ( <> <circle cx={item.x} cy={item.y} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'start')} /> <circle cx={item.x2} cy={item.y2} r={5} fill="white" stroke="blue" strokeWidth={2} className="pointer-events-auto cursor-pointer" onMouseDown={(e) => handleResizeMouseDown(e, item, 'end')} /> </> )} 
+                 </svg> 
+             ); 
+         }
+         if (['rect', 'circle', 'triangle'].includes(item.type)) { 
+             return ( 
+                 <div key={item.id} className="absolute" style={{ left: item.x, top: item.y, width: item.width, height: item.height, zIndex: items.indexOf(item) + 1, pointerEvents: currentTool === 'select' ? 'auto' : 'none' }} onMouseDown={(e) => handleItemMouseDown(e, item, 'move')} onContextMenu={(e) => handleItemContextMenu(e, item.id)}> 
+                     <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible"> 
+                         {item.type === 'rect' && <rect x="0" y="0" width="100" height="100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
+                         {item.type === 'circle' && <ellipse cx="50" cy="50" rx="50" ry="50" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
+                         {item.type === 'triangle' && <polygon points="50,0 0,100 100,100" fill={item.fillColor || "transparent"} stroke={item.strokeColor || "#000"} strokeWidth={item.strokeWidth || 3} vectorEffect="non-scaling-stroke" />} 
+                     </svg> 
+                     {isSelected && selectedIds.length > 1 && <div className="absolute inset-0 border-2 border-blue-500 pointer-events-none"/>} 
+                     {renderResizeHandles()} 
+                 </div> 
+             ); 
+         }
+     })}
+     {selectionBox && ( <div className="absolute border border-blue-500 bg-blue-200/30 z-[9999] pointer-events-none" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.w, height: selectionBox.h }} /> )}
+     <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full touch-none z-[9999]", (['draw', 'eraser', 'highlighter'].includes(currentTool)) ? "pointer-events-auto" : "pointer-events-none")} />
+     
+     {textInput && ( 
+         <textarea 
+             id="active-text-editor"
+             autoFocus 
+             defaultValue={textInput.value}
+             className="absolute z-[10000] border-2 border-blue-500 bg-white/90 px-2 py-1 shadow-lg outline-none rounded resize-none overflow-hidden select-text pointer-events-auto" 
+             style={{ 
+                 left: textInput.x, top: textInput.y, 
+                 width: textInput.width ? `${textInput.width}px` : 'auto', minWidth: '20px', 
+                 color: styleSettings.strokeColor, fontSize: `${styleSettings.fontSize || 20}px`, 
+                 fontWeight: "bold", minHeight: textInput.height ? `${textInput.height}px` : "auto", lineHeight: '1.2',
+                 whiteSpace: textInput.width ? 'pre-wrap' : 'pre'
+             }} 
+             ref={(el) => {
+                 if (el) {
+                     el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px';
+                     if (!textInput.width) { el.style.width = 'auto'; el.style.width = (el.scrollWidth + 10) + 'px'; }
+                 }
+             }}
+             onMouseDown={(e) => e.stopPropagation()} 
+             onInput={(e) => {
+                 e.currentTarget.style.height = 'auto'; e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px'; 
+                 if (!textInput.width) { e.currentTarget.style.width = 'auto'; e.currentTarget.style.width = (e.currentTarget.scrollWidth + 10) + 'px'; }
+             }} 
+             onKeyDown={(e) => { 
+                 e.stopPropagation();
+                 if (e.key === 'Enter' && !e.shiftKey) { 
+                     e.preventDefault(); 
+                     if(!e.nativeEvent.isComposing) confirmText(); 
+                 } 
+             }} 
+         /> 
+     )}
+     {contextMenu && (
+         <>
+             <div className="fixed inset-0 z-[10000]" onMouseDown={(e) => { e.stopPropagation(); setContextMenu(null); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu(null); }} />
+             <div className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[120px] animate-in fade-in zoom-in-95 duration-100" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(e) => e.stopPropagation()}> 
+                 {items.find(i => i.id === contextMenu.itemId)?.type === 'image' && (
+                     <button className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-b" onClick={() => { setCropModeId(contextMenu.itemId); setContextMenu(null); }}> 
+                         <Crop className="w-4 h-4"/> Crop 
+                     </button> 
+                 )}
+                 <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2" onClick={handleDeleteFromMenu}> 
+                     <Trash2 className="w-4 h-4"/> Delete 
+                 </button> 
+             </div> 
+         </>
+     )}
+     {items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
+         </div>
+    </>
+)}
                       </div>
                    </div>
                </>
