@@ -286,11 +286,17 @@ const compressImage = async (file: File): Promise<Blob> => {
   });
 };
 
-// 상/하악을 구분해서 DOM 순서를 맞춰주는 만능 인라인 에디터 (Textarea 버전 & Portal 최상단 팝업)
+// ==========================================
+// 1. InlineNoteEdit 컴포넌트 교체
+// ==========================================
 const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked, onToggleCheck }: { rule: Rule, store: any, patientId: string, itemColor: string, isUpper?: boolean, isChecked?: boolean, onToggleCheck?: () => void }) => {    
     const [showPopup, setShowPopup] = useState(false); 
     const [isEditing, setIsEditing] = useState(false);
     const [tempNote, setTempNote] = useState("");
+    
+    // ✨ NEW: A안(전체 창 확대), B안(사진 부분 확대) 상태 추가
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [isZoomed, setIsZoomed] = useState(false);
 
     const handleSave = () => {
         setIsEditing(false);
@@ -301,17 +307,17 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked,
 
     const typeEl = (
         <div 
-            // ✨ group 클래스 추가 (마우스 올렸을 때 버튼 나오게 하기 위함)
             className={cn("font-extrabold text-[15px] tracking-tight flex items-center justify-center gap-0.5 relative cursor-pointer transition-all duration-300 group", isChecked && "opacity-40 line-through")} 
             style={{ color: itemColor }}
             onClick={(e) => {
                 if (rule.imageUrl) {
                     e.stopPropagation(); 
                     setShowPopup(!showPopup); 
+                    setIsExpanded(false); // 팝업 열 때 초기화
+                    setIsZoomed(false);   // 팝업 열 때 초기화
                 }
             }}
         >
-            {/* ✨ 눈에 띄지 않는 호버형 체크 토글 버튼 (공간 차지 X) */}
             <button
                 onClick={(e) => { e.stopPropagation(); onToggleCheck?.(); }}
                 className={cn(
@@ -324,7 +330,6 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked,
 
             {getAbbreviation(rule.type)}
             
-            {/* ✨ 수정 1: 두꺼운 선을 가진 진한 빨간색 고정 별표(SVG) */}
             {rule.imageUrl && (
                 <div className="absolute -top-1.5 -right-3 drop-shadow-md" title="Reference Image">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444" stroke="#991b1b" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
@@ -333,27 +338,55 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked,
                 </div>
             )}
 
-            {/* ✨ 수정 2: Portal을 사용하여 팝업을 레이어 감옥에서 꺼내 브라우저 최상단에 부착 */}
             {rule.imageUrl && showPopup && typeof document !== "undefined" && createPortal(
                 <div 
-                    className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] cursor-default" 
-                    onClick={(e) => { e.stopPropagation(); setShowPopup(false); }}
+                    className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/50 backdrop-blur-sm cursor-default" 
+                    onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); setIsZoomed(false); }}
                 >
                     <div 
-                        className="bg-white p-3 rounded-2xl border-4 border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col items-center animate-in fade-in zoom-in-95 duration-100 relative" 
-                        onClick={(e) => e.stopPropagation()} // 사진 안쪽 클릭 시 닫히지 않게 보호
+                        // ✨ A안 적용: isExpanded 상태에 따라 w-[900px] ↔ w-[1300px] 로 부드럽게 전환
+                        className={cn(
+                            "bg-white p-3 rounded-2xl border-4 border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col items-center animate-in fade-in zoom-in-95 duration-200 relative transition-all",
+                            isExpanded ? "w-[1300px] max-w-[95vw] h-[85vh]" : "w-[900px] max-w-[90vw] max-h-[85vh]"
+                        )} 
+                        onClick={(e) => e.stopPropagation()} 
                     >
-                        <img 
-                            src={rule.imageUrl} 
-                            alt="Reference" 
-                            className="w-[900px] max-w-[90vw] max-h-[85vh] rounded-lg object-contain" 
-                        />
-                        {/* 직관성을 위해 우측 상단에 닫기(X) 버튼도 하나 띄워드렸습니다! */}
+                        {/* ✨ B안 적용: 사진 클릭 시 스크롤 가능한 돋보기 모드 전환 */}
+                        <div className={cn("w-full h-full flex rounded-lg transition-all", isZoomed ? "overflow-auto items-start justify-start custom-scrollbar bg-slate-50" : "overflow-hidden items-center justify-center")}>
+                            <img 
+                                src={rule.imageUrl} 
+                                alt="Reference" 
+                                onClick={() => setIsZoomed(!isZoomed)}
+                                title={isZoomed ? "축소하기" : "클릭하여 원본 크기로 부분 확대"}
+                                className={cn(
+                                    "transition-all duration-300", 
+                                    isZoomed 
+                                        ? "w-auto h-auto max-w-none cursor-zoom-out" // 줌 상태: 원본 크기로 커지며 스크롤 생성
+                                        : "w-full h-full object-contain cursor-zoom-in" // 기본 상태: 창 크기에 딱 맞춤
+                                )} 
+                            />
+                        </div>
+
+                        {/* 닫기 버튼 */}
                         <button 
-                            onClick={(e) => { e.stopPropagation(); setShowPopup(false); }}
-                            className="absolute -top-4 -right-4 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-slate-800 hover:bg-slate-50 font-bold"
+                            onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); setIsZoomed(false); }}
+                            title="닫기"
+                            className="absolute -top-4 -right-4 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-red-500 hover:bg-red-50 font-bold z-50 transition-colors"
                         >
                             ✕
+                        </button>
+
+                        {/* ✨ A안: 창 확대/축소 버튼 */}
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); setIsZoomed(false); }}
+                            title={isExpanded ? "기본 크기로 축소" : "창 크게 보기"}
+                            className="absolute -top-4 right-8 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 font-bold z-50 transition-colors"
+                        >
+                            {isExpanded ? (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6M20 10h-6V4M10 10L3 3M14 14l7 7"/></svg>
+                            ) : (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                            )}
                         </button>
                     </div>
                 </div>,
@@ -418,14 +451,21 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked,
     );
 };
 
+// ==========================================
+// 2. CornerRuleItem 컴포넌트 교체
+// ==========================================
 const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck }: { rule: Rule; label: string; isChecked?: boolean; onToggleCheck?: () => void }) => {
     const [showPopup, setShowPopup] = useState(false);
+    
+    // ✨ NEW: A안, B안 상태 추가
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [isZoomed, setIsZoomed] = useState(false);
+    
     const itemColor = getExpertTypeColor(rule.type);
 
     return (
         <div className={cn("flex items-center gap-1.5 text-[11px] font-extrabold animate-in fade-in slide-in-from-left-2 transition-all duration-300 group", isChecked && "opacity-40 line-through")}>
             <div className="relative flex items-center">
-                {/* ✨ 눈에 띄지 않는 호버형 체크 토글 버튼 */}
                 <button
                     onClick={(e) => { e.stopPropagation(); onToggleCheck?.(); }}
                     className={cn(
@@ -438,13 +478,14 @@ const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck }: { rule: Rule;
                 <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">{label}</span>
             </div>
 
-            {/* 텍스트 + 빨간 별 (클릭 영역) */}
             <div 
                 className={cn("flex items-center relative cursor-pointer hover:opacity-70 transition-opacity", rule.imageUrl && "pr-3")}
                 onClick={(e) => {
                     if (rule.imageUrl) {
                         e.stopPropagation();
                         setShowPopup(!showPopup);
+                        setIsExpanded(false);
+                        setIsZoomed(false);
                     }
                 }}
             >
@@ -462,15 +503,56 @@ const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck }: { rule: Rule;
             {rule.note && <span className="text-slate-700">- {rule.note}</span>}
             <span className="text-slate-400 font-mono">- ({rule.startStep}-{rule.endStep})</span>
 
-            {/* 팝업 포탈 */}
             {rule.imageUrl && showPopup && typeof document !== "undefined" && createPortal(
                 <div 
-                    className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] cursor-default" 
-                    onClick={(e) => { e.stopPropagation(); setShowPopup(false); }}
+                    className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/50 backdrop-blur-sm cursor-default" 
+                    onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); setIsZoomed(false); }}
                 >
-                    <div className="bg-white p-3 rounded-2xl border-4 border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col items-center animate-in fade-in zoom-in-95 duration-100 relative" onClick={(e) => e.stopPropagation()}>
-                        <img src={rule.imageUrl} alt="Reference" className="w-[900px] max-w-[90vw] max-h-[85vh] rounded-lg object-contain" />
-                        <button onClick={(e) => { e.stopPropagation(); setShowPopup(false); }} className="absolute -top-4 -right-4 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-slate-800 hover:bg-slate-50 font-bold">✕</button>
+                    <div 
+                        // ✨ A안 적용
+                        className={cn(
+                            "bg-white p-3 rounded-2xl border-4 border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col items-center animate-in fade-in zoom-in-95 duration-200 relative transition-all",
+                            isExpanded ? "w-[1300px] max-w-[95vw] h-[85vh]" : "w-[900px] max-w-[90vw] max-h-[85vh]"
+                        )} 
+                        onClick={(e) => e.stopPropagation()} 
+                    >
+                        {/* ✨ B안 적용 */}
+                        <div className={cn("w-full h-full flex rounded-lg transition-all", isZoomed ? "overflow-auto items-start justify-start custom-scrollbar bg-slate-100" : "overflow-hidden items-center justify-center")}>
+                            <img 
+                                src={rule.imageUrl} 
+                                alt="Reference" 
+                                onClick={() => setIsZoomed(!isZoomed)}
+                                title={isZoomed ? "축소하기" : "클릭하여 원본 크기로 부분 확대"}
+                                className={cn(
+                                    "transition-all duration-300", 
+                                    isZoomed 
+                                        ? "w-auto h-auto max-w-none cursor-zoom-out" 
+                                        : "w-full h-full object-contain cursor-zoom-in" 
+                                )} 
+                            />
+                        </div>
+
+                        {/* 닫기 버튼 */}
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); setIsZoomed(false); }}
+                            title="닫기"
+                            className="absolute -top-4 -right-4 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-red-500 hover:bg-red-50 font-bold z-50 transition-colors"
+                        >
+                            ✕
+                        </button>
+
+                        {/* ✨ A안 버튼 */}
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); setIsZoomed(false); }}
+                            title={isExpanded ? "기본 크기로 축소" : "창 크게 보기"}
+                            className="absolute -top-4 right-8 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 font-bold z-50 transition-colors"
+                        >
+                            {isExpanded ? (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6M20 10h-6V4M10 10L3 3M14 14l7 7"/></svg>
+                            ) : (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                            )}
+                        </button>
                     </div>
                 </div>,
                 document.body
