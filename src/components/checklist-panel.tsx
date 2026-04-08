@@ -294,9 +294,86 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked,
     const [isEditing, setIsEditing] = useState(false);
     const [tempNote, setTempNote] = useState("");
     
-    // ✨ NEW: A안(전체 창 확대), B안(사진 부분 확대) 상태 추가
+    // ✨ NEW: A안(전체 창 확대), B안(고급 줌/팬) 상태 추가
     const [isExpanded, setIsExpanded] = useState(false);
     const [isZoomed, setIsZoomed] = useState(false);
+    const [isDragging, setIsDragging] = useState(false); // 드래그 중 애니메이션 끄기용
+    
+    const imgRef = useRef<HTMLImageElement>(null);
+    const panRef = useRef({ x: 0, y: 0 });
+    const dragRef = useRef({ isDown: false, startX: 0, startY: 0, lastX: 0, lastY: 0, didMove: false });
+
+    const resetZoom = () => {
+        setIsZoomed(false);
+        setIsDragging(false);
+        panRef.current = { x: 0, y: 0 };
+        if (imgRef.current) imgRef.current.style.transform = `translate(0px, 0px) scale(1) translateZ(0)`;
+    };
+
+    const handlePointerDown = (e: React.PointerEvent) => {
+        if (!isZoomed) return;
+        dragRef.current = { isDown: true, startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, didMove: false };
+        e.currentTarget.setPointerCapture(e.pointerId);
+    };
+
+    const handlePointerMove = (e: React.PointerEvent) => {
+        if (!isZoomed || !dragRef.current.isDown) return;
+        const dx = e.clientX - dragRef.current.lastX;
+        const dy = e.clientY - dragRef.current.lastY;
+        const totalDx = Math.abs(e.clientX - dragRef.current.startX);
+        const totalDy = Math.abs(e.clientY - dragRef.current.startY);
+        
+        // ✨ 이동 거리가 5px 이상이면 '드래그'로 판정하고 애니메이션(transition)을 꺼서 덜컹임 방지
+        if (totalDx > 5 || totalDy > 5) {
+            if (!dragRef.current.didMove) {
+                dragRef.current.didMove = true;
+                setIsDragging(true);
+            }
+        }
+
+        panRef.current.x += dx;
+        panRef.current.y += dy;
+        dragRef.current.lastX = e.clientX;
+        dragRef.current.lastY = e.clientY;
+
+        if (imgRef.current) {
+            imgRef.current.style.transform = `translate(${panRef.current.x}px, ${panRef.current.y}px) scale(3) translateZ(0)`;
+        }
+    };
+
+    const handlePointerUp = (e: React.PointerEvent) => {
+        dragRef.current.isDown = false;
+        setIsDragging(false); // 마우스를 떼면 다시 애니메이션 켬
+        e.currentTarget.releasePointerCapture(e.pointerId);
+    };
+
+    const handleImageClick = (e: React.MouseEvent) => {
+        // ✨ 드래그를 했다면 클릭(축소) 무시
+        if (dragRef.current.didMove) {
+            dragRef.current.didMove = false;
+            return; 
+        }
+        
+        if (isZoomed) {
+            resetZoom();
+        } else {
+            // ✨ 클릭한 좌표를 계산하여 그곳을 중심으로 3배 확대
+            if (!imgRef.current) return;
+            const rect = imgRef.current.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            
+            const scale = 3;
+            const tx = (centerX - clickX) * (scale - 1);
+            const ty = (centerY - clickY) * (scale - 1);
+            
+            panRef.current = { x: tx, y: ty };
+            setIsZoomed(true);
+            imgRef.current.style.transform = `translate(${tx}px, ${ty}px) scale(${scale}) translateZ(0)`;
+        }
+    };
 
     const handleSave = () => {
         setIsEditing(false);
@@ -313,8 +390,8 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked,
                 if (rule.imageUrl) {
                     e.stopPropagation(); 
                     setShowPopup(!showPopup); 
-                    setIsExpanded(false); // 팝업 열 때 초기화
-                    setIsZoomed(false);   // 팝업 열 때 초기화
+                    setIsExpanded(false); 
+                    resetZoom(); 
                 }
             }}
         >
@@ -341,44 +418,46 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked,
             {rule.imageUrl && showPopup && typeof document !== "undefined" && createPortal(
                 <div 
                     className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/50 backdrop-blur-sm cursor-default" 
-                    onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); setIsZoomed(false); }}
+                    onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); resetZoom(); }}
                 >
                     <div 
-                        // ✨ A안 적용: isExpanded 상태에 따라 w-[900px] ↔ w-[1300px] 로 부드럽게 전환
                         className={cn(
                             "bg-white p-3 rounded-2xl border-4 border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col items-center animate-in fade-in zoom-in-95 duration-200 relative transition-all",
                             isExpanded ? "w-[1300px] max-w-[95vw] h-[85vh]" : "w-[900px] max-w-[90vw] max-h-[85vh]"
                         )} 
                         onClick={(e) => e.stopPropagation()} 
                     >
-                        {/* ✨ B안 적용: 사진 클릭 시 스크롤 가능한 돋보기 모드 전환 */}
-                        <div className={cn("w-full h-full flex rounded-lg transition-all", isZoomed ? "overflow-auto items-start justify-start custom-scrollbar bg-slate-50" : "overflow-hidden items-center justify-center")}>
+                        {/* ✨ B안 적용: 고급 줌 & 드래그 패닝 뷰어 */}
+                        <div className="w-full h-full flex rounded-lg overflow-hidden items-center justify-center bg-slate-50 relative select-none">
                             <img 
+                                ref={imgRef}
                                 src={rule.imageUrl} 
                                 alt="Reference" 
-                                onClick={() => setIsZoomed(!isZoomed)}
-                                title={isZoomed ? "축소하기" : "클릭하여 원본 크기로 부분 확대"}
+                                draggable={false}
+                                onPointerDown={handlePointerDown}
+                                onPointerMove={handlePointerMove}
+                                onPointerUp={handlePointerUp}
+                                onClick={handleImageClick}
+                                title={isZoomed ? "드래그하여 이동 / 클릭하여 축소" : "클릭하여 부분 확대"}
                                 className={cn(
-                                    "transition-all duration-300", 
-                                    isZoomed 
-                                        ? "w-auto h-auto max-w-none cursor-zoom-out" // 줌 상태: 원본 크기로 커지며 스크롤 생성
-                                        : "w-full h-full object-contain cursor-zoom-in" // 기본 상태: 창 크기에 딱 맞춤
+                                    "w-full h-full object-contain will-change-transform origin-center", 
+                                    isDragging ? "cursor-grabbing" : (isZoomed ? "cursor-grab" : "cursor-zoom-in"),
+                                    !isDragging && "transition-transform duration-300 ease-out"
                                 )} 
+                                style={{ transform: "translate(0px, 0px) scale(1) translateZ(0)" }}
                             />
                         </div>
 
-                        {/* 닫기 버튼 */}
                         <button 
-                            onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); setIsZoomed(false); }}
+                            onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); resetZoom(); }}
                             title="닫기"
                             className="absolute -top-4 -right-4 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-red-500 hover:bg-red-50 font-bold z-50 transition-colors"
                         >
                             ✕
                         </button>
 
-                        {/* ✨ A안: 창 확대/축소 버튼 */}
                         <button 
-                            onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); setIsZoomed(false); }}
+                            onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); resetZoom(); }}
                             title={isExpanded ? "기본 크기로 축소" : "창 크게 보기"}
                             className="absolute -top-4 right-8 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 font-bold z-50 transition-colors"
                         >
@@ -457,10 +536,84 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked,
 const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck }: { rule: Rule; label: string; isChecked?: boolean; onToggleCheck?: () => void }) => {
     const [showPopup, setShowPopup] = useState(false);
     
-    // ✨ NEW: A안, B안 상태 추가
+    // ✨ NEW: A안, B안(고급 줌/팬) 상태 추가
     const [isExpanded, setIsExpanded] = useState(false);
     const [isZoomed, setIsZoomed] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
     
+    const imgRef = useRef<HTMLImageElement>(null);
+    const panRef = useRef({ x: 0, y: 0 });
+    const dragRef = useRef({ isDown: false, startX: 0, startY: 0, lastX: 0, lastY: 0, didMove: false });
+
+    const resetZoom = () => {
+        setIsZoomed(false);
+        setIsDragging(false);
+        panRef.current = { x: 0, y: 0 };
+        if (imgRef.current) imgRef.current.style.transform = `translate(0px, 0px) scale(1) translateZ(0)`;
+    };
+
+    const handlePointerDown = (e: React.PointerEvent) => {
+        if (!isZoomed) return;
+        dragRef.current = { isDown: true, startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, didMove: false };
+        e.currentTarget.setPointerCapture(e.pointerId);
+    };
+
+    const handlePointerMove = (e: React.PointerEvent) => {
+        if (!isZoomed || !dragRef.current.isDown) return;
+        const dx = e.clientX - dragRef.current.lastX;
+        const dy = e.clientY - dragRef.current.lastY;
+        const totalDx = Math.abs(e.clientX - dragRef.current.startX);
+        const totalDy = Math.abs(e.clientY - dragRef.current.startY);
+        
+        if (totalDx > 5 || totalDy > 5) {
+            if (!dragRef.current.didMove) {
+                dragRef.current.didMove = true;
+                setIsDragging(true);
+            }
+        }
+
+        panRef.current.x += dx;
+        panRef.current.y += dy;
+        dragRef.current.lastX = e.clientX;
+        dragRef.current.lastY = e.clientY;
+
+        if (imgRef.current) {
+            imgRef.current.style.transform = `translate(${panRef.current.x}px, ${panRef.current.y}px) scale(3) translateZ(0)`;
+        }
+    };
+
+    const handlePointerUp = (e: React.PointerEvent) => {
+        dragRef.current.isDown = false;
+        setIsDragging(false);
+        e.currentTarget.releasePointerCapture(e.pointerId);
+    };
+
+    const handleImageClick = (e: React.MouseEvent) => {
+        if (dragRef.current.didMove) {
+            dragRef.current.didMove = false;
+            return; 
+        }
+        
+        if (isZoomed) {
+            resetZoom();
+        } else {
+            if (!imgRef.current) return;
+            const rect = imgRef.current.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            
+            const scale = 3;
+            const tx = (centerX - clickX) * (scale - 1);
+            const ty = (centerY - clickY) * (scale - 1);
+            
+            panRef.current = { x: tx, y: ty };
+            setIsZoomed(true);
+            imgRef.current.style.transform = `translate(${tx}px, ${ty}px) scale(${scale}) translateZ(0)`;
+        }
+    };
+
     const itemColor = getExpertTypeColor(rule.type);
 
     return (
@@ -485,7 +638,7 @@ const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck }: { rule: Rule;
                         e.stopPropagation();
                         setShowPopup(!showPopup);
                         setIsExpanded(false);
-                        setIsZoomed(false);
+                        resetZoom();
                     }
                 }}
             >
@@ -506,44 +659,46 @@ const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck }: { rule: Rule;
             {rule.imageUrl && showPopup && typeof document !== "undefined" && createPortal(
                 <div 
                     className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/50 backdrop-blur-sm cursor-default" 
-                    onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); setIsZoomed(false); }}
+                    onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); resetZoom(); }}
                 >
                     <div 
-                        // ✨ A안 적용
                         className={cn(
                             "bg-white p-3 rounded-2xl border-4 border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col items-center animate-in fade-in zoom-in-95 duration-200 relative transition-all",
                             isExpanded ? "w-[1300px] max-w-[95vw] h-[85vh]" : "w-[900px] max-w-[90vw] max-h-[85vh]"
                         )} 
                         onClick={(e) => e.stopPropagation()} 
                     >
-                        {/* ✨ B안 적용 */}
-                        <div className={cn("w-full h-full flex rounded-lg transition-all", isZoomed ? "overflow-auto items-start justify-start custom-scrollbar bg-slate-100" : "overflow-hidden items-center justify-center")}>
+                        {/* ✨ B안 적용: 고급 줌 & 드래그 패닝 뷰어 */}
+                        <div className="w-full h-full flex rounded-lg overflow-hidden items-center justify-center bg-slate-50 relative select-none">
                             <img 
+                                ref={imgRef}
                                 src={rule.imageUrl} 
                                 alt="Reference" 
-                                onClick={() => setIsZoomed(!isZoomed)}
-                                title={isZoomed ? "축소하기" : "클릭하여 원본 크기로 부분 확대"}
+                                draggable={false}
+                                onPointerDown={handlePointerDown}
+                                onPointerMove={handlePointerMove}
+                                onPointerUp={handlePointerUp}
+                                onClick={handleImageClick}
+                                title={isZoomed ? "드래그하여 이동 / 클릭하여 축소" : "클릭하여 부분 확대"}
                                 className={cn(
-                                    "transition-all duration-300", 
-                                    isZoomed 
-                                        ? "w-auto h-auto max-w-none cursor-zoom-out" 
-                                        : "w-full h-full object-contain cursor-zoom-in" 
+                                    "w-full h-full object-contain will-change-transform origin-center", 
+                                    isDragging ? "cursor-grabbing" : (isZoomed ? "cursor-grab" : "cursor-zoom-in"),
+                                    !isDragging && "transition-transform duration-300 ease-out"
                                 )} 
+                                style={{ transform: "translate(0px, 0px) scale(1) translateZ(0)" }}
                             />
                         </div>
 
-                        {/* 닫기 버튼 */}
                         <button 
-                            onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); setIsZoomed(false); }}
+                            onClick={(e) => { e.stopPropagation(); setShowPopup(false); setIsExpanded(false); resetZoom(); }}
                             title="닫기"
                             className="absolute -top-4 -right-4 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-red-500 hover:bg-red-50 font-bold z-50 transition-colors"
                         >
                             ✕
                         </button>
 
-                        {/* ✨ A안 버튼 */}
                         <button 
-                            onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); setIsZoomed(false); }}
+                            onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); resetZoom(); }}
                             title={isExpanded ? "기본 크기로 축소" : "창 크게 보기"}
                             className="absolute -top-4 right-8 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 font-bold z-50 transition-colors"
                         >
