@@ -617,7 +617,7 @@ const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck }: { rule: Rule;
     const itemColor = getExpertTypeColor(rule.type);
 
     return (
-        <div className={cn("flex items-center gap-1.5 text-[11px] font-extrabold animate-in fade-in slide-in-from-left-2 transition-all duration-300 group", isChecked && "opacity-40 line-through")}>
+        <div className={cn("flex items-center gap-1.5 text-[12px] font-extrabold animate-in fade-in slide-in-from-left-2 transition-all duration-300 group", isChecked && "opacity-40 line-through")}>
             <div className="relative flex items-center">
                 <button
                     onClick={(e) => { e.stopPropagation(); onToggleCheck?.(); }}
@@ -2434,7 +2434,7 @@ const cancelEdit = () => {
 
                                                 // ✨ 범위 텍스트에도 투명도/밑줄 적용
                                                 const RangeEl = (
-                                                    <div key={`range-${r.id}`} className={cn("text-[11px] font-mono font-extrabold tracking-tighter transition-all duration-300", isRuleChecked && "opacity-40 line-through")} style={{ color: `${itemColor}E6` }}>
+                                                    <div key={`range-${r.id}`} className={cn("text-[14px] font-mono font-extrabold tracking-tighter transition-all duration-300", isRuleChecked && "opacity-40 line-through")} style={{ color: `${itemColor}E6` }}>
                                                         ({r.startStep}-{r.endStep})
                                                     </div>
                                                 );
