@@ -287,10 +287,10 @@ const compressImage = async (file: File): Promise<Blob> => {
 };
 
 // 상/하악을 구분해서 DOM 순서를 맞춰주는 만능 인라인 에디터 (Textarea 버전 & Portal 최상단 팝업)
-const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: Rule, store: any, patientId: string, itemColor: string, isUpper?: boolean }) => {
-    const [isEditing, setIsEditing] = useState(false);
-    const [tempNote, setTempNote] = useState(rule.note || "");
+const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked, onToggleCheck }: { rule: Rule, store: any, patientId: string, itemColor: string, isUpper?: boolean, isChecked?: boolean, onToggleCheck?: () => void }) => {    
     const [showPopup, setShowPopup] = useState(false); 
+    const [isEditing, setIsEditing] = useState(false);
+    const [tempNote, setTempNote] = useState("");
 
     const handleSave = () => {
         setIsEditing(false);
@@ -301,7 +301,8 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: 
 
     const typeEl = (
         <div 
-            className="font-extrabold text-[15px] tracking-tight flex items-center justify-center gap-0.5 relative cursor-pointer" 
+            // ✨ group 클래스 추가 (마우스 올렸을 때 버튼 나오게 하기 위함)
+            className={cn("font-extrabold text-[15px] tracking-tight flex items-center justify-center gap-0.5 relative cursor-pointer transition-all duration-300 group", isChecked && "opacity-40 line-through")} 
             style={{ color: itemColor }}
             onClick={(e) => {
                 if (rule.imageUrl) {
@@ -310,6 +311,17 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: 
                 }
             }}
         >
+            {/* ✨ 눈에 띄지 않는 호버형 체크 토글 버튼 (공간 차지 X) */}
+            <button
+                onClick={(e) => { e.stopPropagation(); onToggleCheck?.(); }}
+                className={cn(
+                    "absolute -left-5 p-1 flex items-center justify-center transition-all duration-300",
+                    isChecked ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                )}
+            >
+                {isChecked ? <CheckCheck className="w-4 h-4 text-green-500" /> : <div className="w-3 h-3 border-[1.5px] border-slate-300 rounded-sm hover:border-green-400 hover:bg-green-50" />}
+            </button>
+
             {getAbbreviation(rule.type)}
             
             {/* ✨ 수정 1: 두꺼운 선을 가진 진한 빨간색 고정 별표(SVG) */}
@@ -351,7 +363,7 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: 
     );
     
     const noteTextEl = rule.note ? (
-        <div className="w-[60px] text-[12px] text-slate-700 font-extrabold leading-tight text-center break-words whitespace-pre-wrap px-0.5">
+        <div className={cn("w-[60px] text-[12px] text-slate-700 font-extrabold leading-tight text-center break-words whitespace-pre-wrap px-0.5 transition-all duration-300", isChecked && "opacity-40 line-through")}>
             {rule.note}
         </div>
     ) : null;
@@ -406,14 +418,26 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper }: { rule: 
     );
 };
 
-const CornerRuleItem = ({ rule, label }: { rule: Rule; label: string }) => {
+const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck }: { rule: Rule; label: string; isChecked?: boolean; onToggleCheck?: () => void }) => {
     const [showPopup, setShowPopup] = useState(false);
     const itemColor = getExpertTypeColor(rule.type);
 
     return (
-        <div className="flex items-center gap-1.5 text-[11px] font-extrabold animate-in fade-in slide-in-from-left-2">
-            <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">{label}</span>
-            
+        <div className={cn("flex items-center gap-1.5 text-[11px] font-extrabold animate-in fade-in slide-in-from-left-2 transition-all duration-300 group", isChecked && "opacity-40 line-through")}>
+            <div className="relative flex items-center">
+                {/* ✨ 눈에 띄지 않는 호버형 체크 토글 버튼 */}
+                <button
+                    onClick={(e) => { e.stopPropagation(); onToggleCheck?.(); }}
+                    className={cn(
+                        "absolute -left-5 p-1 flex items-center justify-center transition-all duration-300",
+                        isChecked ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    )}
+                >
+                    {isChecked ? <CheckCheck className="w-3.5 h-3.5 text-green-500" /> : <div className="w-2.5 h-2.5 border-[1.5px] border-slate-300 rounded-sm hover:border-green-400" />}
+                </button>
+                <span className="px-1.5 py-0.5 rounded border-[1.5px] bg-slate-50 text-slate-500 border-slate-200">{label}</span>
+            </div>
+
             {/* 텍스트 + 빨간 별 (클릭 영역) */}
             <div 
                 className={cn("flex items-center relative cursor-pointer hover:opacity-70 transition-opacity", rule.imageUrl && "pr-3")}
@@ -510,9 +534,11 @@ const handleRuleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
 
   const SMART_DASHBOARD_INDEX = -999;
   const [smartStage, setSmartStage] = useState(1);
+
 // ✨ NEW: ALL 모드 상태와 필터링 상태 추가
- const [isAllView, setIsAllView] = useState(false); 
- const [activeFilters, setActiveFilters] = useState<string[]>([]);
+const [isAllView, setIsAllView] = useState(false); 
+const [activeFilters, setActiveFilters] = useState<string[]>([]);
+const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 상태 표시 토글
 
   const currentSlide = slides[currentSlideIndex] || { items: [], penStrokes: [] };
   const items = currentSlide.items || [];
@@ -1985,50 +2011,72 @@ const cancelEdit = () => {
                                 <div className="flex-1 flex flex-col border border-slate-200 rounded-xl bg-[#fcfcfc] relative h-full shadow-[inset_0_2px_20px_rgba(0,0,0,0.02)] overflow-hidden">
                                     
                                     <div className="p-4 border-b border-slate-200 bg-white/95 backdrop-blur flex flex-col items-center justify-center shrink-0 z-30 shadow-sm">
-                                        <div className="flex items-center justify-center gap-4">
-                                            
-                                            {/* ✨ NEW: ALL (전체 보기) 토글 버튼 */}
-                                            <button
-                                                onClick={() => {
-                                                    const next = !isAllView;
-                                                    setIsAllView(next);
-                                                    if (next) {
-                                                        // ALL 버튼을 켤 때 모든 존재하는 아이템 타입을 배열로 추출하여 필터 꽉 채우기
-                                                        const uniqueTypes = Array.from(new Set(safeRules.map((r: Rule) => r.type))) as string[];
-                                                        setActiveFilters(uniqueTypes);
-                                                    }
-                                                }}
-                                                className={cn(
-                                                    "px-5 py-1.5 rounded-full font-extrabold text-sm transition-all border-[1.5px] shadow-sm tracking-wide",
-                                                    isAllView 
-                                                        ? "bg-[#2563eb] text-white border-[#2563eb] ring-[3px] ring-[#dbeafe]" 
-                                                        : "bg-white text-slate-500 border-slate-200 hover:border-[#2563eb] hover:text-[#2563eb]"
-                                                )}
-                                            >
-                                                ALL
-                                            </button>
+                                    <div className="flex items-center justify-center gap-4 w-full relative">
+    
+    {/* ✨ NEW: ALL (전체 보기) 토글 버튼 */}
+    <button
+        onClick={() => {
+            const next = !isAllView;
+            setIsAllView(next);
+            if (next) {
+                const uniqueTypes = Array.from(new Set(safeRules.map((r: Rule) => r.type))) as string[];
+                setActiveFilters(uniqueTypes);
+            }
+        }}
+        className={cn(
+            "px-5 py-1.5 rounded-full font-extrabold text-sm transition-all border-[1.5px] shadow-sm tracking-wide",
+            isAllView 
+                ? "bg-[#2563eb] text-white border-[#2563eb] ring-[3px] ring-[#dbeafe]" 
+                : "bg-white text-slate-500 border-slate-200 hover:border-[#2563eb] hover:text-[#2563eb]"
+        )}
+    >
+        ALL
+    </button>
 
-                                            {/* 슬라이더 컨트롤 (ALL 모드 켜지면 조작 금지) */}
-                                            <div className={cn("px-3 py-1.5 bg-white border-[1.5px] border-[#2563eb] rounded-full shadow-sm ring-[3px] ring-[#dbeafe] flex items-center gap-3 transition-opacity", isAllView && "opacity-40 pointer-events-none")}>
-                                                <button onClick={() => setSmartStage(p => Math.max(0, p - 1))} className="text-[#2563eb] hover:text-blue-700 hover:bg-blue-50 rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors">&lt;</button>
-                                                <span className="font-bold text-[#2563eb] text-sm tracking-wide flex items-center gap-1">
-                                                    현재 단계: 
-                                                    <input 
-                                                        type="number" 
-                                                        value={smartStage}
-                                                        onChange={(e) => {
-                                                            let val = parseInt(e.target.value);
-                                                            if (!isNaN(val)) setSmartStage(Math.max(0, Math.min(totalSteps, val)));
-                                                        }}
-                                                        className="w-8 text-center bg-transparent border-b-2 border-[#2563eb]/30 focus:border-[#2563eb] outline-none appearance-none ml-1 hide-arrows"
-                                                        style={{ WebkitAppearance: 'none', margin: 0 }}
-                                                    />
-                                                    <span className="opacity-70">/ {totalSteps}</span>
-                                                </span>
-                                                <button onClick={() => setSmartStage(p => Math.min(totalSteps, p + 1))} className="text-[#2563eb] hover:text-blue-700 hover:bg-blue-50 rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors">&gt;</button>
-                                            </div>
-                                        </div>
-                                        
+    {/* 슬라이더 컨트롤 (ALL 모드 켜지면 조작 금지) */}
+    <div className={cn("px-3 py-1.5 bg-white border-[1.5px] border-[#2563eb] rounded-full shadow-sm ring-[3px] ring-[#dbeafe] flex items-center gap-3 transition-opacity", isAllView && "opacity-40 pointer-events-none")}>
+        <button onClick={() => setSmartStage(p => Math.max(0, p - 1))} className="text-[#2563eb] hover:text-blue-700 hover:bg-blue-50 rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors">&lt;</button>
+        <span className="font-bold text-[#2563eb] text-sm tracking-wide flex items-center gap-1">
+            현재 단계: 
+            <input 
+                type="number" 
+                value={smartStage}
+                onChange={(e) => {
+                    let val = parseInt(e.target.value);
+                    if (!isNaN(val)) setSmartStage(Math.max(0, Math.min(totalSteps, val)));
+                }}
+                className="w-8 text-center bg-transparent border-b-2 border-[#2563eb]/30 focus:border-[#2563eb] outline-none appearance-none ml-1 hide-arrows"
+                style={{ WebkitAppearance: 'none', margin: 0 }}
+            />
+            <span className="opacity-70">/ {totalSteps}</span>
+        </span>
+        <button onClick={() => setSmartStage(p => Math.min(totalSteps, p + 1))} className="text-[#2563eb] hover:text-blue-700 hover:bg-blue-50 rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors">&gt;</button>
+    </div>
+
+    {/* ✨ NEW: 우측 끝에 붙는 세련된 슬라이드 토글 스위치 */}
+    {!isAllView && (
+        <div 
+            className="absolute right-4 flex items-center gap-2 cursor-pointer group animate-in fade-in" 
+            onClick={() => setShowCheckedStatus(!showCheckedStatus)}
+        >
+            <span className={cn("text-[11px] font-bold transition-colors duration-300", showCheckedStatus ? "text-green-600" : "text-slate-400")}>
+                완료 표시
+            </span>
+            <div className={cn(
+                "w-12 h-5 rounded-full p-1 transition-colors duration-300 ease-in-out relative flex items-center shadow-inner overflow-hidden",
+                showCheckedStatus ? "bg-green-500" : "bg-slate-200"
+            )}>
+                <span className={cn("absolute left-1.5 text-[9px] font-extrabold text-white transition-opacity duration-300", showCheckedStatus ? "opacity-100" : "opacity-0")}>ON</span>
+                <span className={cn("absolute right-1 text-[9px] font-extrabold text-slate-400 transition-opacity duration-300", showCheckedStatus ? "opacity-0" : "opacity-100")}>OFF</span>
+                <div 
+                    className="bg-white w-3.5 h-3.5 rounded-full shadow-sm transform transition-transform duration-300 ease-in-out z-10"
+                    style={{ transform: showCheckedStatus ? 'translateX(26px)' : 'translateX(0px)' }} 
+                />
+            </div>
+        </div>
+    )}
+</div>
+
                                         <div className={cn("relative w-full max-w-[75%] pt-4 group transition-all", isAllView ? "pb-0 opacity-0 h-0 overflow-hidden pointer-events-none" : "pb-4 opacity-100")}>
                                             <input 
                                                 type="range" 
@@ -2116,14 +2164,19 @@ const cancelEdit = () => {
                                                             <div className={cn("flex flex-col w-12 px-0.5", isUpper ? "items-center justify-end" : "items-center justify-start")}>
                                                                 {rulesToRender.map((r, idx) => {
                                                                     const itemColor = getExpertTypeColor(r.type);
-                                                                    const RangeEl = (
-                                                                        <div key={`range-${r.id}`} className="text-[11px] font-mono font-extrabold tracking-tighter" style={{ color: `${itemColor}E6` }}>
-                                                                            ({r.startStep}-{r.endStep})
-                                                                        </div>
-                                                                    );
-                                                                    
-                                                                    const ItemContentEl = <InlineNoteEdit key={`item-content-${r.id}`} rule={r} store={store} patientId={patient.id} itemColor={itemColor} isUpper={isUpper} />;
-                                                                    
+// ✨ 체크 여부 확인 (RangeEl보다 위로 올립니다)
+const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
+
+// ✨ 범위 텍스트에도 투명도/밑줄 적용
+const RangeEl = (
+    <div key={`range-${r.id}`} className={cn("text-[11px] font-mono font-extrabold tracking-tighter transition-all duration-300", isRuleChecked && "opacity-40 line-through")} style={{ color: `${itemColor}E6` }}>
+        ({r.startStep}-{r.endStep})
+    </div>
+);
+
+// ✨ 토글 함수 전달
+const ItemContentEl = <InlineNoteEdit key={`item-content-${r.id}`} rule={r} store={store} patientId={patient.id} itemColor={itemColor} isUpper={isUpper} isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
+
                                                                     const Divider = idx !== rulesToRender.length - 1 ? <div key={`div-${r.id}`} className="w-6 h-[1.5px] bg-slate-200 my-1" /> : null;
 
                                                                     return (
@@ -2148,13 +2201,16 @@ const cancelEdit = () => {
                                                     };
 
                                                     const toothIconColor = rules.length > 0 ? "#38bdf8" : "#e2e8f0"; 
-
+                                                    // ✨ 현재 치아에 있는 모든 룰이 체크되었는지 확인
+                                                    const isToothAllChecked = rules.length > 0 && rules.every(r => !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked));
+                                                    
                                                     return (
                                                         <div className="flex flex-col items-center w-12 shrink-0 z-10 relative">
                                                             {isUpper && rules.length > 0 && <InfoBlock />}
                                                             
-                                                            <div className={cn("relative w-10 h-10 flex items-center justify-center shrink-0 z-10 transition-colors", isUpper ? "mt-0.5" : "mb-0.5")}>
-                                                                <svg viewBox="0 0 24 24" fill="white" stroke={toothIconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="absolute inset-0 w-full h-full drop-shadow-sm transition-colors">
+                                                            {/* ✨ 모든 룰이 체크되었다면 치아 아이콘 박스에도 opacity-40 적용 */}
+                                                            <div className={cn("relative w-10 h-10 flex items-center justify-center shrink-0 z-10 transition-colors", isUpper ? "mt-0.5" : "mb-0.5", isToothAllChecked && "opacity-40")}>
+                                                                                                                                <svg viewBox="0 0 24 24" fill="white" stroke={toothIconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="absolute inset-0 w-full h-full drop-shadow-sm transition-colors">
                                                                     <path d="M12 5.5C10.5 3 8 2 5.5 3.5C3.5 4.5 2 7 2 10C2 14 4 18 5.5 20.5C6.5 22 8 22 9.5 20.5C10.5 19 11 17 12 15C13 17 13.5 19 14.5 20.5C16 22 17.5 22 18.5 20.5C20 18 22 14 22 10C22 7 20.5 4.5 18.5 3.5C16 2 13.5 3 12 5.5Z" />
                                                                 </svg>
                                                                 <span className="relative z-10 font-extrabold text-[12px] mb-1 transition-colors" style={{ color: toothIconColor }}>
@@ -2176,8 +2232,14 @@ const cancelEdit = () => {
                                                     <>
 {/* 공통 룰 영역 (상단 모서리 밀착) */}
 <div className="absolute top-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
-    {maxRulesList.map((r: Rule) => <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" />)}
-    {genRulesList.map((r: Rule) => <CornerRuleItem key={`gen-${r.id}`} rule={r} label="Gen" />)}
+    {maxRulesList.map((r: Rule) => {
+        const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
+        return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
+            })}
+    {genRulesList.map((r: Rule) => {
+        const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
+        return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
+            })}
 </div>
 
                                                         {/* 상악 치아 배열 */}
@@ -2221,7 +2283,10 @@ const cancelEdit = () => {
 
 {/* 하악 공통 룰 */}
 <div className="absolute bottom-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
-    {manRulesList.map((r: Rule) => <CornerRuleItem key={`man-${r.id}`} rule={r} label="MAN" />)}
+    {manRulesList.map((r: Rule) => {
+        const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
+        return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
+            })}
 </div>
                                                     </>
                                                 );
