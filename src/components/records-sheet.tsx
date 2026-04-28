@@ -123,8 +123,16 @@ export default function RecordsSheet() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // ✨ 5번 요청: Ctrl + S 단축키 및 키보드 상태 관리
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === "Control" || e.metaKey) isCtrlDownRef.current = true; };
+    const handleKeyDown = (e: KeyboardEvent) => { 
+      if (e.key === "Control" || e.metaKey) isCtrlDownRef.current = true; 
+      
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        handleSaveRecords();
+      }
+    };
     const handleKeyUp = (e: KeyboardEvent) => { if (e.key === "Control" || !e.metaKey) isCtrlDownRef.current = false; };
     const handleBlur = () => { isCtrlDownRef.current = false; };
 
@@ -137,7 +145,7 @@ export default function RecordsSheet() {
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, []);
+  }, [activePatient]);
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((u) => { setIsMaster(u?.email === MASTER_EMAIL); });
@@ -382,20 +390,19 @@ export default function RecordsSheet() {
       const headers = hot.getColHeader() as string[];
       const rawVisualData = hot.getData() as any[][];
 
-      const cleanData: RowObject[] = rawVisualData
-        .map((rowArr: any[]) => {
-          const rowObj: RowObject = {};
-          headers.forEach((header, index) => {
-            const value = rowArr[index];
-            if (header === "STEP") {
-              rowObj[header] = (value == null || value === "") ? "" : Number(value);
-            } else {
-              rowObj[header] = value == null ? "" : String(value);
-            }
-          });
-          return rowObj;
-        })
-        .filter((rowObj: RowObject) => Object.values(rowObj).some((val) => String(val).trim() !== ""));
+      // ✨ 5번 요청: .filter 부분을 제거하여 빈 행(gap)도 데이터 배열에 포함시켜 그대로 저장합니다.
+      const cleanData: RowObject[] = rawVisualData.map((rowArr: any[]) => {
+        const rowObj: RowObject = {};
+        headers.forEach((header, index) => {
+          const value = rowArr[index];
+          if (header === "STEP") {
+            rowObj[header] = (value == null || value === "") ? "" : Number(value);
+          } else {
+            rowObj[header] = value == null ? "" : String(value);
+          }
+        });
+        return rowObj;
+      });
 
       await setDoc(doc(db, "patients_records", activePatient.id), { rows: cleanData, lastUpdated: new Date().toISOString() }, { merge: true });
       alert("✅ 환자 Records 데이터가 안전하게 저장되었습니다!");
@@ -418,10 +425,8 @@ export default function RecordsSheet() {
   return (
     <div className="w-full h-full flex flex-col bg-slate-50 relative rounded-lg shadow-sm border border-slate-300 overflow-visible z-10">
       
-      {/* 🎨 상단 툴바 영역 */}
       <div className="bg-white border-b border-slate-200 p-2 shrink-0 flex justify-between items-center transition-all z-20 shadow-sm">
         
-        {/* ⬅️ 왼쪽: 순수하게 동작 버튼들만 남김 */}
         <div className="flex items-center gap-1.5">
           <button onClick={handleAddRow} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded hover:text-blue-600 transition-colors" title="아래에 행 1개 추가"><Plus className="w-4 h-4" /></button>
           <div className="w-px h-4 bg-slate-200 mx-1"></div>
@@ -429,7 +434,6 @@ export default function RecordsSheet() {
           <button onClick={() => hotRef.current?.hotInstance?.redo()} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded transition-colors" title="다시 실행 (Ctrl+Y)"><Redo2 className="w-4 h-4" /></button>
         </div>
 
-        {/* ➡️ 오른쪽: 관리자 메뉴 + 파란색 차트 저장 버튼 */}
         <div className="flex items-center gap-2">
           {isMaster && (
             <div className="flex items-center pr-3 mr-1 border-r border-slate-200">
@@ -448,7 +452,6 @@ export default function RecordsSheet() {
             </div>
           )}
           
-          {/* ✨ 파란색으로 통일감을 준 저장 버튼! */}
           <button onClick={handleSaveRecords} className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white text-sm font-bold rounded-md hover:bg-blue-700 transition-colors shadow-sm">
             <Save className="w-4 h-4" /> 차트 저장 (DB)
           </button>

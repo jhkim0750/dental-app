@@ -8,7 +8,7 @@ import {
   Type, Eraser, PenTool, Minus, Undo, Redo, CheckSquare,
   Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter,
   Loader2, Square, Circle, Triangle, Copy, Clipboard, ChevronDown,
-  Crop, RotateCcw, Check, X, Table, LayoutDashboard, ListTree
+  Crop, RotateCcw, Check, X, Table, LayoutDashboard, ListTree, TrendingUp
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -63,6 +63,151 @@ interface SlideData {
 
 const UPPER_TEETH = [18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28];
 const LOWER_TEETH = [48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38];
+
+const GraphViewer = ({ imageUrl, onClose }: { imageUrl: string; onClose: () => void }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [isZoomed, setIsZoomed] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
+
+    const imgRef = useRef<HTMLImageElement>(null);
+    const panRef = useRef({ x: 0, y: 0 });
+    const dragRef = useRef({ isDown: false, startX: 0, startY: 0, lastX: 0, lastY: 0, didMove: false });
+    // ✨ NEW: ESC 키로 이동 그래프 팝업 닫기
+    useEffect(() => {
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [onClose]);
+
+    const resetZoom = () => {
+        setIsZoomed(false);
+        setIsDragging(false);
+        panRef.current = { x: 0, y: 0 };
+        if (imgRef.current) imgRef.current.style.transform = `translate(0px, 0px) scale(1) translateZ(0)`;
+    };
+
+    const handlePointerDown = (e: React.PointerEvent) => {
+        if (!isZoomed) return;
+        dragRef.current = { isDown: true, startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, didMove: false };
+        e.currentTarget.setPointerCapture(e.pointerId);
+    };
+
+    const handlePointerMove = (e: React.PointerEvent) => {
+        if (!isZoomed || !dragRef.current.isDown) return;
+        const dx = e.clientX - dragRef.current.lastX;
+        const dy = e.clientY - dragRef.current.lastY;
+        const totalDx = Math.abs(e.clientX - dragRef.current.startX);
+        const totalDy = Math.abs(e.clientY - dragRef.current.startY);
+
+        if (totalDx > 5 || totalDy > 5) {
+            if (!dragRef.current.didMove) {
+                dragRef.current.didMove = true;
+                setIsDragging(true);
+            }
+        }
+
+        panRef.current.x += dx;
+        panRef.current.y += dy;
+        dragRef.current.lastX = e.clientX;
+        dragRef.current.lastY = e.clientY;
+
+        if (imgRef.current) {
+            imgRef.current.style.transform = `translate(${panRef.current.x}px, ${panRef.current.y}px) scale(3) translateZ(0)`;
+        }
+    };
+
+    const handlePointerUp = (e: React.PointerEvent) => {
+        dragRef.current.isDown = false;
+        setIsDragging(false);
+        e.currentTarget.releasePointerCapture(e.pointerId);
+    };
+
+    const handleImageClick = (e: React.MouseEvent) => {
+        if (dragRef.current.didMove) {
+            dragRef.current.didMove = false;
+            return;
+        }
+
+        if (isZoomed) {
+            resetZoom();
+        } else {
+            if (!imgRef.current) return;
+            const rect = imgRef.current.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+
+            const scale = 3;
+            const tx = (centerX - clickX) * (scale - 1);
+            const ty = (centerY - clickY) * (scale - 1);
+
+            panRef.current = { x: tx, y: ty };
+            setIsZoomed(true);
+            imgRef.current.style.transform = `translate(${tx}px, ${ty}px) scale(${scale}) translateZ(0)`;
+        }
+    };
+
+    if (typeof document === "undefined") return null;
+
+    return createPortal(
+        <div
+            className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/50 backdrop-blur-sm cursor-default"
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+        >
+            <div
+                className={cn(
+                    "bg-white p-3 rounded-2xl border-4 border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col items-center animate-in fade-in zoom-in-95 duration-200 relative transition-all",
+                    isExpanded ? "w-[1300px] max-w-[95vw] h-[85vh]" : "w-[900px] max-w-[90vw] max-h-[85vh]"
+                )}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="w-full h-full flex rounded-lg overflow-hidden items-center justify-center bg-slate-50 relative select-none">
+                    <img
+                        ref={imgRef}
+                        src={imageUrl}
+                        alt="Graph Reference"
+                        draggable={false}
+                        onPointerDown={handlePointerDown}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerUp}
+                        onClick={handleImageClick}
+                        title={isZoomed ? "드래그하여 이동 / 클릭하여 축소" : "클릭하여 부분 확대"}
+                        className={cn(
+                            "w-full h-full object-contain will-change-transform origin-center",
+                            isDragging ? "cursor-grabbing" : (isZoomed ? "cursor-grab" : "cursor-zoom-in"),
+                            !isDragging && "transition-transform duration-300 ease-out"
+                        )}
+                        style={{ transform: "translate(0px, 0px) scale(1) translateZ(0)" }}
+                    />
+                </div>
+
+                <button
+                    onClick={(e) => { e.stopPropagation(); onClose(); }}
+                    title="닫기"
+                    className="absolute -top-4 -right-4 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-red-500 hover:bg-red-50 font-bold z-50 transition-colors"
+                >
+                    ✕
+                </button>
+
+                <button
+                    onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); resetZoom(); }}
+                    title={isExpanded ? "기본 크기로 축소" : "창 크게 보기"}
+                    className="absolute -top-4 right-8 w-10 h-10 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center shadow-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 font-bold z-50 transition-colors"
+                >
+                    {isExpanded ? (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6M20 10h-6V4M10 10L3 3M14 14l7 7"/></svg>
+                    ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                    )}
+                </button>
+            </div>
+        </div>,
+        document.body
+    );
+};
 
 const SlideThumbnail = ({ 
   items, penStrokes, isActive, index, onClick, onDelete, onDragStart, onDrop, onDuplicate 
@@ -222,29 +367,29 @@ const SlideThumbnail = ({
 
 const PRESET_TYPES = ["BOS", "Attachment", "Vertical Ridge", "Power Ridge", "Bite Ramp", "IPR", "BC", "TAG", "기타"];
 const getTypeColor = (type: string) => {
-  const t = type.toLowerCase();
-  if (t.includes("bos")) return "text-blue-600";
-  if (t.includes("attachment")) return "text-green-600";
-  if (t.includes("ipr")) return "text-purple-600";
-  if (t.includes("bc")) return "text-red-600";
-  if (t.includes("ridge")) return "text-orange-600";
-  if (t.includes("bite")) return "text-emerald-600";
-  if (t.includes("tag")) return "text-pink-600";
-  return "text-slate-700";
-};
-
-// 전문가용 컬러 시스템
-const getExpertTypeColor = (type: string) => {
     const t = type.toLowerCase();
-    if (t.includes("bos")) return "#2563eb"; 
-    if (t.includes("attachment")) return "#059669"; 
-    if (t.includes("ipr")) return "#7c3aed"; 
-    if (t.includes("bc")) return "#dc2626"; 
-    if (t.includes("ridge")) return "#ea580c"; 
-    if (t.includes("bite")) return "#0d9488"; 
-    if (t.includes("tag")) return "#db2777"; 
-    return "#475569"; 
-};
+    if (t.includes("bos")) return "text-blue-600";
+    if (t.includes("attachment")) return "text-green-600";
+    if (t.includes("ipr")) return "text-purple-600";
+    if (t.includes("bc")) return "text-red-600";
+    if (t.includes("ridge")) return "text-orange-600";
+    if (t.includes("bite")) return "text-emerald-600";
+    if (t.includes("tag")) return "text-pink-600";
+    return "text-teal-600"; // ✨ NEW: 기타 등 나머지 아이템은 모두 청록색(Teal)
+  };
+  
+  // 전문가용 컬러 시스템
+  const getExpertTypeColor = (type: string) => {
+      const t = type.toLowerCase();
+      if (t.includes("bos")) return "#2563eb"; 
+      if (t.includes("attachment")) return "#059669"; 
+      if (t.includes("ipr")) return "#7c3aed"; 
+      if (t.includes("bc")) return "#dc2626"; 
+      if (t.includes("ridge")) return "#ea580c"; 
+      if (t.includes("bite")) return "#0d9488"; 
+      if (t.includes("tag")) return "#db2777"; 
+      return "#0d9488"; // ✨ NEW: 기타 등 나머지 아이템은 모두 청록색(Teal)
+  };
 
 const hexToRgba = (hex: string, opacity: number) => {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -302,6 +447,16 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked,
     const imgRef = useRef<HTMLImageElement>(null);
     const panRef = useRef({ x: 0, y: 0 });
     const dragRef = useRef({ isDown: false, startX: 0, startY: 0, lastX: 0, lastY: 0, didMove: false });
+    // ✨ NEW: ESC 키로 룰 이미지 팝업 닫기
+    useEffect(() => {
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && showPopup) {
+                setShowPopup(false); setIsExpanded(false); resetZoom();
+            }
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [showPopup]);
 
     const resetZoom = () => {
         setIsZoomed(false);
@@ -544,6 +699,16 @@ const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck }: { rule: Rule;
     const imgRef = useRef<HTMLImageElement>(null);
     const panRef = useRef({ x: 0, y: 0 });
     const dragRef = useRef({ isDown: false, startX: 0, startY: 0, lastX: 0, lastY: 0, didMove: false });
+    // ✨ NEW: ESC 키로 모서리 룰 이미지 팝업 닫기
+    useEffect(() => {
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && showPopup) {
+                setShowPopup(false); setIsExpanded(false); resetZoom();
+            }
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [showPopup]);
 
     const resetZoom = () => {
         setIsZoomed(false);
@@ -727,36 +892,78 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [selectedType, setSelectedType] = useState("BOS");
   const [customType, setCustomType] = useState("");
   const [selectedTeeth, setSelectedTeeth] = useState<string[]>([]);
-  const [startStep, setStartStep] = useState(1);
+const [startStep, setStartStep] = useState(1);
   const [endStep, setEndStep] = useState(10);
   const [note, setNote] = useState("");
-// ✨ NEW: 이미지 업로드 관련 상태 및 로직 (복붙, 드래그 지원)
-const [ruleImage, setRuleImage] = useState<string | null>(null);
-const [isRuleImageUploading, setIsRuleImageUploading] = useState(false);
-const ruleFileInputRef = useRef<HTMLInputElement>(null);
+  const [isIsolated, setIsIsolated] = useState(false); // ✨ NEW: 단일 아이템 분리 여부 상태
+  //   // ✨ NEW: 이미지 업로드 관련 상태 및 로직 (복붙, 드래그 지원)
+  const [ruleImage, setRuleImage] = useState<string | null>(null);
+  const [isRuleImageUploading, setIsRuleImageUploading] = useState(false);
+  const ruleFileInputRef = useRef<HTMLInputElement>(null);
 
-const processRuleImageFile = async (file: File) => {
-    if (!file.type.startsWith('image/')) return;
-    setIsRuleImageUploading(true);
-    try {
-        const compressedBlob = await compressImage(file);
-        const storageRef = ref(storage, `patients/${patient.id}/rule_images/${Date.now()}_${file.name || 'pasted_image.png'}`);
-        await uploadBytes(storageRef, compressedBlob);
-        const url = await getDownloadURL(storageRef);
-        setRuleImage(url);
-    } catch (error) {
-        console.error("Rule image upload error:", error);
-        alert("이미지 업로드 실패");
-    } finally {
-        setIsRuleImageUploading(false);
-    }
-};
+  // ✨ NEW: 이동 그래프 팝업 및 업로드 관련 상태
+  const [showGraphPopup, setShowGraphPopup] = useState(false);
+  const [isGraphImageUploading, setIsGraphImageUploading] = useState(false);
+  const graphFileInputRef = useRef<HTMLInputElement>(null);
 
-const handleRuleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) processRuleImageFile(file);
-    e.target.value = "";
-};
+  const processRuleImageFile = async (file: File) => {
+      if (!file.type.startsWith('image/')) return;
+      setIsRuleImageUploading(true);
+      try {
+          const compressedBlob = await compressImage(file);
+          const storageRef = ref(storage, `patients/${patient.id}/rule_images/${Date.now()}_${file.name || 'pasted_image.png'}`);
+          await uploadBytes(storageRef, compressedBlob);
+          const url = await getDownloadURL(storageRef);
+          setRuleImage(url);
+      } catch (error) {
+          console.error("Rule image upload error:", error);
+          alert("이미지 업로드 실패");
+      } finally {
+          setIsRuleImageUploading(false);
+      }
+  };
+
+  const processGraphImageFile = async (file: File) => {
+      if (!file.type.startsWith('image/')) return;
+      setIsGraphImageUploading(true);
+      try {
+          const compressedBlob = await compressImage(file);
+          const storageRef = ref(storage, `patients/${patient.id}/graph_images/${Date.now()}_${file.name || 'graph.png'}`);
+          await uploadBytes(storageRef, compressedBlob);
+          const url = await getDownloadURL(storageRef);
+
+          const currentSummary = patient.summary || {};
+          if (store) {
+               await store.saveSummary(patient.id, {
+                    ...currentSummary,
+                    graphImage: url
+               });
+          }
+      } catch (error) {
+          console.error("Graph image upload error:", error);
+          alert("이동 그래프 업로드 실패");
+      } finally {
+          setIsGraphImageUploading(false);
+      }
+  };
+
+  const handleRemoveGraphImage = async () => {
+      if(confirm("이동 그래프를 삭제하시겠습니까?")) {
+           const currentSummary = patient.summary || {};
+           if (store) {
+                await store.saveSummary(patient.id, {
+                     ...currentSummary,
+                     graphImage: null
+                });
+           }
+      }
+  }
+
+  const handleRuleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) processRuleImageFile(file);
+      e.target.value = "";
+  };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null); 
@@ -772,10 +979,10 @@ const handleRuleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
   const SMART_DASHBOARD_INDEX = -999;
   const [smartStage, setSmartStage] = useState(1);
 
-// ✨ NEW: ALL 모드 상태와 필터링 상태 추가
-const [isAllView, setIsAllView] = useState(false); 
-const [activeFilters, setActiveFilters] = useState<string[]>([]);
-const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 상태 표시 토글
+  // ✨ NEW: ALL 모드 상태와 필터링 상태 추가
+  const [isAllView, setIsAllView] = useState(false); 
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 상태 표시 토글
 
   const currentSlide = slides[currentSlideIndex] || { items: [], penStrokes: [] };
   const items = currentSlide.items || [];
@@ -929,25 +1136,69 @@ const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 
   }, [penStrokes, currentSlideIndex, items, redrawTrigger]); 
 
   useEffect(() => { 
-      const handleKeyDown = (e: KeyboardEvent) => { 
-          const activeEl = document.activeElement;
-          const isInputActive = activeEl instanceof HTMLElement && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
-          if (isInputActive) return;
+    const handleKeyDown = (e: KeyboardEvent) => { 
+        const activeEl = document.activeElement;
+        const isInputActive = activeEl instanceof HTMLElement && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+        const isDropzone = activeEl?.closest('.rule-image-dropzone') || activeEl?.closest('.graph-image-dropzone');
+        
+        // ✨ ESC 키 로직 (체크리스트 그리드 닫기, 편집 모드 해제)
+        if (e.key === 'Escape') {
+            if (isGridOpen) {
+                setIsGridOpen(false);
+                return; 
+            }
+            if (!isInputActive && !isDropzone) {
+                setSelectedRuleIds([]);
+                setIsQuickEdit(false);
+            }
+        }
 
-          if (textInput) return; 
+        if (isInputActive || isDropzone) return;
+        if (textInput) return; 
 
-          if (e.key === 'Escape') {
-              setSelectedRuleIds([]);
-              setIsQuickEdit(false);
-          }
-            
-          if (e.key === 'Delete') deleteSelectedItems(); 
-            
-          if (activeTab === 'summary' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        // ✨ Ctrl + S (워크 서머리 탭일 때만 저장)
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && activeTab === 'summary') {
             e.preventDefault();
-            handleCopy();
-          }          
-          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); handleDuplicate(); }
+            handleSave();
+            return;
+        }
+
+        // ✨ 화면 전환 단축키 (Alt 조합)
+        if (e.altKey && !e.ctrlKey && !e.shiftKey) {
+            switch (e.key.toLowerCase()) {
+                case 'p': // 환자 목록
+                    e.preventDefault();
+                    const patientBtn = Array.from(document.querySelectorAll('button, a')).find(el => el.textContent?.includes('Patients'));
+                    if (patientBtn) (patientBtn as HTMLElement).click();
+                    break;
+                case 's': // 스마트 서머리
+                    e.preventDefault();
+                    if (activeTab !== 'summary') setActiveTab('summary');
+                    setCurrentSlideIndex(SMART_DASHBOARD_INDEX);
+                    break;
+                case 'w': // ✨ NEW: 워크 서머리 (1번 슬라이드)
+                    e.preventDefault();
+                    if (activeTab !== 'summary') setActiveTab('summary');
+                    setCurrentSlideIndex(0);
+                    break;
+                case 'r': // 레코드 창
+                    e.preventDefault();
+                    setActiveTab('records');
+                    break;
+                case 'c': // 체크리스트 그리드
+                    e.preventDefault();
+                    setIsGridOpen(true);
+                    break;
+            }
+        }
+          
+        if (e.key === 'Delete') deleteSelectedItems(); 
+          
+        if (activeTab === 'summary' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+          e.preventDefault();
+          handleCopy();
+        }          
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); handleDuplicate(); }
 
           if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
               if (currentSlideIndex === SMART_DASHBOARD_INDEX) {
@@ -972,6 +1223,11 @@ const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 
       }; 
 
       const handlePasteEvent = (e: ClipboardEvent) => { 
+          const activeEl = document.activeElement;
+          const isInputActive = activeEl instanceof HTMLElement && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+          const isDropzone = activeEl?.closest('.rule-image-dropzone') || activeEl?.closest('.graph-image-dropzone');
+          if (isInputActive || isDropzone) return;
+
           const clipboardItems = e.clipboardData?.items; 
           let hasImage = false;
           if (clipboardItems) {
@@ -994,10 +1250,11 @@ const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 
       window.addEventListener('keydown', handleKeyDown); 
       window.addEventListener('paste', handlePasteEvent); 
       return () => { 
-          window.removeEventListener('keydown', handleKeyDown); 
-          window.removeEventListener('paste', handlePasteEvent); 
-      }; 
-  }, [selectedIds, textInput, historyIndex, history, currentSlideIndex, patient.id, clipboard, pasteOffset, items, smartStage, totalSteps, activeTab]);
+        window.removeEventListener('keydown', handleKeyDown); 
+        window.removeEventListener('paste', handlePasteEvent); 
+    }; 
+// ✨ NEW: isGridOpen, isQuickEdit, selectedRuleIds 를 추가하여 ESC가 현재 상태를 정확히 인식하도록 수정!
+}, [selectedIds, textInput, historyIndex, history, currentSlideIndex, patient.id, clipboard, pasteOffset, items, smartStage, totalSteps, activeTab, isGridOpen, isQuickEdit, selectedRuleIds]);
 
   const changeTool = (tool: typeof currentTool) => { 
       setCurrentTool(tool); 
@@ -1655,7 +1912,9 @@ const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 
       const finalImage = tempCanvas.toDataURL('image/png'); 
       if (!store) return; 
 
+      const currentSummary = patient.summary || {};
       await store.saveSummary(patient.id, { 
+          ...currentSummary,
           image: finalImage, 
           memo: JSON.stringify({ slides }) 
       }); 
@@ -1668,12 +1927,12 @@ const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 
     const finalType = selectedType === "기타" ? customType : selectedType; 
     const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t)); 
     
-    // ✨ 안정 장치: 이미지가 없으면 아예 필드 자체를 빼고 전송 (Firebase 에러 방지)
     const ruleData: any = { 
         type: finalType, 
         startStep, 
         endStep, 
-        note 
+        note,
+        isIsolated // ✨ NEW: 단일 아이템 상태도 함께 묶어서 저장
     };
     if (ruleImage) ruleData.imageUrl = ruleImage;
 
@@ -1688,6 +1947,7 @@ const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 
     setSelectedTeeth([]); 
     setNote(""); 
     setRuleImage(null); 
+    setIsIsolated(false); // ✨ NEW: 저장 후 체크 해제
     if (selectedType === "기타") setCustomType(""); 
 };
 
@@ -1700,7 +1960,8 @@ const handleEditClick = (e: React.MouseEvent, rule: Rule) => {
     setStartStep(rule.startStep); 
     setEndStep(rule.endStep); 
     setNote(rule.note || ""); 
-    setRuleImage(rule.imageUrl || null); // ✨ 수정 시 기존 사진 불러오기
+    setRuleImage(rule.imageUrl || null); 
+    setIsIsolated((rule as any).isIsolated || false); // ✨ NEW: 수정 시 단일 아이템 상태 불러오기
     
     if (scrollContainerRef.current) {
         scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1708,7 +1969,7 @@ const handleEditClick = (e: React.MouseEvent, rule: Rule) => {
 };
 
 const cancelEdit = () => { 
-    setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); setRuleImage(null); // ✨ 취소 시 썸네일 날리기
+    setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); setRuleImage(null); setIsIsolated(false); // ✨ 취소 시 함께 리셋
 };
 
   const handleDeleteMultiRules = async () => {
@@ -1732,7 +1993,13 @@ const cancelEdit = () => {
       setIsQuickEdit(false);
   };
 
-  const getRulesForStep = (step: number) => (patient.rules || []).filter((r: Rule) => step >= r.startStep && step <= r.endStep).sort((a: Rule, b: Rule) => a.tooth - b.tooth);
+  // ✨ 1번 요청 반영: 치식 번호 정렬 전에, Type으로 먼저 정렬하도록 수정
+  const getRulesForStep = (step: number) => (patient.rules || [])
+      .filter((r: Rule) => step >= r.startStep && step <= r.endStep)
+      .sort((a: Rule, b: Rule) => {
+          if (a.type !== b.type) return a.type.localeCompare(b.type);
+          return a.tooth - b.tooth;
+      });
   
   const getGroupedRules = (step: number) => { 
       const allRules = getRulesForStep(step); 
@@ -1745,32 +2012,92 @@ const cancelEdit = () => {
       }; 
   };
    
-  const renderCard = (rule: Rule, step: number, isTiny = false) => { 
-      const checked = patient.checklist_status.some((s: any) => s.step === step && s.ruleId === rule.id && s.checked); 
-      const status = (step === rule.startStep) ? "NEW" : (step === rule.endStep ? "REMOVE" : "CHECK"); 
-       
-      return ( 
-          <div key={rule.id} onClick={() => store && store.toggleChecklistItem(patient.id, step, rule.id)} className={cn("rounded cursor-pointer flex flex-col relative border select-none transition-all", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-50 border-green-500 ring-1 ring-green-500 text-slate-400" : "bg-white hover:ring-2 hover:ring-blue-200 border-slate-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}> 
-              <div className="flex justify-between items-start">
-                  <span className={cn("font-bold", isTiny ? "text-[11px]" : "text-lg")}>
-                    {rule.tooth === 0 ? "Gen" : rule.tooth === 10 ? "MAX" : rule.tooth === 30 ? "MAN" : `#${rule.tooth}`}
-                  </span>
-                  <div className={cn("w-4 h-4 border rounded flex items-center justify-center transition-colors", checked ? "bg-green-500 border-green-500" : "bg-white")}>{checked && <CheckCheck className="text-white w-3 h-3"/>}</div>
-              </div> 
-              <div className={cn("font-bold truncate mt-0.5", getTypeColor(rule.type), isTiny && "text-[10px]")}>{rule.type}</div> 
-               
-              {rule.note && (
-                  <div className={cn(
-                      "whitespace-pre-wrap break-words leading-tight rounded",
-                      isTiny ? "text-[9px] p-0.5 mt-0.5" : "text-[11px] p-1.5 mt-1.5",
-                      "bg-orange-50 text-slate-700 font-medium border border-orange-100/50"
-                  )}>
-                      {rule.note}
-                  </div>
-              )} 
-          </div> 
-      ); 
-  };
+// ✨ 2번 요청 반영: 풀 체크리스트 그리드 전용 - 동일 타입+노트 병합 함수
+const mergeRules = (rules: Rule[]) => {
+    const mergedMap = new Map<string, any>();
+    rules.forEach(r => {
+        // ✨ NEW: '단일 아이템(isIsolated)' 체크된 항목만 개별 고유 키를 부여하여 묶이지 않게 함 (어태치먼트는 기본 병합 유지)
+        const key = (r as any).isIsolated ? `isolated_${r.id}` : `${r.type}_${r.note || ""}`;
+        
+        if (!mergedMap.has(key)) {
+            mergedMap.set(key, { ...r, teeth: [], ruleIds: [] });
+        }
+        const group = mergedMap.get(key);
+        if (r.tooth !== 0 && !group.teeth.includes(r.tooth)) group.teeth.push(r.tooth);
+        group.ruleIds.push(r.id);
+    });
+    const mergedArray = Array.from(mergedMap.values());
+    mergedArray.forEach((m: any) => m.teeth.sort((a: number, b: number) => a - b));
+    return mergedArray;
+};
+
+// ✨ 2번 요청 반영: 병합된 카드를 처리할 수 있도록 렌더링 로직 수정 (단일 룰 대신 ruleIds 배열 전체를 순회)
+const renderCard = (mergedGroup: any, step: number, isTiny = false) => { 
+    const checked = mergedGroup.ruleIds.every((id: string) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === id && s.checked)); 
+    const status = (step === mergedGroup.startStep) ? "NEW" : (step === mergedGroup.endStep ? "REMOVE" : "CHECK"); 
+     
+    const handleToggle = () => {
+        if (!store) return;
+        const allChecked = mergedGroup.ruleIds.every((id: string) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === id && s.checked));
+        mergedGroup.ruleIds.forEach((id: string) => {
+            const isItemChecked = patient.checklist_status.some((s: any) => s.step === step && s.ruleId === id && s.checked);
+            if (allChecked || (!allChecked && !isItemChecked)) {
+                store.toggleChecklistItem(patient.id, step, id);
+            }
+        });
+    };
+
+    return ( 
+        <div key={mergedGroup.id} onClick={handleToggle} className={cn("rounded cursor-pointer flex flex-col relative border select-none transition-all", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-50 border-green-500 ring-1 ring-green-500 text-slate-400" : "bg-white hover:ring-2 hover:ring-blue-200 border-slate-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}> 
+            
+            {/* 1. 아이템 이름 (Type) & 체크박스 */}
+            <div className="flex justify-between items-start mb-1.5">
+                <div className={cn("font-extrabold truncate pr-1", getTypeColor(mergedGroup.type), isTiny ? "text-[11px]" : "text-sm")}>
+                    {mergedGroup.type}
+                </div>
+                <div className={cn("w-4 h-4 border rounded flex items-center justify-center transition-colors shrink-0", checked ? "bg-green-500 border-green-500" : "bg-white")}>
+                    {checked && <CheckCheck className="text-white w-3 h-3"/>}
+                </div>
+            </div> 
+
+{/* 2. 치식 번호 (세로 나열, 직각 네모 배지 및 상/하악 색상 적용) */}
+<div className="flex flex-col items-start gap-1 mb-1.5">
+                  {mergedGroup.tooth === 0 ? (
+                      <div className={cn("px-1.5 py-0.5 font-bold rounded-[2px] border", isTiny ? "text-[9px]" : "text-[11px]", "bg-slate-100 text-slate-600 border-slate-200")}>
+                          Gen
+                      </div>
+                  ) : mergedGroup.teeth.map((t: number) => {
+                      const isUpper = t >= 10 && t < 30; // 10, 20번대 상악
+                      return (
+                          <div 
+                              key={t} 
+                              className={cn(
+                                  "px-1.5 py-0.5 font-bold rounded-[2px] border", 
+                                  isTiny ? "text-[9px]" : "text-[11px]",
+                                  isUpper 
+                                      ? "bg-blue-50/70 text-blue-600 border-blue-200"  // ✨ 상악 아주 연한 푸른 배경
+                                      : "bg-red-50/70 text-red-600 border-red-200"     // ✨ 하악 아주 연한 붉은 배경
+                              )}
+                          >
+                              #{t}
+                          </div>
+                      );
+                  })}
+              </div>
+                           
+            {/* 3. 메모 */}
+            {mergedGroup.note && (
+                <div className={cn(
+                    "whitespace-pre-wrap break-words leading-tight rounded mt-auto",
+                    isTiny ? "text-[9px] p-0.5" : "text-[11px] p-1.5",
+                    "bg-orange-50 text-slate-700 font-medium border border-orange-100/50"
+                )}>
+                    {mergedGroup.note}
+                </div>
+            )} 
+        </div> 
+    ); 
+};
 
   const renderFullScreenGrid = () => { 
       const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i); 
@@ -1811,7 +2138,7 @@ const cancelEdit = () => {
                               return (
                                   <div key={`gen-${step}`} className="bg-white rounded-lg p-1 border flex flex-col h-full">
                                       <div className="text-[9px] font-bold text-slate-400 px-1 mb-1">GENERAL</div>
-                                      <div className="flex-1">{genRules.map((r: Rule) => renderCard(r, step, true))}</div>
+                                      <div className="flex-1">{mergeRules(genRules).map((g: any) => renderCard(g, step, true))}</div>
                                   </div>
                               );
                           })}
@@ -1824,7 +2151,7 @@ const cancelEdit = () => {
                               return (
                                   <div key={`max-${step}`} className="bg-white rounded-lg p-1 border flex flex-col h-full">
                                       <div className="text-[9px] font-bold text-blue-400 px-1 mb-1">MAXILLA</div>
-                                      <div className="flex-1">{upperRules.map((r: Rule) => renderCard(r, step, true))}</div>
+                                      <div className="flex-1">{mergeRules(upperRules).map((g: any) => renderCard(g, step, true))}</div>
                                   </div>
                               );
                           })}
@@ -1837,7 +2164,7 @@ const cancelEdit = () => {
                               return (
                                   <div key={`man-${step}`} className="bg-white rounded-lg p-1 border flex flex-col h-full">
                                       <div className="text-[9px] font-bold text-orange-400 px-1 mb-1">MANDIBLE</div>
-                                      <div className="flex-1">{lowerRules.map((r: Rule) => renderCard(r, step, true))}</div>
+                                      <div className="flex-1">{mergeRules(lowerRules).map((g: any) => renderCard(g, step, true))}</div>
                                   </div>
                               );
                           })}
@@ -1853,7 +2180,7 @@ const cancelEdit = () => {
                               return ( 
                                   <div key={`att-${step}`} className="rounded-lg bg-white border flex flex-col h-full min-h-[100px]"> 
                                       <div className="p-1.5 border-b text-[10px] text-center bg-slate-50">{step===0?"PRE":`STEP ${step}`}</div> 
-                                      <div className="p-1 flex-1">{attRules.map((r: Rule) => renderCard(r, step, true))}</div> 
+                                      <div className="p-1 flex-1">{mergeRules(attRules).map((g: any) => renderCard(g, step, true))}</div> 
                                   </div> 
                               ) 
                           })} 
@@ -1892,23 +2219,35 @@ const cancelEdit = () => {
            </div>
            
            <div ref={scrollContainerRef} className="p-4 space-y-4 overflow-y-auto flex-1 scroll-smooth">
-              <div className="space-y-1">
-                 <Label className="text-xs font-bold text-slate-500">Item Type</Label>
+           <div className="space-y-1">
+                 <div className="flex items-center justify-between">
+                     <Label className="text-xs font-bold text-slate-500">Item Type</Label>
+                     {/* ✨ NEW: Item Type 우측 단일 아이템 체크박스 추가 */}
+                     <label className="flex items-center gap-1.5 cursor-pointer group">
+                         <input 
+                             type="checkbox" 
+                             checked={isIsolated} 
+                             onChange={(e) => setIsIsolated(e.target.checked)}
+                             className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                         />
+                         <span className="text-[10px] font-bold text-slate-500 group-hover:text-blue-600 transition-colors">단일 아이템</span>
+                     </label>
+                 </div>
                  <select className="w-full border p-2 rounded" value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
                     {PRESET_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                  </select>
                  {selectedType === "기타" && <input className="w-full border p-2 rounded mt-1 text-sm bg-yellow-50" placeholder="직접 입력하세요..." value={customType} onChange={(e) => setCustomType(e.target.value)} />}
               </div>
-              <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Select Teeth</Label><ToothGrid selectedTeeth={selectedTeeth} onToggle={toggleTooth} /></div>
+                            <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Select Teeth</Label><ToothGrid selectedTeeth={selectedTeeth} onToggle={toggleTooth} /></div>
               <div className="flex gap-2">
                  <div className="flex-1"><Label className="text-xs font-bold text-slate-500">Start</Label><input type="number" className="w-full border p-2 rounded" value={startStep} onChange={(e) => setStartStep(Number(e.target.value))} onWheel={(e) => e.preventDefault()} /></div>
                  <div className="flex-1"><Label className="text-xs font-bold text-slate-500">End</Label><div className="flex gap-1"><input type="number" className="w-full border p-2 rounded" value={endStep} onChange={(e) => setEndStep(Number(e.target.value))} onWheel={(e) => e.preventDefault()} /><Button variant="outline" className="px-2 text-xs" onClick={() => setEndStep(totalSteps)}>End</Button></div></div>
               </div>              
               <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Note</Label><input className="w-full border p-2 rounded" placeholder="e.g. Mesial" value={note} onChange={(e) => setNote(e.target.value)} /></div>
               
-{/* ✨ NEW: 레퍼런스 사진 업로드 영역 (드래그, 복붙 지원) */}
+{/* ✨ NEW: 레퍼런스 사진 업로드 영역 (드래그, 복붙 지원 - rule-image-dropzone 클래스 추가됨) */}
               <div 
-                  className="space-y-2 p-3 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50 transition-all focus-within:border-blue-400 focus-within:bg-blue-50/50 hover:bg-slate-100 outline-none"
+                  className="space-y-2 p-3 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50 transition-all focus-within:border-blue-400 focus-within:bg-blue-50/50 hover:bg-slate-100 outline-none rule-image-dropzone"
                   tabIndex={0}
                   onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                   onDrop={(e) => {
@@ -2001,15 +2340,20 @@ const cancelEdit = () => {
                                              <input type="checkbox" className="mr-2 pointer-events-none w-3.5 h-3.5" checked={isSelected} readOnly />
                                          )}
 
-                                         <div className="flex-1 overflow-hidden pointer-events-none">
+<div className="flex-1 overflow-hidden pointer-events-none">
                                          <div className="flex items-center gap-1 relative pr-4">
                     <span className={cn("font-bold", getTypeColor(rule.type))}>
                         {rule.tooth === 0 ? "Gen" : rule.tooth === 10 ? "MAX" : rule.tooth === 30 ? "MAN" : `#${rule.tooth}`} {rule.type}
                     </span>
+
+                    {/* ✨ NEW: 그룹 표시 뱃지 (동일한 타입/메모를 가진 룰이 2개 이상일 때 노출) */}
+                    {(!rule.type.toLowerCase().includes("attachment") && !(rule as any).isIsolated && safeRules.filter((r: Rule) => !r.type.toLowerCase().includes("attachment") && !(r as any).isIsolated && r.type === rule.type && (r.note || "") === (rule.note || "")).length > 1) && (
+                        <span className="ml-0.5 px-1 py-0.5 bg-slate-200 text-slate-500 text-[8px] rounded font-bold uppercase tracking-wider drop-shadow-sm">Group</span>
+                    )}
                     
                     {/* ✨ NEW: 리스트용 빨간 별표 (이미지가 있을 때만 노출) */}
                     {rule.imageUrl && (
-                        <div className="absolute top-0 right-0 drop-shadow-md" title="Reference Image">
+                                                <div className="absolute top-0 right-0 drop-shadow-md" title="Reference Image">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444" stroke="#991b1b" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
                                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                             </svg>
@@ -2164,7 +2508,6 @@ const cancelEdit = () => {
             <div className="flex-1 overflow-y-auto pr-1 pl-1 py-2 space-y-2 custom-scrollbar"> 
                 {(() => {
                     const sortedRules = [...safeRules].sort((a, b) => {
-                        // ✨ 수정: ALL 모드일 때는 필터에 포함되어 있는지 확인
                         const aActive = isAllView ? activeFilters.includes(a.type) : (smartStage >= a.startStep && smartStage <= a.endStep);
                         const bActive = isAllView ? activeFilters.includes(b.type) : (smartStage >= b.startStep && smartStage <= b.endStep);
                         if (aActive && !bActive) return -1; 
@@ -2177,7 +2520,6 @@ const cancelEdit = () => {
                     }
 
                     return sortedRules.map(rule => {
-                        // ✨ 수정: 필터가 꺼지면 타임라인에서도 회색으로 비활성화 처리됨
                         const isActive = isAllView ? activeFilters.includes(rule.type) : (smartStage >= rule.startStep && smartStage <= rule.endStep);
                         const leftPercent = ((rule.startStep - 1) / (totalSteps - 1)) * 100;
                         const widthPercent = ((rule.endStep - rule.startStep) / (totalSteps - 1)) * 100;
@@ -2201,7 +2543,7 @@ const cancelEdit = () => {
                                 }}
                                 onClick={() => {
                                     setSmartStage(rule.startStep);
-                                    setIsAllView(false); // 타임라인 클릭 시 ALL 모드 종료
+                                    setIsAllView(false); 
                                 }}
                             >
                                 <div className="flex justify-between items-center">
@@ -2245,7 +2587,6 @@ const cancelEdit = () => {
             </div>
         </div>
 
-{/* ✨ 핵심 수정: 6번 사진 전체 테두리 효과를 위해 최외곽을 묶고 isStepAllChecked를 계산합니다. */}
 {(() => {
             const currentRules = safeRules.filter((r: Rule) => smartStage >= r.startStep && smartStage <= r.endStep);
             const isStepAllChecked = currentRules.length > 0 && currentRules.every((r: Rule) => !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked));
@@ -2253,7 +2594,6 @@ const cancelEdit = () => {
             return (
                 <div className={cn(
                     "flex-1 flex flex-col rounded-xl relative h-full overflow-hidden transition-all duration-500",
-                    // ✨ 굵기 변화(border-[3px])를 없애 화면 꿀렁임을 차단하고, 현재 단계 박스와 동일한 ring 효과 적용!
                     isStepAllChecked ? "bg-[#fcfcfc] border border-green-500 ring-[3px] ring-green-100 shadow-[inset_0_0_20px_rgba(220,252,231,0.5)]" : "bg-[#fcfcfc] border border-slate-200 shadow-[inset_0_2px_20px_rgba(0,0,0,0.02)]"
                 )}>
                     
@@ -2261,9 +2601,8 @@ const cancelEdit = () => {
                         "p-4 border-b bg-white/95 backdrop-blur flex flex-col items-center justify-center shrink-0 z-30 shadow-sm transition-colors duration-500",
                         isStepAllChecked ? "border-green-500" : "border-slate-200"
                     )}>
-                                                <div className="flex items-center justify-center gap-4 w-full relative">
+                        <div className="flex items-center justify-center gap-4 w-full relative">
 
-                            {/* ✨ NEW: ALL (전체 보기) 토글 버튼 */}
                             <button
                                 onClick={() => {
                                     const next = !isAllView;
@@ -2283,8 +2622,7 @@ const cancelEdit = () => {
                                 ALL
                             </button>
 
-{/* 슬라이더 컨트롤 (ALL 모드 켜지면 조작 금지) - ❌ 불필요한 IIFE 제거, 원본 구조 복원 완료 */}
-<div className={cn(
+                            <div className={cn(
                                 "px-3 py-1.5 bg-white border-[1.5px] rounded-full shadow-sm ring-[3px] flex items-center gap-3 transition-all duration-500",
                                 isAllView && "opacity-40 pointer-events-none",
                                 isStepAllChecked ? "border-green-500 ring-green-100" : "border-[#2563eb] ring-[#dbeafe]"
@@ -2307,7 +2645,6 @@ const cancelEdit = () => {
                                 </span>
                                 <button onClick={() => setSmartStage(p => Math.min(totalSteps, p + 1))} className={cn("rounded-full w-6 h-6 flex items-center justify-center font-bold transition-colors", isStepAllChecked ? "text-green-600 hover:bg-green-50" : "text-[#2563eb] hover:text-blue-700 hover:bg-blue-50")}>&gt;</button>
                                 
-                                {/* ✨ NEW: 여기에 요청하신 '전체 체크' 버튼이 추가되었습니다! */}
                                 <div className={cn("w-px h-4 mx-0.5", isStepAllChecked ? "bg-green-200" : "bg-blue-200")}></div>
                                 <button 
                                     onClick={() => store?.checkAllInStep(patient.id, smartStage)} 
@@ -2317,8 +2654,81 @@ const cancelEdit = () => {
                                     <CheckSquare className="w-4 h-4" />
                                 </button>
                             </div>
-                            
-                            {/* ✨ NEW: 우측 끝에 붙는 세련된 슬라이드 토글 스위치 */}
+
+{/* ✨ NEW: 이동 그래프 버튼 영역 (드래그, 복붙 지원 - graph-image-dropzone) */}
+<div
+                                className={cn(
+                                    "relative group graph-image-dropzone ml-4 flex shrink-0 items-center outline-none rounded-full transition-all border-[1.5px] shadow-sm",
+                                    patient.summary?.graphImage 
+                                        ? "bg-purple-50 border-purple-200" 
+                                        : "bg-white border-slate-200 focus-within:border-purple-400 focus-within:ring-[3px] focus-within:ring-purple-100"
+                                )}
+                                tabIndex={0}
+                                onPaste={(e) => {
+                                    const file = e.clipboardData.files?.[0];
+                                    if (file && file.type.startsWith('image/')) {
+                                        e.preventDefault(); e.stopPropagation();
+                                        processGraphImageFile(file);
+                                    }
+                                }}
+                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                onDrop={(e) => {
+                                    e.preventDefault(); e.stopPropagation();
+                                    const file = e.dataTransfer.files?.[0];
+                                    if (file && file.type.startsWith('image/')) processGraphImageFile(file);
+                                }}
+                            >
+                                <input type="file" accept="image/*" className="hidden" ref={graphFileInputRef} onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) processGraphImageFile(file);
+                                    e.target.value = "";
+                                }} />
+                                
+                                {patient.summary?.graphImage ? (
+                                    // ✨ 이미지가 있을 때: 클릭 시 팝업 뷰어 열기
+                                    <button
+                                        onClick={() => setShowGraphPopup(true)}
+                                        className="px-4 py-1.5 rounded-full font-extrabold text-sm text-purple-600 hover:text-purple-700 flex items-center gap-1.5"
+                                    >
+                                        <TrendingUp className="w-4 h-4" />
+                                        이동 그래프
+                                    </button>
+                                ) : (
+                                    // ✨ 이미지가 없을 때: [파일 열기] 와 [포커스 영역] 분리
+                                    <>
+                                        <button
+                                            onClick={() => graphFileInputRef.current?.click()}
+                                            className="px-3 py-1.5 font-extrabold text-sm text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-l-full flex items-center gap-1.5 transition-colors"
+                                            title="클릭하여 파일 선택"
+                                        >
+                                            {isGraphImageUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
+                                            파일 첨부
+                                        </button>
+                                        
+                                        <div className="w-px h-4 bg-slate-200"></div>
+                                        
+                                        <div 
+                                            className="px-3 py-1.5 text-[10px] font-extrabold text-slate-400 cursor-text hover:bg-slate-50 hover:text-slate-600 rounded-r-full flex items-center transition-colors"
+                                            title="여기를 클릭하여 활성화한 후 Ctrl+V를 누르세요"
+                                        >
+                                            클릭 후 Ctrl+V
+                                        </div>
+                                    </>
+                                )}
+
+                                {patient.summary?.graphImage && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleRemoveGraphImage();
+                                        }}
+                                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-red-600 shadow-sm"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                )}
+                            </div>
+
                             {!isAllView && (
                                 <div 
                                     className="absolute right-4 flex items-center gap-2 cursor-pointer group animate-in fade-in" 
@@ -2369,7 +2779,6 @@ const cancelEdit = () => {
                         {isAllView && (
                             <div className="w-full max-w-[75%] flex flex-wrap items-center justify-center gap-2 pt-3 animate-in fade-in slide-in-from-top-2">
                                 
-                                {/* ✨ 스마트 전체 선택/해제 버튼 */}
                                 <button
                                     onClick={() => setActiveFilters(activeFilters.length > 0 ? [] : Array.from(new Set(safeRules.map((r: Rule) => r.type))) as string[])}
                                     className="flex items-center gap-1 px-3 py-1 text-[11px] font-extrabold rounded-md transition-all border-[1.5px] border-slate-300 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-700 shadow-sm"
@@ -2377,9 +2786,8 @@ const cancelEdit = () => {
                                     {activeFilters.length > 0 ? <><X className="w-3 h-3"/> 전체 해제</> : <><CheckCheck className="w-3 h-3"/> 전체 선택</>}
                                 </button>
 
-                                <div className="w-px h-4 bg-slate-300 mx-1"></div> {/* 시각적 구분선 */}
+                                <div className="w-px h-4 bg-slate-300 mx-1"></div> 
 
-                                {/* 개별 컬러 필터 버튼들 */}
                                 {Array.from(new Set(safeRules.map((r: Rule) => r.type))).map(type => {
                                     const isFilterActive = activeFilters.includes(type as string);
                                     const color = getExpertTypeColor(type as string);
@@ -2405,7 +2813,6 @@ const cancelEdit = () => {
                         )}
                     </div>
 
-                    {/* 💡 캔버스 스크롤 구역 - ❌ 원본 클래스 100% 복구 완료 (투명 테두리 삭제) */}
                     <div className="flex-1 overflow-auto custom-scrollbar relative bg-[#fcfcfc]"> 
 
                     <div className="w-full relative flex flex-col items-center justify-start min-w-[900px] min-h-full py-16 px-2">
@@ -2413,7 +2820,6 @@ const cancelEdit = () => {
                         <div className="absolute h-full w-[2px] bg-slate-300 top-0 left-1/2 -translate-x-1/2 z-0" />
 
                         {(() => {
-                            // ✨ 수정: ALL 모드일 때는 켜져 있는 필터(activeFilters)만 화면에 그림!
                             const activeRules = isAllView 
                                 ? safeRules.filter((r: Rule) => activeFilters.includes(r.type))
                                 : safeRules.filter((r: Rule) => smartStage >= r.startStep && smartStage <= r.endStep);
@@ -2429,17 +2835,14 @@ const cancelEdit = () => {
                                         <div className={cn("flex flex-col w-12 px-0.5", isUpper ? "items-center justify-end" : "items-center justify-start")}>
                                             {rulesToRender.map((r, idx) => {
                                                 const itemColor = getExpertTypeColor(r.type);
-                                                // ✨ 체크 여부 확인 (RangeEl보다 위로 올립니다)
                                                 const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
 
-                                                // ✨ 범위 텍스트에도 투명도/밑줄 적용
                                                 const RangeEl = (
                                                     <div key={`range-${r.id}`} className={cn("text-[14px] font-mono font-extrabold tracking-tighter transition-all duration-300", isRuleChecked && "opacity-40 line-through")} style={{ color: `${itemColor}E6` }}>
                                                         ({r.startStep}-{r.endStep})
                                                     </div>
                                                 );
 
-                                                // ✨ 토글 함수 전달
                                                 const ItemContentEl = <InlineNoteEdit key={`item-content-${r.id}`} rule={r} store={store} patientId={patient.id} itemColor={itemColor} isUpper={isUpper} isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
 
                                                 const Divider = idx !== rulesToRender.length - 1 ? <div key={`div-${r.id}`} className="w-6 h-[1.5px] bg-slate-200 my-1" /> : null;
@@ -2466,14 +2869,12 @@ const cancelEdit = () => {
                                 };
 
                                 const toothIconColor = rules.length > 0 ? "#38bdf8" : "#e2e8f0"; 
-                                // ✨ 현재 치아에 있는 모든 룰이 체크되었는지 확인
                                 const isToothAllChecked = rules.length > 0 && rules.every(r => !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked));
                                 
                                 return (
                                     <div className="flex flex-col items-center w-12 shrink-0 z-10 relative">
                                         {isUpper && rules.length > 0 && <InfoBlock />}
                                         
-                                        {/* ✨ 모든 룰이 체크되었다면 치아 아이콘 박스에도 opacity-40 적용 */}
                                         <div className={cn("relative w-10 h-10 flex items-center justify-center shrink-0 z-10 transition-colors", isUpper ? "mt-0.5" : "mb-0.5", isToothAllChecked && "opacity-40")}>
                                             <svg viewBox="0 0 24 24" fill="white" stroke={toothIconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="absolute inset-0 w-full h-full drop-shadow-sm transition-colors">
                                                 <path d="M12 5.5C10.5 3 8 2 5.5 3.5C3.5 4.5 2 7 2 10C2 14 4 18 5.5 20.5C6.5 22 8 22 9.5 20.5C10.5 19 11 17 12 15C13 17 13.5 19 14.5 20.5C16 22 17.5 22 18.5 20.5C20 18 22 14 22 10C22 7 20.5 4.5 18.5 3.5C16 2 13.5 3 12 5.5Z" />
@@ -2546,11 +2947,11 @@ const cancelEdit = () => {
                                         </div>
                                     </div>
 
-                                    {/* 하악 공통 룰 */}
+                                    {/* 하악 공통 룰 - ✨ 4번 요청 반영: label="MAN"으로 오기 수정 */}
                                     <div className="absolute bottom-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
                                         {manRulesList.map((r: Rule) => {
                                             const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
-                                            return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
+                                            return <CornerRuleItem key={`man-${r.id}`} rule={r} label="MAN" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
                                                 })}
                                     </div>
                                 </>
@@ -2675,7 +3076,7 @@ const cancelEdit = () => {
            </div>
        </div>
 
-       <div className={cn("flex-1 relative bg-slate-50 overflow-hidden select-none", 
+       <div className={cn("flex-1 relative bg-slate-50 overflow-hidden select-none outline-none", 
            ['draw', 'highlighter', 'line', 'rect', 'circle', 'triangle'].includes(currentTool) && "cursor-crosshair", 
            currentTool === 'eraser' && "cursor-cell", 
            currentTool === 'text' && "cursor-text", 
@@ -2683,12 +3084,16 @@ const cancelEdit = () => {
            currentTool === 'sticker' && "cursor-crosshair"
          )} 
          ref={containerRef} 
-         onMouseDown={handleMouseDown} 
+         tabIndex={0} // ✨ 캔버스가 포커스를 받을 수 있게 허용
+         onMouseDown={(e) => {
+             e.currentTarget.focus(); // ✨ 클릭 시 강제로 캔버스로 포커스 뺏어오기!
+             handleMouseDown(e);
+         }} 
          onMouseMove={handleMouseMove} 
          onMouseUp={handleMouseUp} 
          onDragOver={handleDrop} 
          onDrop={handleDrop}>
-            
+
             {items.map((item) => {
                 if (textInput && textInput.id === item.id) return null;
                 const isSelected = selectedIds.includes(item.id);
@@ -2815,46 +3220,55 @@ const cancelEdit = () => {
              }}
              onMouseDown={(e) => e.stopPropagation()} 
              onInput={(e) => {
-                 e.currentTarget.style.height = 'auto'; e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px'; 
-                 if (!textInput.width) { e.currentTarget.style.width = 'auto'; e.currentTarget.style.width = (e.currentTarget.scrollWidth + 10) + 'px'; }
-             }} 
-             onKeyDown={(e) => { 
-                 e.stopPropagation();
-                 if (e.key === 'Enter' && !e.shiftKey) { 
-                     e.preventDefault(); 
-                     if(!e.nativeEvent.isComposing) confirmText(); 
-                 } 
-             }} 
-         /> 
-     )}
-     {contextMenu && (
-         <>
-             <div className="fixed inset-0 z-[10000]" onMouseDown={(e) => { e.stopPropagation(); setContextMenu(null); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu(null); }} />
-             <div className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[120px] animate-in fade-in zoom-in-95 duration-100" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(e) => e.stopPropagation()}> 
-                 {items.find(i => i.id === contextMenu.itemId)?.type === 'image' && (
-                     <button className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-b" onClick={() => { setCropModeId(contextMenu.itemId); setContextMenu(null); }}> 
-                         <Crop className="w-4 h-4"/> Crop 
-                     </button> 
-                 )}
-                 <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2" onClick={handleDeleteFromMenu}> 
-                     <Trash2 className="w-4 h-4"/> Delete 
-                 </button> 
-             </div> 
-         </>
-     )}
-     {items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
-         </div>
-    </>
+                e.currentTarget.style.height = 'auto'; e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px'; 
+                if (!textInput.width) { e.currentTarget.style.width = 'auto'; e.currentTarget.style.width = (e.currentTarget.scrollWidth + 10) + 'px'; }
+            }} 
+            onKeyDown={(e) => { 
+                e.stopPropagation();
+                if (e.key === 'Enter' && !e.shiftKey) { 
+                    e.preventDefault(); 
+                    if(!e.nativeEvent.isComposing) confirmText(); 
+                } 
+            }} 
+        /> 
+    )}
+    {contextMenu && (
+        <>
+            <div className="fixed inset-0 z-[10000]" onMouseDown={(e) => { e.stopPropagation(); setContextMenu(null); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu(null); }} />
+            <div className="absolute z-[10001] bg-white border border-slate-200 shadow-xl rounded-md py-1 min-w-[120px] animate-in fade-in zoom-in-95 duration-100" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(e) => e.stopPropagation()}> 
+                {items.find(i => i.id === contextMenu.itemId)?.type === 'image' && (
+                    <button className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-b" onClick={() => { setCropModeId(contextMenu.itemId); setContextMenu(null); }}> 
+                        <Crop className="w-4 h-4"/> Crop 
+                    </button> 
+                )}
+                <button className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2" onClick={handleDeleteFromMenu}> 
+                    <Trash2 className="w-4 h-4"/> Delete 
+                </button> 
+            </div> 
+        </>
+    )}
+    {items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
+        </div>
+   </>
 )}
-                      </div>
-                   </div>
-               </>
+                     </div>
+                  </div>
+              </>
 ) : (
-    <div className="flex-1 w-full h-full relative overflow-y-auto bg-white p-6">
-        <RecordsSheet />
-    </div>
+   <div className="flex-1 w-full h-full relative overflow-y-auto bg-white p-6">
+       <RecordsSheet />
+   </div>
 )}        </div>
       </div>
+      
+      {/* ✨ NEW: 이동 그래프 팝업 뷰어 렌더링 */}
+      {showGraphPopup && patient.summary?.graphImage && (
+          <GraphViewer 
+              imageUrl={patient.summary.graphImage} 
+              onClose={() => setShowGraphPopup(false)} 
+          />
+      )}
+      
       {isGridOpen && renderFullScreenGrid()}
     </>
   );
