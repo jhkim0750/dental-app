@@ -44,21 +44,39 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
     const [addingStagePatientId, setAddingStagePatientId] = useState<string | null>(null);
     const [newStageName, setNewStageName] = useState("");
 
-    // ✨ [8번 적용] 사이드바가 열릴 때(렌더링될 때), 현재 선택된 환자가 있다면 그 이름을 검색창에 자동 입력!
-    useEffect(() => {
-      if (store?.selectedPatientId) {
-        const activePatient = store.patients.find(p => p.id === store.selectedPatientId);
-        if (activePatient) {
-          setSearchTerm(activePatient.name);
-          setExpandedPatientId(activePatient.id);
-        }
+// ✨ [8번 적용] 사이드바가 열릴 때(렌더링될 때), 현재 선택된 환자가 있다면 그 이름을 검색창에 자동 입력!
+useEffect(() => {
+    if (store?.selectedPatientId) {
+      const activePatient = store.patients.find(p => p.id === store.selectedPatientId);
+      if (activePatient) {
+        setSearchTerm(activePatient.name);
+        setExpandedPatientId(activePatient.id);
       }
-    }, [store?.selectedPatientId]);
+    }
+  }, [store?.selectedPatientId]);
 
-    useImperativeHandle(ref, () => ({
-      openAddModal: () => setIsAddModalOpen(true),
-    }));
+  // ✨ NEW: ESC 키로 모든 모달 및 환자 목록(onClose) 닫기
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // 1. 열려있는 입력창/모달이 있다면 그것부터 우선 닫기
+        if (isAddModalOpen) return setIsAddModalOpen(false);
+        if (editingPatient) return setEditingPatient(null);
+        if (editingStage) return setEditingStage(null);
+        if (addingStagePatientId) return setAddingStagePatientId(null);
+        
+        // 2. 열려있는 모달이 없다면 환자 목록 사이드바 전체 닫기
+        if (onClose) onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isAddModalOpen, editingPatient, editingStage, addingStagePatientId, onClose]);
 
+  useImperativeHandle(ref, () => ({
+    openAddModal: () => setIsAddModalOpen(true),
+  }));
+  
     if (!store) return <div className="w-[320px] bg-white border-r p-4 animate-pulse">Loading...</div>;
 
     const filteredPatients = store.patients.filter((p) => {
