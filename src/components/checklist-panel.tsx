@@ -72,14 +72,6 @@ const GraphViewer = ({ imageUrl, onClose }: { imageUrl: string; onClose: () => v
     const imgRef = useRef<HTMLImageElement>(null);
     const panRef = useRef({ x: 0, y: 0 });
     const dragRef = useRef({ isDown: false, startX: 0, startY: 0, lastX: 0, lastY: 0, didMove: false });
-    // ✨ NEW: ESC 키로 이동 그래프 팝업 닫기
-    useEffect(() => {
-        const handleEsc = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleEsc);
-        return () => window.removeEventListener('keydown', handleEsc);
-    }, [onClose]);
 
     const resetZoom = () => {
         setIsZoomed(false);
@@ -87,6 +79,21 @@ const GraphViewer = ({ imageUrl, onClose }: { imageUrl: string; onClose: () => v
         panRef.current = { x: 0, y: 0 };
         if (imgRef.current) imgRef.current.style.transform = `translate(0px, 0px) scale(1) translateZ(0)`;
     };
+
+    // ✨ NEW: ESC 닫기 및 ~ 키로 창 크기(전체 화면) 토글
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose();
+            } else if (e.key === '`' || e.key === '~') {
+                e.preventDefault(); // 텍스트 입력 방지
+                setIsExpanded(prev => !prev);
+                resetZoom(); // 창 크기가 바뀔 때 확대된 상태도 깔끔하게 초기화
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onClose]);
 
     const handlePointerDown = (e: React.PointerEvent) => {
         if (!isZoomed) return;
@@ -1185,17 +1192,25 @@ const [startStep, setStartStep] = useState(1);
                     e.preventDefault();
                     setActiveTab('records');
                     break;
-                case 'c': // 체크리스트 그리드
+                    case 'c': // 체크리스트 그리드
                     e.preventDefault();
                     setIsGridOpen(true);
+                    break;
+                case 'm': // ✨ NEW: 이동 그래프 팝업 열기 (Alt + M)
+                    e.preventDefault();
+                    if (patient.summary?.graphImage) setShowGraphPopup(true);
                     break;
             }
         }
           
-        if (e.key === 'Delete') deleteSelectedItems(); 
+        if (e.key === 'Delete') {
+            // ✨ NEW: 사이드바 룰이 선택되어 있으면 룰 삭제, 아니면 캔버스 아이템 삭제 (포커스 분리로 꼬임 방지)
+            if (selectedRuleIds.length > 0) handleDeleteMultiRules();
+            else if (selectedIds.length > 0) deleteSelectedItems();
+        }
           
         if (activeTab === 'summary' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
-          e.preventDefault();
+                      e.preventDefault();
           handleCopy();
         }          
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); handleDuplicate(); }
@@ -1489,10 +1504,11 @@ const [startStep, setStartStep] = useState(1);
   };
 
   const handleItemMouseDown = (e: React.MouseEvent, item: CanvasItem, action: typeof dragState.action) => { 
-      if (currentTool !== 'select') return; 
-      e.stopPropagation(); 
-      if (e.button === 2) return; 
-      
+    if (currentTool !== 'select') return; 
+    e.stopPropagation(); 
+    setSelectedRuleIds([]); // ✨ NEW: 캔버스 안의 아이템을 클릭해도 룰 선택을 강제 해제!
+    if (e.button === 2) return;
+
       if (e.ctrlKey && item.type === 'text' && item.text?.includes('http')) {
           const urlMatch = item.text.match(/https?:\/\/[^\s]+/);
           if (urlMatch) { window.open(urlMatch[0], '_blank'); return; }
@@ -1544,10 +1560,11 @@ const [startStep, setStartStep] = useState(1);
       }); 
   };
 
-  const handleResizeMouseDown = (e: React.MouseEvent, item: CanvasItem, handle: string) => { 
+const handleResizeMouseDown = (e: React.MouseEvent, item: CanvasItem, handle: string) => { 
       e.stopPropagation(); 
-      const { x, y } = getPos(e); 
-      const actionType = handle.startsWith('crop') ? 'crop' : 'resize';
+      setSelectedRuleIds([]); // ✨ NEW: 크기 조절 핸들을 클릭해도 룰 선택을 강제 해제!
+      const { x, y } = getPos(e);
+            const actionType = handle.startsWith('crop') ? 'crop' : 'resize';
       setDragState({ isDragging: true, action: actionType, resizeHandle: handle, startX: x, startY: y, offsetX: 0, offsetY: 0, initialItem: { ...item } }); 
   };
   
@@ -1993,13 +2010,21 @@ const cancelEdit = () => {
       setIsQuickEdit(false);
   };
 
-  // ✨ 1번 요청 반영: 치식 번호 정렬 전에, Type으로 먼저 정렬하도록 수정
-  const getRulesForStep = (step: number) => (patient.rules || [])
-      .filter((r: Rule) => step >= r.startStep && step <= r.endStep)
-      .sort((a: Rule, b: Rule) => {
-          if (a.type !== b.type) return a.type.localeCompare(b.type);
-          return a.tooth - b.tooth;
-      });
+// ✨ 1번 요청 반영: 치식 번호 정렬 전에, Type으로 먼저 정렬하도록 수정
+const getRulesForStep = (step: number) => (patient.rules || [])
+.filter((r: Rule) => step >= r.startStep && step <= r.endStep)
+.sort((a: Rule, b: Rule) => {
+    // ✨ NEW: #MAX(10) 또는 #MAN(30) 아이템이 있다면 무조건 맨 위로 배치
+    const aIsFullArch = a.tooth === 10 || a.tooth === 30;
+    const bIsFullArch = b.tooth === 10 || b.tooth === 30;
+    
+    if (aIsFullArch && !bIsFullArch) return -1;
+    if (!aIsFullArch && bIsFullArch) return 1;
+
+    // 기존 정렬 로직 유지 (Type 가나다순 -> 이후 치식 번호순)
+    if (a.type !== b.type) return a.type.localeCompare(b.type);
+    return a.tooth - b.tooth;
+});
   
   const getGroupedRules = (step: number) => { 
       const allRules = getRulesForStep(step); 
@@ -2061,30 +2086,42 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
             </div> 
 
 {/* 2. 치식 번호 (세로 나열, 직각 네모 배지 및 상/하악 색상 적용) */}
-<div className="flex flex-col items-start gap-1 mb-1.5">
+              <div className="flex flex-col items-start gap-1 mb-1.5">
                   {mergedGroup.tooth === 0 ? (
                       <div className={cn("px-1.5 py-0.5 font-bold rounded-[2px] border", isTiny ? "text-[9px]" : "text-[11px]", "bg-slate-100 text-slate-600 border-slate-200")}>
                           Gen
                       </div>
                   ) : mergedGroup.teeth.map((t: number) => {
                       const isUpper = t >= 10 && t < 30; // 10, 20번대 상악
+                      const isMax = t === 10;
+                      const isMan = t === 30;
                       return (
                           <div 
                               key={t} 
                               className={cn(
-                                  "px-1.5 py-0.5 font-bold rounded-[2px] border", 
+                                  "px-1.5 py-0.5 font-bold rounded-[2px]", 
                                   isTiny ? "text-[9px]" : "text-[11px]",
-                                  isUpper 
-                                      ? "bg-blue-50/70 text-blue-600 border-blue-200"  // ✨ 상악 아주 연한 푸른 배경
-                                      : "bg-red-50/70 text-red-600 border-red-200"     // ✨ 하악 아주 연한 붉은 배경
+                                  (isMax || isMan)
+                                  ? cn(
+                                      // ✨ 아이디어 3 적용: 배경은 하얗게 비우고 테두리 두께(1.5px)와 색상을 진하게 강조!
+                                      "bg-white border-[1.5px]", 
+                                      isMax ? "text-blue-400 border-blue-400" : "text-orange-400 border-orange-400"
+                                  )
+                                  : cn(
+                                                                                                                  // 일반 개별 치식: 기존처럼 연한 파스텔톤 유지
+                                          "border", 
+                                          isUpper 
+                                              ? "bg-blue-50/70 text-blue-600 border-blue-200"  
+                                              : "bg-red-50/70 text-red-600 border-red-200"     
+                                      )
                               )}
                           >
-                              #{t}
+                              {isMax ? "#MAX" : isMan ? "#MAN" : `#${t}`}
                           </div>
                       );
                   })}
               </div>
-                           
+
             {/* 3. 메모 */}
             {mergedGroup.note && (
                 <div className={cn(
@@ -2330,11 +2367,12 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
                                               e.dataTransfer.setData("action", "delete_rules");
                                           }}
                                           onClick={() => {
-                                              if(!isQuickEdit) {
-                                                  setSelectedRuleIds(p => p.includes(rule.id) ? p.filter(id=>id!==rule.id) : [...p, rule.id]);
-                                              }
-                                          }}
-                                          className={cn("text-xs border p-2 rounded flex items-center group transition-colors", isSelected ? "bg-blue-50 border-blue-300 ring-1 ring-blue-500" : "bg-white", !isQuickEdit && "cursor-pointer")}>
+                                            if(!isQuickEdit) {
+                                                setSelectedRuleIds(p => p.includes(rule.id) ? p.filter(id=>id!==rule.id) : [...p, rule.id]);
+                                                setSelectedIds([]); // ✨ NEW: 룰을 클릭하면 캔버스 아이템 선택은 자동 해제 (충돌 방지)
+                                            }
+                                        }}
+                                                                                  className={cn("text-xs border p-2 rounded flex items-center group transition-colors", isSelected ? "bg-blue-50 border-blue-300 ring-1 ring-blue-500" : "bg-white", !isQuickEdit && "cursor-pointer")}>
                                          
                                          {!isQuickEdit && (
                                              <input type="checkbox" className="mr-2 pointer-events-none w-3.5 h-3.5" checked={isSelected} readOnly />
@@ -3087,9 +3125,10 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
          tabIndex={0} // ✨ 캔버스가 포커스를 받을 수 있게 허용
          onMouseDown={(e) => {
              e.currentTarget.focus(); // ✨ 클릭 시 강제로 캔버스로 포커스 뺏어오기!
+             setSelectedRuleIds([]); // ✨ NEW: 캔버스를 클릭하면 룰 선택은 자동 해제 (충돌 방지)
              handleMouseDown(e);
-         }} 
-         onMouseMove={handleMouseMove} 
+         }}
+                  onMouseMove={handleMouseMove} 
          onMouseUp={handleMouseUp} 
          onDragOver={handleDrop} 
          onDrop={handleDrop}>
