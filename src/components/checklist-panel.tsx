@@ -1240,22 +1240,40 @@ if (e.key === 'Delete') {
         }          
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); handleDuplicate(); }
 
-          if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-              if (currentSlideIndex === SMART_DASHBOARD_INDEX) {
-                  if (e.key === 'ArrowLeft') { e.preventDefault(); setSmartStage(prev => Math.max(0, prev - 1)); }
-                  if (e.key === 'ArrowRight') { e.preventDefault(); setSmartStage(prev => Math.min(totalSteps, prev + 1)); }
-                  return;
-              }
-              e.preventDefault();
-              const step = e.shiftKey ? 10 : 1; 
-              let dx = 0, dy = 0;
-              if (e.key === 'ArrowUp') dy = -step;
-              if (e.key === 'ArrowDown') dy = step;
-              if (e.key === 'ArrowLeft') dx = -step;
-              if (e.key === 'ArrowRight') dx = step;
-              moveSelectedItems(dx, dy);
-          }
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+            // ✨ NEW: 1순위 - 체크리스트 그리드 방향키 제어
+            if (isGridOpen) {
+                const isPatientSidebarOpen = document.querySelector('input[placeholder="Search name, hospital..."]');
+                if (isPatientSidebarOpen) return; // 환자 창이 열려있으면 방향키 조작 양보 (안전장치)
 
+                if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    setPageStartStep(prev => Math.max(0, prev - 10)); // 0 이하로 안 내려감
+                } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    setPageStartStep(prev => Math.min(totalSteps, prev + 10)); // 마지막 페이지 이상 안 넘어감
+                }
+                return; // 🛑 핵심: 그리드가 열려있으면 여기서 무조건 끝내서 밑으로(캔버스/스마트 서머리) 절대 안 넘어가게 완벽 차단!
+            }
+
+            // 기존: 스마트 서머리 스텝 이동 로직
+            if (currentSlideIndex === SMART_DASHBOARD_INDEX) {
+                if (e.key === 'ArrowLeft') { e.preventDefault(); setSmartStage(prev => Math.max(0, prev - 1)); }
+                if (e.key === 'ArrowRight') { e.preventDefault(); setSmartStage(prev => Math.min(totalSteps, prev + 1)); }
+                return;
+            }
+            
+            // 기존: 워크 서머리 도형 이동 로직
+            e.preventDefault();
+            const step = e.shiftKey ? 10 : 1; 
+            let dx = 0, dy = 0;
+            if (e.key === 'ArrowUp') dy = -step;
+            if (e.key === 'ArrowDown') dy = step;
+            if (e.key === 'ArrowLeft') dx = -step;
+            if (e.key === 'ArrowRight') dx = step;
+            moveSelectedItems(dx, dy);
+        }
+        
           if ((e.ctrlKey || e.metaKey)) { 
               if (e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) handleRedo(); else handleUndo(); } 
               else if (e.key.toLowerCase() === 'y') { e.preventDefault(); handleRedo(); } 
