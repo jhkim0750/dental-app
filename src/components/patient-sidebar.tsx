@@ -213,15 +213,16 @@ useEffect(() => {
         {viewMode === 'active' && (
             <div className="p-4 space-y-3 border-b border-slate-100">
                 <div className="relative flex items-center gap-2">
-                    <div className="relative flex-1">
+                <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <input 
+                            autoFocus // ✨ NEW: Alt+P 등으로 창이 열릴 때 즉시 타자를 칠 수 있게 포커스!
                             className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                             placeholder="Search name, hospital..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
-                        {/* ✨ [8번 적용] 검색어 지우기 (초기화) 버튼 */}
+                                                {/* ✨ [8번 적용] 검색어 지우기 (초기화) 버튼 */}
                         {searchTerm && (
                             <button onClick={() => setSearchTerm("")} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-200 transition-colors">
                                 <X className="w-3 h-3"/>

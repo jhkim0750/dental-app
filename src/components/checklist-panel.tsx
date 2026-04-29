@@ -2384,11 +2384,17 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
                         {rule.tooth === 0 ? "Gen" : rule.tooth === 10 ? "MAX" : rule.tooth === 30 ? "MAN" : `#${rule.tooth}`} {rule.type}
                     </span>
 
-                    {/* ✨ NEW: 그룹 표시 뱃지 (동일한 타입/메모를 가진 룰이 2개 이상일 때 노출) */}
-                    {(!rule.type.toLowerCase().includes("attachment") && !(rule as any).isIsolated && safeRules.filter((r: Rule) => !r.type.toLowerCase().includes("attachment") && !(r as any).isIsolated && r.type === rule.type && (r.note || "") === (rule.note || "")).length > 1) && (
-                        <span className="ml-0.5 px-1 py-0.5 bg-slate-200 text-slate-500 text-[8px] rounded font-bold uppercase tracking-wider drop-shadow-sm">Group</span>
+{/* ✨ NEW: 그룹 표시 뱃지 (동일한 타입/메모/스텝이 모두 완벽히 같은 룰이 2개 이상일 때만 표시) */}
+{(!(rule as any).isIsolated && safeRules.filter((r: Rule) => 
+                        !(r as any).isIsolated && 
+                        r.type === rule.type && 
+                        (r.note || "") === (rule.note || "") && 
+                        r.startStep === rule.startStep && 
+                        r.endStep === rule.endStep
+                    ).length > 1) && (
+                        <span className="ml-1 px-1 py-0.5 bg-slate-100 text-slate-400 text-[8px] rounded border border-slate-200 font-bold uppercase tracking-tighter">Group</span>
                     )}
-                    
+                                        
                     {/* ✨ NEW: 리스트용 빨간 별표 (이미지가 있을 때만 노출) */}
                     {rule.imageUrl && (
                                                 <div className="absolute top-0 right-0 drop-shadow-md" title="Reference Image">
