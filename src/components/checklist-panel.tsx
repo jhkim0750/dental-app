@@ -1170,38 +1170,38 @@ const [startStep, setStartStep] = useState(1);
             return;
         }
 
-        // ✨ 화면 전환 단축키 (Alt 조합)
-        if (e.altKey && !e.ctrlKey && !e.shiftKey) {
-            switch (e.key.toLowerCase()) {
-                case 'p': // 환자 목록
-                    e.preventDefault();
-                    const patientBtn = Array.from(document.querySelectorAll('button, a')).find(el => el.textContent?.includes('Patients'));
-                    if (patientBtn) (patientBtn as HTMLElement).click();
-                    break;
-                case 's': // 스마트 서머리
-                    e.preventDefault();
-                    if (activeTab !== 'summary') setActiveTab('summary');
-                    setCurrentSlideIndex(SMART_DASHBOARD_INDEX);
-                    break;
-                case 'w': // ✨ NEW: 워크 서머리 (1번 슬라이드)
-                    e.preventDefault();
-                    if (activeTab !== 'summary') setActiveTab('summary');
-                    setCurrentSlideIndex(0);
-                    break;
-                case 'r': // 레코드 창
-                    e.preventDefault();
-                    setActiveTab('records');
-                    break;
-                    case 'c': // 체크리스트 그리드
-                    e.preventDefault();
-                    setIsGridOpen(true);
-                    break;
-                case 'm': // ✨ NEW: 이동 그래프 팝업 열기 (Alt + M)
-                    e.preventDefault();
-                    if (patient.summary?.graphImage) setShowGraphPopup(true);
-                    break;
-            }
-        }
+// ✨ 화면 전환 단축키 (Alt 조합) - 원장님 요청 새 매핑 적용
+if (e.altKey && !e.ctrlKey && !e.shiftKey) {
+    switch (e.key.toLowerCase()) {
+        case 'q': // ✨ NEW: Alt + Q (Checklist Grid)
+            e.preventDefault();
+            setIsGridOpen(true);
+            break;
+        case 'w': // ✨ Alt + W (Work Summary) - 유지
+            e.preventDefault();
+            if (activeTab !== 'summary') setActiveTab('summary');
+            setCurrentSlideIndex(0);
+            break;
+        case 'a': // ✨ NEW: Alt + A (Movement Graph)
+            e.preventDefault();
+            if (patient.summary?.graphImage) setShowGraphPopup(true);
+            break;
+        case 's': // ✨ Alt + S (Smart Summary) - 유지
+            e.preventDefault();
+            if (activeTab !== 'summary') setActiveTab('summary');
+            setCurrentSlideIndex(SMART_DASHBOARD_INDEX);
+            break;
+        case 'z': // ✨ NEW: Alt + Z (Patients List)
+            e.preventDefault();
+            const patientBtn = Array.from(document.querySelectorAll('button, a')).find(el => el.textContent?.includes('Patients'));
+            if (patientBtn) (patientBtn as HTMLElement).click();
+            break;
+        case 'x': // ✨ NEW: Alt + X (Records Tab)
+            e.preventDefault();
+            setActiveTab('records');
+            break;
+    }
+}
           
         if (e.key === 'Delete') {
             // ✨ NEW: 사이드바 룰이 선택되어 있으면 룰 삭제, 아니면 캔버스 아이템 삭제 (포커스 분리로 꼬임 방지)
