@@ -1148,59 +1148,84 @@ const [startStep, setStartStep] = useState(1);
         const isInputActive = activeEl instanceof HTMLElement && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
         const isDropzone = activeEl?.closest('.rule-image-dropzone') || activeEl?.closest('.graph-image-dropzone');
         
-        // ✨ ESC 키 로직 (체크리스트 그리드 닫기, 편집 모드 해제)
-        if (e.key === 'Escape') {
-            if (isGridOpen) {
-                setIsGridOpen(false);
-                return; 
-            }
-            if (!isInputActive && !isDropzone) {
-                setSelectedRuleIds([]);
-                setIsQuickEdit(false);
-            }
-        }
+// ✨ ESC 키 로직 (체크리스트 그리드 닫기, 편집 모드 해제)
+if (e.key === 'Escape') {
+    // ✨ NEW: 환자 창이 열려있다면(검색창 존재), 그리드는 ESC에 반응하지 않고 가만히 양보합니다!
+    const isPatientSidebarOpen = document.querySelector('input[placeholder="Search name, hospital..."]');
+    if (isPatientSidebarOpen) return; 
 
-        if (isInputActive || isDropzone) return;
-        if (textInput) return; 
+    if (isGridOpen) {
+        setIsGridOpen(false);
+        return; 
+    }
+    if (!isInputActive && !isDropzone) {
+        setSelectedRuleIds([]);
+        setIsQuickEdit(false);
+    }
+}
 
-        // ✨ Ctrl + S (워크 서머리 탭일 때만 저장)
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && activeTab === 'summary') {
-            e.preventDefault();
-            handleSave();
-            return;
-        }
-
-// ✨ 화면 전환 단축키 (Alt 조합) - 원장님 요청 새 매핑 적용
+// ✨ NEW: 화면 전환 단축키 (Alt 조합) - 입력창 활성화 전 검사로 꼬임 방지
 if (e.altKey && !e.ctrlKey && !e.shiftKey) {
+    const closeGridOnNavigate = () => { if (isGridOpen) setIsGridOpen(false); };
+
     switch (e.key.toLowerCase()) {
-        case 'q': // ✨ NEW: Alt + Q (Checklist Grid)
+        case 'q': // ✨ Alt + Q (Checklist Grid - 켜고 끄기 토글)
             e.preventDefault();
-            setIsGridOpen(true);
+            setIsGridOpen(prev => !prev);
             break;
-        case 'w': // ✨ Alt + W (Work Summary) - 유지
+        case 'w': // ✨ Alt + W (Work Summary - 이동 시 그리드는 닫힘)
             e.preventDefault();
+            closeGridOnNavigate();
             if (activeTab !== 'summary') setActiveTab('summary');
             setCurrentSlideIndex(0);
             break;
-        case 'a': // ✨ NEW: Alt + A (Movement Graph)
+        case 'a': // ✨ Alt + A (Movement Graph - 켜고 끄기 토글)
             e.preventDefault();
-            if (patient.summary?.graphImage) setShowGraphPopup(true);
+            if (patient.summary?.graphImage) setShowGraphPopup(prev => !prev);
             break;
-        case 's': // ✨ Alt + S (Smart Summary) - 유지
+        case 's': // ✨ Alt + S (Smart Summary - 이동 시 그리드는 닫힘)
             e.preventDefault();
+            closeGridOnNavigate();
             if (activeTab !== 'summary') setActiveTab('summary');
             setCurrentSlideIndex(SMART_DASHBOARD_INDEX);
             break;
-        case 'z': // ✨ NEW: Alt + Z (Patients List)
+            case 'z': // ✨ Alt + Z (Patients List - 스마트 토글 적용)
             e.preventDefault();
-            const patientBtn = Array.from(document.querySelectorAll('button, a')).find(el => el.textContent?.includes('Patients'));
-            if (patientBtn) (patientBtn as HTMLElement).click();
+            // 1. 환자 검색창이 화면에 있는지 확인 (사이드바가 열려있다는 증거)
+            const searchInput = document.querySelector('input[placeholder="Search name, hospital..."]');
+            
+            if (searchInput) {
+                // 2. 이미 열려있다면 -> 눈에 보이지 않는 가짜 ESC 키를 눌러서 사이드바를 닫음!
+                window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+            } else {
+                // 3. 닫혀있다면 -> Patients 버튼을 클릭해서 사이드바 열기
+                const patientBtn = Array.from(document.querySelectorAll('button, a')).find(el => el.textContent?.includes('Patients'));
+                if (patientBtn) (patientBtn as HTMLElement).click();
+            }
             break;
-        case 'x': // ✨ NEW: Alt + X (Records Tab)
+                    case 'x': // ✨ Alt + X (Records Tab - 이동 시 그리드는 닫힘)
             e.preventDefault();
+            closeGridOnNavigate();
             setActiveTab('records');
             break;
     }
+    return; // 단축키를 눌렀으면 여기서 끝냄 (아래 텍스트 입력 로직과 충돌 방지)
+}
+
+if (isInputActive || isDropzone) return;
+if (textInput) return; 
+
+// ✨ Ctrl + S (워크 서머리 탭일 때만 저장)
+if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && activeTab === 'summary') {
+    e.preventDefault();
+    handleSave();
+    return;
+}
+  
+if (e.key === 'Delete') {
+    // ✨ NEW: 사이드바 룰이 선택되어 있으면 룰 삭제, 아니면 캔버스 아이템 삭제 (포커스 분리로 꼬임 방지)
+    if (selectedRuleIds.length > 0) handleDeleteMultiRules();
+    else if (selectedIds.length > 0) deleteSelectedItems();
 }
           
         if (e.key === 'Delete') {
