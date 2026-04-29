@@ -2073,10 +2073,10 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
     };
 
     return ( 
-        <div key={mergedGroup.id} onClick={handleToggle} className={cn("rounded cursor-pointer flex flex-col relative border select-none transition-all", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-50 border-green-500 ring-1 ring-green-500 text-slate-400" : "bg-white hover:ring-2 hover:ring-blue-200 border-slate-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-l-4 border-l-red-500")}> 
+        <div key={mergedGroup.id} onClick={handleToggle} className={cn("rounded cursor-pointer flex flex-col relative border select-none transition-all", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-50 border-green-500 ring-1 ring-green-500 text-slate-400" : "bg-white hover:ring-2 hover:ring-blue-200 border-slate-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-r-4 border-r-red-500")}> 
             
             {/* 1. 아이템 이름 (Type) & 체크박스 */}
-            <div className="flex justify-between items-start mb-1.5">
+                        <div className="flex justify-between items-start mb-1.5">
                 <div className={cn("font-extrabold truncate pr-1", getTypeColor(mergedGroup.type), isTiny ? "text-[11px]" : "text-sm")}>
                     {mergedGroup.type}
                 </div>
