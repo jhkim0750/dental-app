@@ -65,9 +65,10 @@ const UPPER_TEETH = [18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28];
 const LOWER_TEETH = [48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38];
 
 const GraphViewer = ({ imageUrl, onClose }: { imageUrl: string; onClose: () => void }) => {
-    const [isExpanded, setIsExpanded] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(true); // ✨ 무조건 큰 창으로 시작
     const [isZoomed, setIsZoomed] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
+    const [scale, setScale] = useState(1);
 
     const imgRef = useRef<HTMLImageElement>(null);
     const panRef = useRef({ x: 0, y: 0 });
@@ -75,20 +76,20 @@ const GraphViewer = ({ imageUrl, onClose }: { imageUrl: string; onClose: () => v
 
     const resetZoom = () => {
         setIsZoomed(false);
+        setScale(1);
         setIsDragging(false);
         panRef.current = { x: 0, y: 0 };
         if (imgRef.current) imgRef.current.style.transform = `translate(0px, 0px) scale(1) translateZ(0)`;
     };
 
-    // ✨ NEW: ESC 닫기 및 ~ 키로 창 크기(전체 화면) 토글
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 onClose();
             } else if (e.key === '`' || e.key === '~') {
-                e.preventDefault(); // 텍스트 입력 방지
+                e.preventDefault(); 
                 setIsExpanded(prev => !prev);
-                resetZoom(); // 창 크기가 바뀔 때 확대된 상태도 깔끔하게 초기화
+                resetZoom(); 
             }
         };
         window.addEventListener('keydown', handleKeyDown);
@@ -121,7 +122,7 @@ const GraphViewer = ({ imageUrl, onClose }: { imageUrl: string; onClose: () => v
         dragRef.current.lastY = e.clientY;
 
         if (imgRef.current) {
-            imgRef.current.style.transform = `translate(${panRef.current.x}px, ${panRef.current.y}px) scale(3) translateZ(0)`;
+            imgRef.current.style.transform = `translate(${panRef.current.x}px, ${panRef.current.y}px) scale(${scale}) translateZ(0)`;
         }
     };
 
@@ -131,30 +132,42 @@ const GraphViewer = ({ imageUrl, onClose }: { imageUrl: string; onClose: () => v
         e.currentTarget.releasePointerCapture(e.pointerId);
     };
 
-    const handleImageClick = (e: React.MouseEvent) => {
-        if (dragRef.current.didMove) {
-            dragRef.current.didMove = false;
+    // ✨ 마우스 커서 위치를 중심으로 확대/축소하고 튕김 현상을 방지하는 수학적 보정 로직
+    const handleWheel = (e: React.WheelEvent) => {
+        if (!imgRef.current || !imgRef.current.parentElement) return;
+
+        const delta = e.deltaY < 0 ? 0.3 : -0.3; // 휠 위로: 확대, 아래로: 축소
+        let newScale = scale + delta;
+        newScale = Math.max(1, Math.min(newScale, 10)); // 1배 ~ 10배 제한
+
+        if (newScale === 1 && scale === 1) return;
+
+        if (newScale === 1) {
+            resetZoom();
             return;
         }
 
-        if (isZoomed) {
-            resetZoom();
-        } else {
-            if (!imgRef.current) return;
-            const rect = imgRef.current.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            const clickY = e.clientY - rect.top;
-            const centerX = rect.width / 2;
-            const centerY = rect.height / 2;
+        // 컨테이너의 정중앙 좌표 계산
+        const rect = imgRef.current.parentElement.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
 
-            const scale = 3;
-            const tx = (centerX - clickX) * (scale - 1);
-            const ty = (centerY - clickY) * (scale - 1);
+        // 중앙을 기준으로 한 현재 마우스 커서의 좌표
+        const mouseX = e.clientX - centerX;
+        const mouseY = e.clientY - centerY;
 
-            panRef.current = { x: tx, y: ty };
-            setIsZoomed(true);
-            imgRef.current.style.transform = `translate(${tx}px, ${ty}px) scale(${scale}) translateZ(0)`;
-        }
+        // 배율 변화량
+        const ratio = newScale / scale;
+
+        // 마우스 커서 아래에 있는 이미지가 다른 곳으로 도망가지 않도록 panRef 위치 정밀 보정
+        panRef.current = {
+            x: mouseX - (mouseX - panRef.current.x) * ratio,
+            y: mouseY - (mouseY - panRef.current.y) * ratio,
+        };
+
+        setScale(newScale);
+        setIsZoomed(true);
+        imgRef.current.style.transform = `translate(${panRef.current.x}px, ${panRef.current.y}px) scale(${newScale}) translateZ(0)`;
     };
 
     if (typeof document === "undefined") return null;
@@ -180,11 +193,11 @@ const GraphViewer = ({ imageUrl, onClose }: { imageUrl: string; onClose: () => v
                         onPointerDown={handlePointerDown}
                         onPointerMove={handlePointerMove}
                         onPointerUp={handlePointerUp}
-                        onClick={handleImageClick}
-                        title={isZoomed ? "드래그하여 이동 / 클릭하여 축소" : "클릭하여 부분 확대"}
+                        onWheel={handleWheel} // ✨ 휠 이벤트 연결
+                        title={isZoomed ? "드래그하여 이동 / 마우스 휠로 확대·축소" : "마우스 휠로 확대·축소"}
                         className={cn(
                             "w-full h-full object-contain will-change-transform origin-center",
-                            isDragging ? "cursor-grabbing" : (isZoomed ? "cursor-grab" : "cursor-zoom-in"),
+                            isDragging ? "cursor-grabbing" : (isZoomed ? "cursor-grab" : "auto"),
                             !isDragging && "transition-transform duration-300 ease-out"
                         )}
                         style={{ transform: "translate(0px, 0px) scale(1) translateZ(0)" }}
@@ -1910,6 +1923,90 @@ const handleResizeMouseDown = (e: React.MouseEvent, item: CanvasItem, handle: st
       setCropModeId(null); 
   };
 
+// ✨ 여기서부터 복사하세요: 1번 슬라이드를 캡처해서 이동 그래프로 올리는 기능
+const handleSaveAsGraph = async () => {
+    // 1. 현재 1번 슬라이드(인덱스 0)인지 확인하고, 아니면 튕겨냅니다.
+    if (currentSlideIndex !== 0) {
+        alert("이동 그래프 등록은 1번 슬라이드에서만 가능합니다. 1번 슬라이드로 이동 후 다시 시도해 주세요.");
+        return;
+    }
+
+    if (!containerRef.current || !canvasRef.current) return;
+    setIsGraphImageUploading(true);
+
+    try {
+        // 2. 보이지 않는 가짜 도화지(tempCanvas)를 만들어서 현재 화면을 똑같이 그립니다.
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvasRef.current.width;
+        tempCanvas.height = canvasRef.current.height;
+        const ctx = tempCanvas.getContext('2d');
+        if (!ctx) return;
+        
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+        // 화면에 있는 이미지, 선, 글씨들을 가짜 도화지에 복사하는 과정
+        for (const item of items) {
+            if (item.type === 'image' && item.src) {
+                const img = new Image();
+                img.src = item.src;
+                img.crossOrigin = "anonymous";
+                await new Promise(r => { img.onload = r; img.onerror = r; });
+                
+                const cl = item.cropL || 0, cr = item.cropR || 0;
+                const ct = item.cropT || 0, cb = item.cropB || 0;
+                const totalW = item.width! + cl + cr;
+                const totalH = item.height! + ct + cb;
+                const sx = (cl / totalW) * img.width;
+                const sy = (ct / totalH) * img.height;
+                const sw = (item.width! / totalW) * img.width;
+                const sh = (item.height! / totalH) * img.height;
+                ctx.drawImage(img, sx, sy, sw, sh, item.x, item.y, item.width!, item.height!);
+            } else if (item.type === 'line') {
+                ctx.beginPath(); ctx.moveTo(item.x, item.y); ctx.lineTo(item.x2!, item.y2!);
+                ctx.strokeStyle = item.color || item.strokeColor || "#000"; ctx.lineWidth = item.size || item.strokeWidth || 3; ctx.stroke();
+            } else if (item.type === 'text') {
+                ctx.font = `bold ${item.size}px sans-serif`; ctx.fillStyle = item.color || item.strokeColor || "#000"; ctx.textBaseline = 'top';
+                wrapText(ctx, item.text || '', item.x, item.y, item.width || 200, (item.size || 20) * 1.2);
+            } else if (item.type === 'sticker') {
+                ctx.font = `900 ${item.size}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'white';
+                ctx.strokeText(item.text||'', item.x+item.width!/2, item.y+item.height!/2); ctx.fillStyle = item.color || '#000'; ctx.fillText(item.text||'', item.x+item.width!/2, item.y+item.height!/2);
+            } else if (item.type === 'rect') {
+                ctx.beginPath(); ctx.rect(item.x, item.y, item.width!, item.height!); if (item.fillColor && item.fillColor !== 'transparent') { ctx.fillStyle = item.fillColor; ctx.fill(); } ctx.strokeStyle = item.strokeColor || "#000"; ctx.lineWidth = item.strokeWidth || 3; ctx.stroke();
+            } else if (item.type === 'circle') {
+                ctx.beginPath(); ctx.ellipse(item.x + item.width!/2, item.y + item.height!/2, Math.abs(item.width!)/2, Math.abs(item.height!)/2, 0, 0, 2 * Math.PI); if (item.fillColor && item.fillColor !== 'transparent') { ctx.fillStyle = item.fillColor; ctx.fill(); } ctx.strokeStyle = item.strokeColor || "#000"; ctx.lineWidth = item.strokeWidth || 3; ctx.stroke();
+            } else if (item.type === 'triangle') {
+                ctx.beginPath(); ctx.moveTo(item.x + item.width! / 2, item.y); ctx.lineTo(item.x, item.y + item.height!); ctx.lineTo(item.x + item.width!, item.y + item.height!); ctx.closePath(); if (item.fillColor && item.fillColor !== 'transparent') { ctx.fillStyle = item.fillColor; ctx.fill(); } ctx.strokeStyle = item.strokeColor || "#000"; ctx.lineWidth = item.strokeWidth || 3; ctx.stroke();
+            }
+        }
+        ctx.drawImage(canvasRef.current, 0, 0);
+        
+        // 3. 다 그려진 도화지를 이미지 파일로 바꿔서 파이어베이스에 업로드합니다.
+        const blob = await new Promise<Blob | null>(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', 0.8));
+        if (!blob) throw new Error("Blob 변환 실패");
+
+        const storageRef = ref(storage, `patients/${patient.id}/graph_images/canvas_graph_${Date.now()}.jpg`);
+        await uploadBytes(storageRef, blob);
+        const url = await getDownloadURL(storageRef);
+
+        // 4. 저장된 이미지 URL을 이동 그래프(graphImage) 데이터로 덮어씌웁니다.
+        const currentSummary = patient.summary || {};
+        if (store) {
+            await store.saveSummary(patient.id, {
+                 ...currentSummary,
+                 graphImage: url
+            });
+        }
+        alert("1번 슬라이드가 이동 그래프로 성공적으로 등록되었습니다!");
+    } catch (error) {
+        console.error("Graph capture error:", error);
+        alert("이동 그래프 캡처 및 등록에 실패했습니다.");
+    } finally {
+        setIsGraphImageUploading(false);
+    }
+};
+// ✨ 여기까지 복사하세요!
+
   const handleSave = async () => { 
       if (!containerRef.current || !canvasRef.current) return; 
       const tempCanvas = document.createElement('canvas'); 
@@ -2549,11 +2646,23 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
                          ))}
                      </div>
                      
-                     <div className="ml-auto flex gap-2 pl-4 shrink-0 border-l border-slate-200">
+{/* ✨ 끝에 relative를 추가해서 버튼이 허공에 뜰 수 있는 기준점을 만들어줍니다 */}
+<div className="ml-auto flex gap-2 pl-4 shrink-0 border-l border-slate-200">
+                         {/* ✨ 수정: 허공에 띄우는 코드 제거, 녹색(green) 테마 적용, 다른 버튼들과 완벽한 통일성 */}
+                         <Button 
+                             onClick={handleSaveAsGraph} 
+                             disabled={isGraphImageUploading}
+                             className="gap-1.5 bg-white text-green-600 border border-green-200 hover:bg-green-50 hover:text-green-700 hover:border-green-300 shadow-sm transition-all font-bold"
+                             title="현재 화면을 이동 그래프로 등록"
+                         >
+                             {isGraphImageUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <TrendingUp className="w-4 h-4"/>}
+                             등록
+                         </Button>
+                         
                          <Button onClick={handleSave} className="gap-2 bg-blue-600 hover:bg-blue-700"><Save className="w-4 h-4"/> Save Summary</Button>
                          <Button onClick={() => setIsGridOpen(true)} className="gap-2 bg-white text-slate-700 border hover:bg-slate-50"><Layout className="w-4 h-4"/> Checklist View</Button>
-                     </div>
-                 </div>
+                     </div>                      
+                      </div>
 
                  <div className="flex-1 p-6 flex flex-row gap-4 bg-slate-100 relative"> 
                     <div className="w-28 flex flex-col gap-2 shrink-0 z-10 relative">
