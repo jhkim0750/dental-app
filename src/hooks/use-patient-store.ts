@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { useState, useEffect } from "react"; 
 import { 
-  collection, addDoc, updateDoc, deleteDoc, doc, getDocs, 
+  collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc,
   query, limit, startAfter, orderBy, where // ✨ NEW: 검색과 더보기를 위한 기능 추가
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -66,6 +66,7 @@ interface PatientStore {
 
   // ✨ CHANGED: 검색어와 불러오기 옵션 추가
   fetchPatients: (searchTerm?: string, loadMore?: boolean) => Promise<void>;  
+  fetchPatientById: (id: string) => Promise<void>; // ✨ NEW: VIP 단독 픽업 기능 추가
   addPatient: (name: string, hospital: string, case_number: string, total_steps: number) => Promise<void>;
   updatePatient: (id: string, updates: Partial<Patient>) => Promise<void>;
   
@@ -239,6 +240,67 @@ export const usePatientStore = create<PatientStore>()(
         }
       },
       
+// ✨ NEW: 노션 URL 링크를 타고 들어왔을 때, 해당 환자만 파이어베이스에서 단독으로 불러오는 기능
+fetchPatientById: async (id: string) => {
+  try {
+      const { patients } = get();
+      // 1. 만약 이미 불러온 20명 안에 있는 환자라면 바로 선택만 하고 끝냅니다.
+      if (patients.some((p: Patient) => p.id === id)) {
+          set({ selectedPatientId: id });
+          return;
+      }
+
+      // 2. 20명 안에 없다면 파이어베이스에 그 1명만 딱 집어서 가져오라고 명령합니다.
+      const docRef = doc(db, "patients", id);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+          const data = docSnap.data();
+          
+          let parsedCreatedAt = 0;
+          try {
+              if (typeof data.createdAt === 'number') parsedCreatedAt = data.createdAt;
+              else if (data.createdAt?.toMillis) parsedCreatedAt = data.createdAt.toMillis();
+              else if (data.createdAt?.seconds) parsedCreatedAt = data.createdAt.seconds * 1000;
+              else if (typeof data.createdAt === 'string') parsedCreatedAt = new Date(data.createdAt).getTime();
+          } catch (e) {}
+
+          let stages = Array.isArray(data.stages) ? data.stages : [];
+          let activeStageId = data.activeStageId;
+
+          if (stages.length === 0) {
+              const initialStage: Stage = {
+                  id: `stage-${Date.now()}`, name: "1st Setup", total_steps: Number(data.total_steps) || 20,
+                  rules: Array.isArray(data.rules) ? data.rules : [], 
+                  checklist_status: Array.isArray(data.checklist_status) ? data.checklist_status : [], 
+                  summary: data.summary || {}, createdAt: parsedCreatedAt || Date.now()
+              };
+              stages = [initialStage];
+              activeStageId = initialStage.id;
+          }
+
+          const currentStage = stages.find((s: Stage) => s.id === activeStageId) || stages.find((s: Stage) => !s.isDeleted) || stages[0];
+          
+          const loadedPatient = {
+              id: docSnap.id, name: data.name, hospital: data.hospital || data.clinic_name || "", case_number: data.case_number,
+              stages: stages, activeStageId: currentStage?.id || activeStageId, 
+              total_steps: currentStage.total_steps, rules: currentStage.rules,
+              checklist_status: currentStage.checklist_status, summary: currentStage.summary,
+              createdAt: parsedCreatedAt, isDeleted: !!data.isDeleted
+          } as Patient;
+
+          // 3. 데려온 환자를 현재 목록 맨 앞에 끼워 넣고, 선택된 상태로 만듭니다.
+          set((state: PatientStore) => {
+              const newPatients = [loadedPatient, ...state.patients];
+              const uniquePatients = Array.from(new Map(newPatients.map(p => [p.id, p])).values());
+              return { patients: uniquePatients, selectedPatientId: id };
+          });
+      }
+  } catch (error) {
+      console.error("Error fetching patient by ID:", error);
+  }
+},
+
       addPatient: async (name: string, hospital: string, case_number: string, total_steps: number) => {
         const initialStage: Stage = {
             id: `stage-${Date.now()}`,
