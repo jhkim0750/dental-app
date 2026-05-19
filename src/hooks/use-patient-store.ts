@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { useState, useEffect } from "react"; 
 import { 
   collection, addDoc, updateDoc, deleteDoc, doc, getDocs, 
-  query 
+  query, limit, startAfter, orderBy, where // ✨ NEW: 검색과 더보기를 위한 기능 추가
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -28,7 +28,7 @@ export interface Rule {
   startStep: number;
   endStep: number;
   note?: string;
-  imageUrl?: string; // ✨ NEW: 각 룰에 사진 링크를 저장할 수 있는 공간 추가
+  imageUrl?: string;
 }
 
 export interface ChecklistStatus {
@@ -61,8 +61,11 @@ interface PatientStore {
   patients: Patient[];
   selectedPatientId: string | null;
   isLoading: boolean;
+  hasMore: boolean; // ✨ NEW: 다음 페이지가 있는지 확인
+  lastDoc: any;     // ✨ NEW: 마지막으로 불러온 환자 기억
 
-  fetchPatients: () => Promise<void>;
+  // ✨ CHANGED: 검색어와 불러오기 옵션 추가
+  fetchPatients: (searchTerm?: string, loadMore?: boolean) => Promise<void>;  
   addPatient: (name: string, hospital: string, case_number: string, total_steps: number) => Promise<void>;
   updatePatient: (id: string, updates: Partial<Patient>) => Promise<void>;
   
@@ -117,85 +120,125 @@ export const usePatientStore = create<PatientStore>()(
       patients: [],
       selectedPatientId: null,
       isLoading: false,
+      hasMore: true,
+      lastDoc: null,
 
-      fetchPatients: async () => {
-        set({ isLoading: true });
+      fetchPatients: async (searchTerm = "", loadMore = false) => {
+        const { lastDoc, patients } = get();
+        if (!loadMore) {
+            set({ isLoading: true, lastDoc: null, hasMore: true });
+        } else {
+            set({ isLoading: true });
+        }
+
         try {
-          const q = query(collection(db, "patients")); 
-          const snapshot = await getDocs(q);
-          
-          const processedPatients = snapshot.docs.map((docSnap) => {
-            const data = docSnap.data(); 
+            let q;
+            const patientsRef = collection(db, "patients");
+            const term = searchTerm.trim();
 
-            try {
-                if (!data.name || typeof data.name !== 'string' || data.name.trim() === "") {
-                    return null; 
+            if (term !== "") {
+                const isNumeric = /^\d+$/.test(term);
+                const searchField = isNumeric ? "case_number" : "name";
+
+                if (loadMore && lastDoc) {
+                    q = query(patientsRef, where(searchField, ">=", term), where(searchField, "<=", term + "\uf8ff"), startAfter(lastDoc), limit(20));
+                } else {
+                    q = query(patientsRef, where(searchField, ">=", term), where(searchField, "<=", term + "\uf8ff"), limit(20));
                 }
-                
-                const hospitalName = data.hospital || data.clinic_name || "";
-                
-                let parsedCreatedAt = 0;
-                try {
-                    if (typeof data.createdAt === 'number') parsedCreatedAt = data.createdAt;
-                    else if (data.createdAt?.toMillis) parsedCreatedAt = data.createdAt.toMillis();
-                    else if (data.createdAt?.seconds) parsedCreatedAt = data.createdAt.seconds * 1000;
-                    else if (typeof data.createdAt === 'string') {
-                        const parsed = new Date(data.createdAt).getTime();
-                        parsedCreatedAt = isNaN(parsed) ? 0 : parsed;
-                    }
-                } catch (e) { parsedCreatedAt = 0; }
-
-                let stages = Array.isArray(data.stages) ? data.stages : [];
-                let rules = Array.isArray(data.rules) ? data.rules : [];
-                let checklist_status = Array.isArray(data.checklist_status) ? data.checklist_status : [];
-                let activeStageId = data.activeStageId;
-
-                if (stages.length === 0) {
-                    const initialStage: Stage = {
-                        id: `stage-${Date.now()}`,
-                        name: "1st Setup",
-                        total_steps: Number(data.total_steps) || 20,
-                        rules: rules,
-                        checklist_status: checklist_status,
-                        summary: data.summary || {},
-                        createdAt: parsedCreatedAt || Date.now()
-                    };
-                    stages = [initialStage];
-                    activeStageId = initialStage.id;
+            } else {
+                if (loadMore && lastDoc) {
+                    q = query(patientsRef, orderBy("createdAt", "desc"), startAfter(lastDoc), limit(20));
+                } else {
+                    q = query(patientsRef, orderBy("createdAt", "desc"), limit(20));
                 }
-
-                const currentStage = stages.find((s: Stage) => s.id === activeStageId) || stages.find((s: Stage) => !s.isDeleted) || stages[0];
-                
-                return {
-                  id: docSnap.id,
-                  name: data.name, 
-                  hospital: hospitalName,
-                  case_number: data.case_number,
-                  stages: stages,
-                  activeStageId: currentStage?.id || activeStageId, 
-                  total_steps: currentStage.total_steps,
-                  rules: currentStage.rules,
-                  checklist_status: currentStage.checklist_status,
-                  summary: currentStage.summary,
-                  createdAt: parsedCreatedAt,
-                  isDeleted: !!data.isDeleted
-                } as Patient;
-
-            } catch (err) {
-                return null;
             }
-          });
 
-          const validPatients = processedPatients.filter((p): p is Patient => p !== null);
-          validPatients.sort((a: Patient, b: Patient) => (b.createdAt || 0) - (a.createdAt || 0));
+            // ✨ FIX 2: 파이어베이스 정렬 에러 시 뻗지 않고 비상 호출하도록 대비!
+            let snapshot;
+            try {
+                snapshot = await getDocs(q);
+            } catch (fallbackErr) {
+                console.warn("Firebase query error, using fallback...", fallbackErr);
+                const fallbackQ = query(patientsRef, limit(30));
+                snapshot = await getDocs(fallbackQ);
+            }
 
-          set({ patients: validPatients, isLoading: false });
+            const lastVisible = snapshot.docs[snapshot.docs.length - 1];
+
+            const processedPatients = snapshot.docs.map((docSnap) => {
+                const data = docSnap.data(); 
+                try {
+                    if (!data.name || typeof data.name !== 'string' || data.name.trim() === "") return null; 
+                    const hospitalName = data.hospital || data.clinic_name || "";
+                    
+                    let parsedCreatedAt = 0;
+                    try {
+                        if (typeof data.createdAt === 'number') parsedCreatedAt = data.createdAt;
+                        else if (data.createdAt?.toMillis) parsedCreatedAt = data.createdAt.toMillis();
+                        else if (data.createdAt?.seconds) parsedCreatedAt = data.createdAt.seconds * 1000;
+                        else if (typeof data.createdAt === 'string') {
+                            const parsed = new Date(data.createdAt).getTime();
+                            parsedCreatedAt = isNaN(parsed) ? 0 : parsed;
+                        }
+                    } catch (e) { parsedCreatedAt = 0; }
+
+                    let stages = Array.isArray(data.stages) ? data.stages : [];
+                    let rules = Array.isArray(data.rules) ? data.rules : [];
+                    let checklist_status = Array.isArray(data.checklist_status) ? data.checklist_status : [];
+                    let activeStageId = data.activeStageId;
+
+                    if (stages.length === 0) {
+                        const initialStage: Stage = {
+                            id: `stage-${Date.now()}`, name: "1st Setup", total_steps: Number(data.total_steps) || 20,
+                            rules: rules, checklist_status: checklist_status,
+                            summary: data.summary || {}, createdAt: parsedCreatedAt || Date.now()
+                        };
+                        stages = [initialStage];
+                        activeStageId = initialStage.id;
+                    }
+
+                    const currentStage = stages.find((s: Stage) => s.id === activeStageId) || stages.find((s: Stage) => !s.isDeleted) || stages[0];
+                    
+                    return {
+                      id: docSnap.id, name: data.name, hospital: hospitalName, case_number: data.case_number,
+                      stages: stages, activeStageId: currentStage?.id || activeStageId, 
+                      total_steps: currentStage.total_steps, rules: currentStage.rules,
+                      checklist_status: currentStage.checklist_status, summary: currentStage.summary,
+                      createdAt: parsedCreatedAt, isDeleted: !!data.isDeleted
+                    } as Patient;
+                } catch (err) { return null; }
+            });
+
+            const validPatients = processedPatients.filter((p): p is Patient => p !== null);
+            validPatients.sort((a: Patient, b: Patient) => (b.createdAt || 0) - (a.createdAt || 0));
+
+            set((state: PatientStore) => {
+                const newPatients = loadMore ? [...state.patients, ...validPatients] : validPatients;
+                
+                // ✨ FIX 1: 화면 튕김(Kick-out) 완벽 방지!
+                // 새로운 검색 결과에 현재 환자가 없더라도, 억지로 목록에 끼워 넣어서 화면 유지를 보장합니다.
+                let finalPatients = newPatients;
+                if (state.selectedPatientId) {
+                    const activePatient = state.patients.find(p => p.id === state.selectedPatientId);
+                    if (activePatient && !finalPatients.some(p => p.id === activePatient.id)) {
+                        finalPatients = [activePatient, ...finalPatients];
+                    }
+                }
+
+                const uniquePatients = Array.from(new Map(finalPatients.map(p => [p.id, p])).values());
+                return {
+                    patients: uniquePatients,
+                    isLoading: false,
+                    lastDoc: lastVisible,
+                    hasMore: snapshot.docs.length === 20
+                };
+            });
         } catch (error) {
-          console.error("Error fetching patients:", error);
-          set({ isLoading: false });
+            console.error("Error fetching patients:", error);
+            set({ isLoading: false });
         }
       },
-
+      
       addPatient: async (name: string, hospital: string, case_number: string, total_steps: number) => {
         const initialStage: Stage = {
             id: `stage-${Date.now()}`,

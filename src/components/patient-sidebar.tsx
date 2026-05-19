@@ -44,7 +44,7 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
     const [addingStagePatientId, setAddingStagePatientId] = useState<string | null>(null);
     const [newStageName, setNewStageName] = useState("");
 
-// ✨ [8번 적용] 사이드바가 열릴 때(렌더링될 때), 현재 선택된 환자가 있다면 그 이름을 검색창에 자동 입력!
+// ✨ [8번 적용 완벽 수정] 선택 환자 자동 검색 및 홈 화면 복귀 시 초기화
 useEffect(() => {
     if (store?.selectedPatientId) {
       const activePatient = store.patients.find(p => p.id === store.selectedPatientId);
@@ -52,8 +52,21 @@ useEffect(() => {
         setSearchTerm(activePatient.name);
         setExpandedPatientId(activePatient.id);
       }
+    } else {
+      // ✨ FIX: 환자 화면에서 홈 화면으로 나갔을 때, 검색창을 완전히 비우고 최신 목록 20명을 다시 불러옵니다.
+      setSearchTerm("");
+      setExpandedPatientId(null);
     }
   }, [store?.selectedPatientId]);
+  
+  // ✨ NEW: 검색창 입력 시 0.3초 뒤에 서버로 심부름을 보냅니다 (서버 과부하 방지)
+  useEffect(() => {
+    if (!store) return;
+    const timer = setTimeout(() => {
+        store.fetchPatients(searchTerm, false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   // ✨ NEW: ESC 키로 모든 모달 및 환자 목록(onClose) 닫기
   useEffect(() => {
@@ -395,6 +408,20 @@ useEffect(() => {
                         </div>
                     );
                 })
+            )}
+
+            {/* ✨ NEW: 더 보기 버튼 (다음 페이지가 있을 때만 나타납니다) */}
+            {store.hasMore && filteredPatients.length > 0 && (
+                <div className="pt-2 pb-4 px-1">
+                    <Button
+                        variant="outline"
+                        className="w-full text-slate-500 bg-slate-50 hover:bg-slate-100 border-slate-200 shadow-sm"
+                        onClick={() => store.fetchPatients(searchTerm, true)}
+                        disabled={store.isLoading}
+                    >
+                        {store.isLoading ? "불러오는 중..." : "더 보기 (Load More)"}
+                    </Button>
+                </div>
             )}
         </div>
 
