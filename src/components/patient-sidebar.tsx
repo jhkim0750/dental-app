@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useImperativeHandle, forwardRef } from "react";
+// ✨ 1. 맨 위 import에 useRef를 추가했습니다.
+import React, { useState, useEffect, useImperativeHandle, forwardRef, useRef } from "react";
 import { usePatientStoreHydrated, Patient, Stage } from "@/hooks/use-patient-store";
 import { 
   Search, Plus, Trash2, User, ChevronRight, ChevronDown, 
@@ -20,6 +21,10 @@ interface PatientSidebarProps {
 export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarProps>(
   ({ onClose }, ref) => {
     const store = usePatientStoreHydrated();
+    
+    // ✨ 2. 도장 찍기(경호원 통제)를 위한 수첩을 하나 만듭니다.
+    const stampedPatientId = useRef<string | null>(null);
+
     const [searchTerm, setSearchTerm] = useState("");
     const [viewMode, setViewMode] = useState<"active" | "deleted">("active");
     
@@ -51,8 +56,12 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
     if (store.selectedPatientId) {
       const activePatient = store.patients.find(p => p.id === store.selectedPatientId);
       if (activePatient) {
-        setSearchTerm(activePatient.name);
-        setExpandedPatientId(activePatient.id);
+        // 🚨 [도장 찍기 전략] 이번 환자 ID로 아직 검색창 세팅(도장)을 안 했을 때만 덮어씌웁니다!
+        if (stampedPatientId.current !== store.selectedPatientId) {
+            setSearchTerm(activePatient.name);
+            setExpandedPatientId(activePatient.id);
+            stampedPatientId.current = store.selectedPatientId; // 도장 쾅!
+        }
       } else {
         store.fetchPatientById(store.selectedPatientId);
       }
@@ -64,6 +73,7 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
     if (store && !store.selectedPatientId) {
       setSearchTerm("");
       setExpandedPatientId(null);
+      stampedPatientId.current = null; // 🚨 홈으로 가면 도장 기록도 깨끗하게 초기화!
     }
   }, [store?.selectedPatientId]);
 
