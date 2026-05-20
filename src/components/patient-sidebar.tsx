@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { usePathname } from "next/navigation"; // ✨ NEW: 주소창 확인용 도구
 
 export interface PatientSidebarHandle {
   openAddModal: () => void;
@@ -21,7 +20,6 @@ interface PatientSidebarProps {
 export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarProps>(
   ({ onClose }, ref) => {
     const store = usePatientStoreHydrated();
-    const pathname = usePathname(); // ✨ NEW: 현재 주소창 상태 가져오기
     const [searchTerm, setSearchTerm] = useState("");
     const [viewMode, setViewMode] = useState<"active" | "deleted">("active");
     
@@ -46,66 +44,39 @@ export const PatientSidebar = forwardRef<PatientSidebarHandle, PatientSidebarPro
     const [addingStagePatientId, setAddingStagePatientId] = useState<string | null>(null);
     const [newStageName, setNewStageName] = useState("");
 
-// ✨ [8번 적용 완벽 수정] 주소창을 감시해서 홈 화면 복귀 시 강제 초기화!
-useEffect(() => {
+  // ✨ [안전장치 1] 환자가 선택되었을 때만 목록과 검색창 이름을 동기화 (서버 검색 시 글자 지워짐 방지)
+  useEffect(() => {
     if (!store) return;
 
-    if (pathname === "/") {
-      // ✨ FIX: 주소가 '/' (홈 화면)으로 바뀌면, 묻지도 따지지도 않고 환자 선택을 취소한 뒤 최신 20명을 강제로 불러옵니다!
-      store.selectPatient(null);
-      setSearchTerm("");
-      setExpandedPatientId(null);
-      store.fetchPatients("", false);
-    } else if (store.selectedPatientId) {
-      // 환자 상세 화면일 때는 해당 환자 이름 자동 검색
+    if (store.selectedPatientId) {
       const activePatient = store.patients.find(p => p.id === store.selectedPatientId);
       if (activePatient) {
         setSearchTerm(activePatient.name);
         setExpandedPatientId(activePatient.id);
+      } else {
+        store.fetchPatientById(store.selectedPatientId);
       }
     }
-  }, [pathname, store?.selectedPatientId]);
-    
-  // ✨ NEW: 검색창 입력 시 0.3초 뒤에 서버로 심부름을 보냅니다 (서버 과부하 방지)
+  }, [store?.selectedPatientId, store?.patients]);
+
+  // ✨ [안전장치 2] 오직 홈 버튼을 눌러 환자 선택이 해제(null)될 때만 검색창을 깨끗하게 초기화
+  useEffect(() => {
+    if (store && !store.selectedPatientId) {
+      setSearchTerm("");
+      setExpandedPatientId(null);
+    }
+  }, [store?.selectedPatientId]);
+
+  // ✨ [안전장치 3] 검색창에 타자를 치면 0.3초 뒤에 파이어베이스 서버에 진짜 검색을 요청 (정상 복구)
   useEffect(() => {
     if (!store) return;
+
     const timer = setTimeout(() => {
         store.fetchPatients(searchTerm, false);
     }, 300);
+
     return () => clearTimeout(timer);
   }, [searchTerm]);
-
-  // ✨ NEW: ESC 키로 모든 모달 및 환자 목록(onClose) 닫기
-  useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // 1. 열려있는 입력창/모달이 있다면 그것부터 우선 닫기
-        if (isAddModalOpen) return setIsAddModalOpen(false);
-        if (editingPatient) return setEditingPatient(null);
-        if (editingStage) return setEditingStage(null);
-        if (addingStagePatientId) return setAddingStagePatientId(null);
-        
-        // 2. 열려있는 모달이 없다면 환자 목록 사이드바 전체 닫기
-        if (onClose) onClose();
-      }
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, [isAddModalOpen, editingPatient, editingStage, addingStagePatientId, onClose]);
-
-// ✨ NEW: 노션 등에서 URL 링크(?patientId=...)를 타고 들어왔을 때 작동하는 안전장치
-useEffect(() => {
-    if (!store) return;
-    
-    // 인터넷 주소(URL)에서 patientId 값을 찾아냅니다.
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlPatientId = urlParams.get('patientId');
-    
-    // 주소창에 아이디가 있고, 아직 그 환자가 선택되지 않았다면 VIP 단독 픽업을 실행합니다!
-    if (urlPatientId && store.selectedPatientId !== urlPatientId) {
-        store.fetchPatientById(urlPatientId);
-    }
-  }, [store]);
 
   useImperativeHandle(ref, () => ({
     openAddModal: () => setIsAddModalOpen(true),

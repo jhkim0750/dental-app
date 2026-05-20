@@ -151,8 +151,12 @@ function PatientDashboard() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={() => store.selectPatient(null)} title="Go Home">
-                  <Home className="w-4 h-4 text-slate-600" />
+{/* ✨ FIX: 홈 버튼 클릭 시 환자 선택 해제 + 검색창 초기화 및 최신 20명 다시 불러오기 */}
+<Button variant="ghost" size="sm" onClick={() => {
+    store.selectPatient(null);
+    store.fetchPatients("", false); 
+}} title="Go Home">
+                    <Home className="w-4 h-4 text-slate-600" />
                 </Button>
                 {activePatient && (
                   <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => setIsOverlayOpen(true)}>

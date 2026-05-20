@@ -293,7 +293,12 @@ fetchPatientById: async (id: string) => {
           set((state: PatientStore) => {
               const newPatients = [loadedPatient, ...state.patients];
               const uniquePatients = Array.from(new Map(newPatients.map(p => [p.id, p])).values());
-              return { patients: uniquePatients, selectedPatientId: id };
+
+              // 🚨 [치명적 버그 방어] 서버에서 데이터를 가져오는 0.5초 사이에 유저가 홈 버튼을 눌렀다면,
+              // 가져온 환자를 목록에 추가는 해주되, 현재 화면(selectedPatientId)을 홈(null) 상태로 안전하게 유지합니다!
+              const finalSelectedId = state.selectedPatientId === id ? id : state.selectedPatientId;
+
+              return { patients: uniquePatients, selectedPatientId: finalSelectedId };
           });
       }
   } catch (error) {
