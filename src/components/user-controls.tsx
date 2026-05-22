@@ -25,7 +25,8 @@ import {
   XCircle, 
   BellRing, 
   TableProperties, 
-  ShieldCheck 
+  ShieldCheck,
+  DatabaseBackup // ✨ 백업 아이콘 추가
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -48,7 +49,6 @@ export function UserControls() {
   const [pendingRequests, setPendingRequests] = useState<string[]>([]);
   const [newEmail, setNewEmail] = useState("");
   
-  // 탭은 딱 2개만 남겼습니다. (3번째 템플릿 탭 완전 삭제)
   const [adminTab, setAdminTab] = useState<'auth' | 'excel'>('auth');
 
   const [excelWorkers, setExcelWorkers] = useState<any[]>([]);
@@ -93,6 +93,87 @@ export function UserControls() {
       return () => unsubWorkers();
     }
   }, [isAdminOpen, isMaster]);
+
+  // ==========================================
+  // ✨ [NEW] 파이어베이스 전체 환자 데이터 엑셀 백업 함수
+  // ==========================================
+  const handleExportAllPatients = async () => {
+    try {
+      alert("전체 환자 데이터를 불러와 엑셀을 생성합니다. 데이터가 많으면 몇 초 정도 걸릴 수 있습니다 ⏳");
+
+      // 1. 파이어베이스에서 '모든 환자 정보(껍데기)' 가져오기
+      const patientsSnap = await getDocs(collection(db, "patients"));
+      const patientsMap: Record<string, any> = {};
+      patientsSnap.forEach(doc => {
+        patientsMap[doc.id] = doc.data();
+      });
+
+      // 2. 파이어베이스에서 '모든 레코드(표 데이터)' 가져오기
+      const recordsSnap = await getDocs(collection(db, "patients_records"));
+
+      // 3. 엑셀에 들어갈 고정 헤더
+      const headers = ["날짜", "병원명", "환자명", "환자번호", "STAGE", "STEP", "상악", "하악", "작업자", "비고", "프로그램"];
+      const csvRows: any[][] = [];
+
+      // 4. 레코드를 하나씩 돌면서 환자 정보와 조립하기
+      recordsSnap.forEach(recordDoc => {
+        const patientId = recordDoc.id;
+        const patientData = patientsMap[patientId];
+        const recordData = recordDoc.data();
+
+        if (patientData && recordData.rows && Array.isArray(recordData.rows)) {
+          recordData.rows.forEach((row: any) => {
+            // 완전히 비어있는 빈 줄(gap)은 엑셀에서 제외
+            const hasData = Object.values(row).some(v => v !== null && v !== "");
+            if (!hasData) return;
+
+            const cleanText = (text: any) => String(text || "").replace(/"/g, '""');
+
+            csvRows.push([
+              cleanText(row["날짜"]),
+              cleanText(patientData.hospital || patientData.clinic_name),
+              cleanText(patientData.name),
+              cleanText(patientData.case_number),
+              cleanText(row["STAGE"]),
+              cleanText(row["STEP"]),
+              cleanText(row["상악"]),
+              cleanText(row["하악"]),
+              cleanText(row["작업자"]),
+              cleanText(row["비고"]),
+              cleanText(row["Program"])
+            ]);
+          });
+        }
+      });
+
+      if (csvRows.length === 0) {
+        alert("백업할 데이터가 없습니다.");
+        return;
+      }
+
+      // 5. 엑셀(CSV) 파일로 굽기 (한글 깨짐 방지용 \ufeff 포함)
+      const csvContent = [
+        headers.join(","),
+        ...csvRows.map(r => r.map(v => `"${v}"`).join(","))
+      ].join("\n");
+
+      const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement("a");
+      link.href = url;
+      const fileName = `Total_Database_Backup_${new Date().toLocaleDateString().replace(/\s/g, "")}.csv`;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+    } catch (error) {
+      console.error("전체 백업 실패:", error);
+      alert("백업 중 오류가 발생했습니다.");
+    }
+  };
 
   // ==========================================
   // [1] 접근 권한 (이메일) 관련 함수
@@ -388,6 +469,21 @@ export function UserControls() {
               )}
 
             </div>
+            
+            {/* ✨ [NEW] 엑셀 백업을 위한 모달 전용 하단 영역 (Footer) */}
+            <div className="p-4 border-t bg-slate-50 flex justify-between items-center shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
+              <div className="flex flex-col">
+                <span className="text-sm font-extrabold text-slate-800">전체 데이터 백업</span>
+                <span className="text-[10px] font-medium text-slate-500 mt-0.5">모든 환자의 레코드를 엑셀로 다운로드합니다.</span>
+              </div>
+              <Button 
+                onClick={handleExportAllPatients} 
+                className="bg-green-600 hover:bg-green-700 text-white gap-1.5 shadow-sm font-bold"
+              >
+                <DatabaseBackup className="w-4 h-4"/> 엑셀 다운로드
+              </Button>
+            </div>
+
           </div>
         </div>
       )}
