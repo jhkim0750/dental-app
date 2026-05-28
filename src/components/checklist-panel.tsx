@@ -1222,6 +1222,29 @@ if (e.altKey && !e.ctrlKey && !e.shiftKey) {
             closeGridOnNavigate();
             setActiveTab('records');
             break;
+            // ✨ [NEW] Alt + 1: 화면 어디서든 셋업 작업 노트(링크) 열기 & 등록하기
+        case '1': 
+        e.preventDefault();
+        {
+            const currentStageId = patient.activeStageId || patient.stages[0].id;
+            const currentStage = patient.stages.find((s: any) => s.id === currentStageId);
+            const currentLink = currentStage?.externalLink || "";
+            
+            if (currentLink) {
+                // 주소가 있으면 새 창으로 열기
+                window.open(currentLink, "_blank", "noopener,noreferrer");
+            } else {
+                // 주소가 없으면 입력받아서 즉시 저장하기
+                const inputLink = prompt(`[${currentStage?.name}]\n이 스테이지의 셋업 작업 노트 URL을 입력하세요 (예: https://...)`, "https://");
+                if (inputLink && inputLink.trim() !== "" && inputLink.trim() !== "https://") {
+                    let finalLink = inputLink.trim();
+                    if (!finalLink.startsWith("http")) finalLink = `https://${finalLink}`;
+                    if(store) store.updateStageExternalLink(patient.id, currentStageId, finalLink);
+                    alert("✅ 셋업 작업 노트 링크가 서버에 자동 저장되었습니다!");
+                }
+            }
+        }
+        break;
     }
     return; // 단축키를 눌렀으면 여기서 끝냄 (아래 텍스트 입력 로직과 충돌 방지)
 }
