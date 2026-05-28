@@ -8,7 +8,8 @@ import {
   Type, Eraser, PenTool, Minus, Undo, Redo, CheckSquare,
   Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter,
   Loader2, Square, Circle, Triangle, Copy, Clipboard, ChevronDown,
-  Crop, RotateCcw, Check, X, Table, LayoutDashboard, ListTree, TrendingUp
+  Crop, RotateCcw, Check, X, Table, LayoutDashboard, ListTree, TrendingUp,
+  Link as LinkIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -2599,7 +2600,7 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
 
 <div className="flex-1 flex flex-col bg-slate-50/50 min-h-screen relative">
            
-           <div className="flex items-end px-6 pt-3 border-b border-slate-300 bg-white shrink-0">
+<div className="flex items-end px-6 pt-3 border-b border-slate-300 bg-white shrink-0">
                <div className="flex items-center gap-1">
                    <button 
                        onClick={() => setActiveTab('summary')}
@@ -2619,6 +2620,62 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
                    >
                        <Table className="w-4 h-4"/> Records
                    </button>
+               </div>
+
+               {/* ✨ [NEW] 탭들 우측 빈 공간으로 밀어낸 '셋업 작업 노트' 버튼 영역 */}
+               <div className="ml-auto mb-1.5 flex items-center">
+                   <Button
+                       variant="outline"
+                       size="sm"
+                       onClick={(e) => {
+                           const currentStageId = patient.activeStageId || patient.stages[0].id;
+                           const currentStage = patient.stages.find((s: any) => s.id === currentStageId);
+                           const currentLink = currentStage?.externalLink || "";
+                           
+                           if (currentLink) {
+                               window.open(currentLink, "_blank", "noopener,noreferrer");
+                           } else {
+                               const inputLink = prompt(`[${currentStage?.name}]\n이 스테이지의 셋업 작업 노트 URL을 입력하세요 (예: https://...)`, "https://");
+                               if (inputLink && inputLink.trim() !== "" && inputLink.trim() !== "https://") {
+                                   let finalLink = inputLink.trim();
+                                   if (!finalLink.startsWith("http")) finalLink = `https://${finalLink}`;
+                                   if(store) store.updateStageExternalLink(patient.id, currentStageId, finalLink);
+                                   alert("✅ 셋업 작업 노트 링크가 서버에 자동 저장되었습니다!");
+                               }
+                           }
+                       }}
+                       onContextMenu={(e) => {
+                           e.preventDefault();
+                           const currentStageId = patient.activeStageId || patient.stages[0].id;
+                           const currentStage = patient.stages.find((s: any) => s.id === currentStageId);
+                           const currentLink = currentStage?.externalLink || "";
+
+                           if (!currentLink) {
+                               alert("등록된 링크가 없습니다. 좌클릭하여 먼저 등록해주세요.");
+                               return;
+                           }
+                           const action = prompt(`[${currentStage?.name}] 등록된 링크:\n${currentLink}\n\n1. 수정\n2. 삭제\n(번호 또는 명령어를 입력하세요)`, "삭제");
+                           
+                           if (action === "2" || action === "삭제") {
+                               if(confirm("링크를 삭제하시겠습니까?")) {
+                                   if(store) store.updateStageExternalLink(patient.id, currentStageId, "");
+                                   alert("✅ 링크가 삭제되었습니다.");
+                               }
+                           } else if (action === "1" || action === "수정") {
+                               const newLink = prompt("새로운 URL을 입력하세요:", currentLink);
+                               if (newLink && newLink.trim() !== "" && newLink.trim() !== currentLink) {
+                                   let finalLink = newLink.trim();
+                                   if (!finalLink.startsWith("http")) finalLink = `https://${finalLink}`;
+                                   if(store) store.updateStageExternalLink(patient.id, currentStageId, finalLink);
+                                   alert("✅ 링크가 수정되었습니다.");
+                               }
+                           }
+                       }}
+                       className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50 bg-white shadow-sm font-bold text-xs"
+                       title="좌클릭: 열기 및 등록 / 우클릭: 수정 및 삭제"
+                   >
+                       <LinkIcon className="w-3.5 h-3.5" /> 셋업 작업 노트
+                   </Button>
                </div>
            </div>
 
