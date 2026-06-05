@@ -2090,17 +2090,38 @@ const handleSaveAsGraph = async () => {
           ctx.drawImage(canvasRef.current, 0, 0); 
       }
       
-      const finalImage = tempCanvas.toDataURL('image/png'); 
       if (!store) return; 
 
-      const currentSummary = patient.summary || {};
-      await store.saveSummary(patient.id, { 
-          ...currentSummary,
-          image: finalImage, 
-          memo: JSON.stringify({ slides }) 
-      }); 
-      alert("Saved!"); 
-  };
+      // 1. 캔버스 이미지를 거대한 텍스트(Base64)가 아닌, 진짜 이미지 파일 형태(Blob)로 변환합니다.
+      tempCanvas.toBlob(async (blob) => {
+          if (!blob) {
+              alert("이미지 변환에 실패했습니다.");
+              return;
+          }
+
+          try {
+              // 2. Firebase Storage에 'summary_현재시간.png' 라는 이름으로 파일 업로드를 지시합니다.
+              const storageRef = ref(storage, `patients/${patient.id}/summary_images/summary_${Date.now()}.png`);
+              await uploadBytes(storageRef, blob);
+              
+              // 3. 업로드가 완료되면, 그 사진을 볼 수 있는 인터넷 주소(URL)를 받아옵니다.
+              const imageUrl = await getDownloadURL(storageRef);
+
+              // 4. Firestore 데이터베이스에는 1MB짜리 텍스트 대신, 깔끔한 짧은 주소(URL)만 저장합니다!
+              const currentSummary = patient.summary || {};
+              await store.saveSummary(patient.id, { 
+                  ...currentSummary,
+                  image: imageUrl, 
+                  memo: JSON.stringify({ slides }) 
+              }); 
+              alert("Saved!"); 
+
+          } catch (error) {
+              console.error("Summary save error:", error);
+              alert("저장 중 문제가 발생했습니다.");
+          }
+      }, 'image/png');
+      };
 
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   
