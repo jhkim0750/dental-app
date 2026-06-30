@@ -1005,12 +1005,18 @@ const [startStep, setStartStep] = useState(1);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 상태 표시 토글
 
-  // ✨ NEW: 체크리스트 그리드 드래그(페인팅) 상태 관리용 Ref (리렌더링 방지 최적화)
-  const gridDragRef = useRef<{ isDragging: boolean, targetKey: string | null, targetAction: boolean | null }>({
-      isDragging: false,
-      targetKey: null,
-      targetAction: null
-  });
+// ✨ NEW: 체크리스트 그리드 드래그(페인팅) & 되돌아가기(Backtrack) 상태 관리용 Ref
+const gridDragRef = useRef<{ 
+    isDragging: boolean, 
+    targetKey: string | null, 
+    targetAction: boolean | null,
+    history: { cardId: string, ruleIds: string[], step: number }[] // 👣 지나간 발자취 기억
+}>({
+    isDragging: false,
+    targetKey: null,
+    targetAction: null,
+    history: []
+});
 
   const currentSlide = slides[currentSlideIndex] || { items: [], penStrokes: [] };
   const items = currentSlide.items || [];
@@ -2248,39 +2254,64 @@ const mergeRules = (rules: Rule[]) => {
     return mergedArray;
 };
 
-// ✨ 2번 요청 반영: 병합된 카드를 처리할 수 있도록 렌더링 로직 수정 (드래그 연속 체크 기능 추가)
+// ✨ 2번 요청 반영: 병합된 카드를 처리할 수 있도록 렌더링 로직 수정 (드래그 연속 체크 + 되돌아가기 기능 추가)
 const renderCard = (mergedGroup: any, step: number, isTiny = false) => { 
     const checked = mergedGroup.ruleIds.every((id: string) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === id && s.checked)); 
     const status = (step === mergedGroup.startStep) ? "NEW" : (step === mergedGroup.endStep ? "REMOVE" : "CHECK"); 
      
-    // ✨ NEW: 타겟 고정을 위한 고유 식별 키 (mergeRules와 동일한 로직 적용)
+    // 타겟 고정을 위한 고유 식별 키 (동일한 종류의 카드만 드래그 허용)
     const targetKey = mergedGroup.isIsolated ? `isolated_${mergedGroup.id}` : `${mergedGroup.type}_${mergedGroup.note || ""}`;
+    // 현재 카드의 고유 좌표 (스텝 + 아이디)
+    const cardId = `${step}_${mergedGroup.id}`; 
 
-    // ✨ NEW: 클릭 및 드래그 시 체크 상태를 변경하는 공통 함수
-    const performToggle = (forceAction?: boolean) => {
+    // 클릭 및 드래그 시 체크 상태를 변경하는 공통 함수 (특정 타겟을 지정할 수 있도록 확장)
+    const performToggle = (forceAction?: boolean, specificRuleIds?: string[], specificStep?: number) => {
         if (!store) return;
+        const rIds = specificRuleIds || mergedGroup.ruleIds;
+        const stp = specificStep !== undefined ? specificStep : step;
+        
         const targetChecked = forceAction !== undefined ? forceAction : !checked;
-        mergedGroup.ruleIds.forEach((id: string) => {
-            const isItemChecked = patient.checklist_status.some((s: any) => s.step === step && s.ruleId === id && s.checked);
+        rIds.forEach((id: string) => {
+            const isItemChecked = patient.checklist_status.some((s: any) => s.step === stp && s.ruleId === id && s.checked);
             if (targetChecked !== isItemChecked) {
-                store.toggleChecklistItem(patient.id, step, id);
+                store.toggleChecklistItem(patient.id, stp, id);
             }
         });
     };
 
-    // ✨ NEW: 마우스 클릭 시 (드래그 시작)
+    // 🖱️ 마우스 클릭 시 (드래그 시작)
     const handleMouseDown = (e: React.MouseEvent) => {
         e.preventDefault(); 
         const targetAction = !checked; 
-        gridDragRef.current = { isDragging: true, targetKey, targetAction };
+        gridDragRef.current = { 
+            isDragging: true, 
+            targetKey, 
+            targetAction,
+            history: [{ cardId, ruleIds: mergedGroup.ruleIds, step }] // 👣 첫 발자취 기록
+        };
         performToggle(targetAction);
     };
 
-    // ✨ NEW: 마우스가 들어올 때 (드래그 진행 중)
+    // 🖱️ 마우스가 들어올 때 (드래그 진행 중 & 되돌아가기 판정)
     const handleMouseEnter = (e: React.MouseEvent) => {
-        if (gridDragRef.current.isDragging) {
-            if (gridDragRef.current.targetKey === targetKey) {
-                performToggle(gridDragRef.current.targetAction!);
+        const dragState = gridDragRef.current;
+        
+        // 드래그 중이고, 동일한 종류의 카드일 때만 작동 (타겟 락온)
+        if (dragState.isDragging && dragState.targetKey === targetKey) {
+            const history = dragState.history;
+            
+            // ⏪ 1. 뒤로 돌아간 경우 (Backtrack 판정: 내 발자취의 '끝에서 두 번째'와 현재 카드가 같다면)
+            if (history.length >= 2 && history[history.length - 2].cardId === cardId) {
+                // 방금 전 밟았던 마지막 카드를 뽑아내서 원상복구(Revert) 시킴!
+                const lastCard = history.pop();
+                if (lastCard) {
+                    performToggle(!dragState.targetAction!, lastCard.ruleIds, lastCard.step);
+                }
+            } 
+            // ⏩ 2. 새로운 카드로 전진한 경우
+            else if (history.length === 0 || history[history.length - 1].cardId !== cardId) {
+                performToggle(dragState.targetAction!);
+                history.push({ cardId, ruleIds: mergedGroup.ruleIds, step }); // 👣 새 발자취 추가
             }
         }
     };
