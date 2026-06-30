@@ -1005,6 +1005,13 @@ const [startStep, setStartStep] = useState(1);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 상태 표시 토글
 
+  // ✨ NEW: 체크리스트 그리드 드래그(페인팅) 상태 관리용 Ref (리렌더링 방지 최적화)
+  const gridDragRef = useRef<{ isDragging: boolean, targetKey: string | null, targetAction: boolean | null }>({
+      isDragging: false,
+      targetKey: null,
+      targetAction: null
+  });
+
   const currentSlide = slides[currentSlideIndex] || { items: [], penStrokes: [] };
   const items = currentSlide.items || [];
   const penStrokes = currentSlide.penStrokes || [];
@@ -2241,27 +2248,51 @@ const mergeRules = (rules: Rule[]) => {
     return mergedArray;
 };
 
-// ✨ 2번 요청 반영: 병합된 카드를 처리할 수 있도록 렌더링 로직 수정 (단일 룰 대신 ruleIds 배열 전체를 순회)
+// ✨ 2번 요청 반영: 병합된 카드를 처리할 수 있도록 렌더링 로직 수정 (드래그 연속 체크 기능 추가)
 const renderCard = (mergedGroup: any, step: number, isTiny = false) => { 
     const checked = mergedGroup.ruleIds.every((id: string) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === id && s.checked)); 
     const status = (step === mergedGroup.startStep) ? "NEW" : (step === mergedGroup.endStep ? "REMOVE" : "CHECK"); 
      
-    const handleToggle = () => {
+    // ✨ NEW: 타겟 고정을 위한 고유 식별 키 (mergeRules와 동일한 로직 적용)
+    const targetKey = mergedGroup.isIsolated ? `isolated_${mergedGroup.id}` : `${mergedGroup.type}_${mergedGroup.note || ""}`;
+
+    // ✨ NEW: 클릭 및 드래그 시 체크 상태를 변경하는 공통 함수
+    const performToggle = (forceAction?: boolean) => {
         if (!store) return;
-        const allChecked = mergedGroup.ruleIds.every((id: string) => patient.checklist_status.some((s: any) => s.step === step && s.ruleId === id && s.checked));
+        const targetChecked = forceAction !== undefined ? forceAction : !checked;
         mergedGroup.ruleIds.forEach((id: string) => {
             const isItemChecked = patient.checklist_status.some((s: any) => s.step === step && s.ruleId === id && s.checked);
-            if (allChecked || (!allChecked && !isItemChecked)) {
+            if (targetChecked !== isItemChecked) {
                 store.toggleChecklistItem(patient.id, step, id);
             }
         });
     };
 
+    // ✨ NEW: 마우스 클릭 시 (드래그 시작)
+    const handleMouseDown = (e: React.MouseEvent) => {
+        e.preventDefault(); 
+        const targetAction = !checked; 
+        gridDragRef.current = { isDragging: true, targetKey, targetAction };
+        performToggle(targetAction);
+    };
+
+    // ✨ NEW: 마우스가 들어올 때 (드래그 진행 중)
+    const handleMouseEnter = (e: React.MouseEvent) => {
+        if (gridDragRef.current.isDragging) {
+            if (gridDragRef.current.targetKey === targetKey) {
+                performToggle(gridDragRef.current.targetAction!);
+            }
+        }
+    };
+
     return ( 
-        <div key={mergedGroup.id} onClick={handleToggle} className={cn("rounded cursor-pointer flex flex-col relative border select-none transition-all", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-50 border-green-500 ring-1 ring-green-500 text-slate-400" : "bg-white hover:ring-2 hover:ring-blue-200 border-slate-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-r-4 border-r-red-500")}> 
+        <div key={mergedGroup.id} 
+             onMouseDown={handleMouseDown}
+             onMouseEnter={handleMouseEnter}
+             className={cn("rounded cursor-pointer flex flex-col relative border select-none transition-all", isTiny ? "p-1.5 mb-1.5" : "p-3 mb-2", checked ? "bg-slate-50 border-green-500 ring-1 ring-green-500 text-slate-400" : "bg-white hover:ring-2 hover:ring-blue-200 border-slate-200", status === "NEW" && !checked && "border-l-4 border-l-green-500", status === "REMOVE" && !checked && "border-r-4 border-r-red-500")}> 
             
             {/* 1. 아이템 이름 (Type) & 체크박스 */}
-                        <div className="flex justify-between items-start mb-1.5">
+            <div className="flex justify-between items-start mb-1.5 pointer-events-none">
                 <div className={cn("font-extrabold truncate pr-1", getTypeColor(mergedGroup.type), isTiny ? "text-[11px]" : "text-sm")}>
                     {mergedGroup.type}
                 </div>
@@ -2270,14 +2301,14 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
                 </div>
             </div> 
 
-{/* 2. 치식 번호 (세로 나열, 직각 네모 배지 및 상/하악 색상 적용) */}
-              <div className="flex flex-col items-start gap-1 mb-1.5">
+            {/* 2. 치식 번호 (세로 나열, 직각 네모 배지 및 상/하악 색상 적용) */}
+            <div className="flex flex-col items-start gap-1 mb-1.5 pointer-events-none">
                   {mergedGroup.tooth === 0 ? (
                       <div className={cn("px-1.5 py-0.5 font-bold rounded-[2px] border", isTiny ? "text-[9px]" : "text-[11px]", "bg-slate-100 text-slate-600 border-slate-200")}>
                           Gen
                       </div>
                   ) : mergedGroup.teeth.map((t: number) => {
-                      const isUpper = t >= 10 && t < 30; // 10, 20번대 상악
+                      const isUpper = t >= 10 && t < 30;
                       const isMax = t === 10;
                       const isMan = t === 30;
                       return (
@@ -2288,12 +2319,10 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
                                   isTiny ? "text-[9px]" : "text-[11px]",
                                   (isMax || isMan)
                                   ? cn(
-                                      // ✨ 아이디어 3 적용: 배경은 하얗게 비우고 테두리 두께(1.5px)와 색상을 진하게 강조!
                                       "bg-white border-[1.5px]", 
                                       isMax ? "text-blue-400 border-blue-400" : "text-orange-400 border-orange-400"
                                   )
                                   : cn(
-                                                                                                                  // 일반 개별 치식: 기존처럼 연한 파스텔톤 유지
                                           "border", 
                                           isUpper 
                                               ? "bg-blue-50/70 text-blue-600 border-blue-200"  
@@ -2305,12 +2334,12 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
                           </div>
                       );
                   })}
-              </div>
+            </div>
 
             {/* 3. 메모 */}
             {mergedGroup.note && (
                 <div className={cn(
-                    "whitespace-pre-wrap break-words leading-tight rounded mt-auto",
+                    "whitespace-pre-wrap break-words leading-tight rounded mt-auto pointer-events-none",
                     isTiny ? "text-[9px] p-0.5" : "text-[11px] p-1.5",
                     "bg-orange-50 text-slate-700 font-medium border border-orange-100/50"
                 )}>
@@ -2321,12 +2350,16 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
     ); 
 };
 
-  const renderFullScreenGrid = () => { 
-      const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i); 
-      
-      return ( 
-          <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in"> 
-              <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0"> 
+const renderFullScreenGrid = () => { 
+    const stepsToShow = Array.from({ length: 10 }, (_, i) => pageStartStep + i); 
+    
+    return ( 
+        <div 
+            className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in"
+            onMouseUp={() => { gridDragRef.current.isDragging = false; }}
+            onMouseLeave={() => { gridDragRef.current.isDragging = false; }}
+        >              
+        <div className="bg-white border-b px-6 py-4 flex justify-between items-center shadow-sm shrink-0"> 
                   <h2 className="text-2xl font-bold flex items-center gap-2"><Layout className="text-blue-600"/> Full Checklist Grid</h2> 
                   <div className="flex gap-2">
                       <Button variant="outline" onClick={() => setPageStartStep(Math.max(0, pageStartStep - 10))}>Prev 10</Button>
