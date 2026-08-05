@@ -455,8 +455,8 @@ const compressImage = async (file: File): Promise<Blob> => {
 // ==========================================
 // 1. InlineNoteEdit 컴포넌트 교체
 // ==========================================
-const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked, onToggleCheck }: { rule: Rule, store: any, patientId: string, itemColor: string, isUpper?: boolean, isChecked?: boolean, onToggleCheck?: () => void }) => {    
-    const [showPopup, setShowPopup] = useState(false); 
+const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked, onToggleCheck, showMemo = true }: { rule: Rule, store: any, patientId: string, itemColor: string, isUpper?: boolean, isChecked?: boolean, onToggleCheck?: () => void, showMemo?: boolean }) => {
+        const [showPopup, setShowPopup] = useState(false); 
     const [isEditing, setIsEditing] = useState(false);
     const [tempNote, setTempNote] = useState("");
     
@@ -650,8 +650,8 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked,
         </div>
     );
     
-    const noteTextEl = rule.note ? (
-        <div className={cn("w-[60px] text-[12px] text-slate-700 font-extrabold leading-tight text-center break-words whitespace-pre-wrap px-0.5 transition-all duration-300", isChecked && "opacity-40 line-through")}>
+    const noteTextEl = showMemo && rule.note ? (
+                <div className={cn("w-[60px] text-[12px] text-slate-700 font-extrabold leading-tight text-center break-words whitespace-pre-wrap px-0.5 transition-all duration-300", isChecked && "opacity-40 line-through")}>
             {rule.note}
         </div>
     ) : null;
@@ -709,8 +709,8 @@ const InlineNoteEdit = ({ rule, store, patientId, itemColor, isUpper, isChecked,
 // ==========================================
 // 2. CornerRuleItem 컴포넌트 교체
 // ==========================================
-const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck }: { rule: Rule; label: string; isChecked?: boolean; onToggleCheck?: () => void }) => {
-    const [showPopup, setShowPopup] = useState(false);
+const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck, showMemo = true }: { rule: Rule; label: string; isChecked?: boolean; onToggleCheck?: () => void; showMemo?: boolean }) => {
+        const [showPopup, setShowPopup] = useState(false);
     
     // ✨ NEW: A안, B안(고급 줌/팬) 상태 추가
     const [isExpanded, setIsExpanded] = useState(false);
@@ -839,8 +839,8 @@ const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck }: { rule: Rule;
                 )}
             </div>
 
-            {rule.note && <span className="text-slate-700">- {rule.note}</span>}
-            <span className="text-slate-400 font-mono">- ({rule.startStep}-{rule.endStep})</span>
+            {showMemo && rule.note && <span className="text-slate-700">- {rule.note}</span>}
+                        <span className="text-slate-400 font-mono">- ({rule.startStep}-{rule.endStep})</span>
 
             {rule.imageUrl && showPopup && typeof document !== "undefined" && createPortal(
                 <div 
@@ -910,6 +910,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [activeTab, setActiveTab] = useState<'summary' | 'records'>('summary'); 
 
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [editingGroupRules, setEditingGroupRules] = useState<any[]>([]); // ✨ NEW: 그룹 수정 상태
   const [selectedType, setSelectedType] = useState("BOS");
   const [customType, setCustomType] = useState("");
   const [selectedTeeth, setSelectedTeeth] = useState<string[]>([]);
@@ -1004,6 +1005,7 @@ const [startStep, setStartStep] = useState(1);
   const [isAllView, setIsAllView] = useState(false); 
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 상태 표시 토글
+  const [showSmartMemo, setShowSmartMemo] = useState(true); // ✨ NEW: 스마트 서머리 메모 표시 토글
 
 // ✨ NEW: 체크리스트 그리드 드래그(페인팅) & 되돌아가기(Backtrack) 상태 관리용 Ref
 const gridDragRef = useRef<{ 
@@ -2138,7 +2140,120 @@ const handleSaveAsGraph = async () => {
 
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   
-  const handleSaveRules = async () => { 
+// ✨ NEW: 북마크릿 클립보드 데이터를 임포트하고 매핑/파싱하는 스마트 로직
+// ✨ NEW: 북마크릿 클립보드 데이터를 임포트하고 매핑/파싱하는 스마트 로직
+const handleImportData = async () => {
+    if (!store) return;
+    try {
+        const clipboardText = await navigator.clipboard.readText();
+        const parsedData = JSON.parse(clipboardText);
+
+        if (!Array.isArray(parsedData) || parsedData.length === 0) {
+            alert("유효한 임포트 데이터가 아닙니다.");
+            return;
+        }
+
+        if (!confirm(`총 ${parsedData.length}개의 데이터를 분석하여 임포트하시겠습니까?\n(기존 데이터 맨 아래에 안전하게 추가됩니다)`)) return;
+
+        let addedCount = 0;
+        let skippedCount = 0;
+        const pendingRules: any[] = []; // ✨ NEW: 저장할 데이터를 임시 보관할 배열
+
+        // 1. 번역 및 필터링 사전 (Mapping Dictionary)
+        const typeMapping: Record<string, string> = {
+            "ABP": "Bite Ramp", "BC": "BC", "BOS": "BOS",
+            "Class 1 elastic": "X", "Class 2 elastic": "X", "Class 3 elastic": "X",
+            "MFT": "X", "Mini implant": "X", "ML elastic": "X",
+            "MTA": "BC", "PBB": "Bite Ramp", "Power chain": "BC",
+            "Power ridge": "Power ridge", "Power ridge Couple": "Power ridge",
+            "Vertical ridge": "Vertical ridge", "Vertical ridge Couple": "Vertical ridge"
+        };
+
+        for (const item of parsedData) {
+            if (item.category === "부가력") {
+                // 2. 이름 번역 및 'X' 항목 차단
+                const rawType = item.type || "";
+                const mappedType = typeMapping[rawType] !== undefined ? typeMapping[rawType] : rawType;
+                
+                if (mappedType === "X") {
+                    skippedCount++;
+                    continue; // 아예 안 쓰는 항목은 완벽하게 버림 (Skip)
+                }
+
+                // 3. 단계(Step) 및 메모 정규식 파싱
+                let start = 1;
+                let end = totalSteps;
+                let extractedNote = "";
+
+                const memo = item.memo_upper || item.memo_lower || "";
+                
+                // 패턴: "숫자단계-숫자(또는 끝)단계 : 메모"
+                const match = memo.match(/(\d+)단계-(끝|\d+)단계\s*:\s*(.*)/);
+                if (match) {
+                    start = parseInt(match[1], 10);
+                    end = match[2] === '끝' ? totalSteps : parseInt(match[2], 10);
+                    extractedNote = match[3].trim();
+                } else {
+                    // 패턴이 안 맞으면 기본값 넣고 메모 원본 유지
+                    extractedNote = memo.trim();
+                }
+
+                const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
+                const finalType = mappedType || "기타"; // 사전에 없으면 텍스트 그대로 살리고 '기타' 취급
+
+                for (const t of teeth) {
+                    pendingRules.push({ type: finalType, startStep: start, endStep: end, note: extractedNote, tooth: t, isIsolated: false });
+                }
+                addedCount++;
+            } else if (item.category === "AT") {
+                // 4. AT 로직 (Start = End 동일하게 처리)
+                let start = 1;
+                const stageMatch = item.stage_step?.match(/(\d+)\s*Step/i);
+                if (stageMatch) {
+                    start = parseInt(stageMatch[1], 10);
+                }
+
+                const end = start; // AT는 시작과 끝을 같게!
+                const extractedNote = item.memo || "기존 AT는 모두 그대로 사용합니다.";
+                const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
+
+                for (const t of teeth) {
+                    pendingRules.push({ type: "Attachment", startStep: start, endStep: end, note: extractedNote, tooth: t, isIsolated: false });
+                }
+                addedCount++;
+            }
+        }
+
+        // ✨ NEW: 중복 검사 로직 추가 (저장 전에 미리 스캔)
+        const existingRules = patient.rules || [];
+        const hasDuplicate = pendingRules.some(newRule => 
+            existingRules.some((ex: any) => 
+                ex.tooth === newRule.tooth && 
+                ex.type === newRule.type && 
+                ex.startStep === newRule.startStep && 
+                ex.endStep === newRule.endStep
+            )
+        );
+
+        if (hasDuplicate) {
+            if (!confirm("⚠️ 이미 입력된 중복 데이터(치아 번호, 타입, 단계 동일)가 포함되어 있습니다.\n그래도 무시하고 중복으로 모두 추가하시겠습니까?\n\n(취소를 누르면 임포트가 중단됩니다)")) {
+                return; // 취소 시 임포트 전면 중단
+            }
+        }
+
+        // ✨ NEW: 검사를 무사히 통과(또는 강제 승인)하면 일괄 저장
+        for (const ruleData of pendingRules) {
+            await store.addRule(patient.id, ruleData);
+        }
+
+        alert(`✅ 임포트 완료!\n추가됨: ${addedCount}개 그룹\n제외됨(X): ${skippedCount}개 그룹`);
+    } catch (error) {
+        console.error("Import Error:", error);
+        alert("클립보드 데이터를 읽어오지 못했거나 올바른 데이터가 아닙니다.");
+    }
+};
+
+const handleSaveRules = async () => { 
     const finalType = selectedType === "기타" ? customType : selectedType; 
     const teethToSave = selectedTeeth.length === 0 ? [0] : selectedTeeth.map(t => parseInt(t)); 
     
@@ -2147,11 +2262,30 @@ const handleSaveAsGraph = async () => {
         startStep, 
         endStep, 
         note,
-        isIsolated // ✨ NEW: 단일 아이템 상태도 함께 묶어서 저장
+        isIsolated 
     };
     if (ruleImage) ruleData.imageUrl = ruleImage;
 
-    if (editingRuleId) { 
+    if (editingGroupRules.length > 0) {
+        // ✨ NEW: 다중 치아 동시 수정 & 완벽한 2개/2개 분리(Split) 방어 로직
+        if (!store) return;
+        const originalTeeth = editingGroupRules.map(r => r.tooth);
+        const addedTeeth = teethToSave.filter(t => !originalTeeth.includes(t));
+        const removedTeeth = originalTeeth.filter(t => !teethToSave.includes(t));
+
+        for (const r of editingGroupRules) {
+            if (teethToSave.includes(r.tooth)) {
+                await store.updateRule(patient.id, { ...r, ...ruleData, tooth: r.tooth });
+            }
+            // ✨ 핀셋 수정: 제외된 치아(removedTeeth)는 억지로 개별 포장하지 않고 가만히 둡니다.
+            // 그러면 기존의 데이터를 공유하므로 자기들끼리 완벽하게 하나의 그룹으로 남게 됩니다!
+        }
+                for (const tooth of addedTeeth) {
+            await store.addRule(patient.id, { ...ruleData, tooth });
+        }
+        setEditingRuleId(null);
+        setEditingGroupRules([]);
+    } else if (editingRuleId) { 
         if(store) await store.updateRule(patient.id, { id: editingRuleId, ...ruleData, tooth: teethToSave[0] }); 
         setEditingRuleId(null); 
     } else { 
@@ -2162,21 +2296,46 @@ const handleSaveAsGraph = async () => {
     setSelectedTeeth([]); 
     setNote(""); 
     setRuleImage(null); 
-    setIsIsolated(false); // ✨ NEW: 저장 후 체크 해제
+    setIsIsolated(false); 
     if (selectedType === "기타") setCustomType(""); 
 };
 
 const handleEditClick = (e: React.MouseEvent, rule: Rule) => { 
     e.stopPropagation(); 
+
+    // ✨ NEW: 그룹으로 묶인 멤버들 찾아내기
+    const groupMembers = (!(rule as any).isIsolated) ? safeRules.filter((r: Rule) => 
+        !(r as any).isIsolated && 
+        r.type === rule.type && 
+        (r.note || "") === (rule.note || "") && 
+        r.startStep === rule.startStep && 
+        r.endStep === rule.endStep
+    ) : [rule];
+
+    let isGroupEdit = false;
+    if (groupMembers.length > 1) {
+        if (window.confirm("이 항목은 그룹으로 묶여있습니다.\n[확인]을 누르면 그룹 전체를 동시에 수정하고,\n[취소]를 누르면 이 항목만 단독으로 수정(분리)합니다.")) {
+            isGroupEdit = true;
+        }
+    }
+
     setEditingRuleId(rule.id); 
+    if (isGroupEdit) {
+        setEditingGroupRules(groupMembers);
+        const teeth = groupMembers.map((r: any) => r.tooth).filter((t: number) => t !== 0).map(String);
+        setSelectedTeeth(teeth);
+    } else {
+        setEditingGroupRules([]);
+        setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]); 
+    }
+
     if (PRESET_TYPES.includes(rule.type)) { setSelectedType(rule.type); setCustomType(""); } 
     else { setSelectedType("기타"); setCustomType(rule.type); } 
-    setSelectedTeeth(rule.tooth === 0 ? [] : [rule.tooth.toString()]); 
     setStartStep(rule.startStep); 
     setEndStep(rule.endStep); 
     setNote(rule.note || ""); 
     setRuleImage(rule.imageUrl || null); 
-    setIsIsolated((rule as any).isIsolated || false); // ✨ NEW: 수정 시 단일 아이템 상태 불러오기
+    setIsIsolated((rule as any).isIsolated || false); 
     
     if (scrollContainerRef.current) {
         scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2184,7 +2343,7 @@ const handleEditClick = (e: React.MouseEvent, rule: Rule) => {
 };
 
 const cancelEdit = () => { 
-    setEditingRuleId(null); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); setRuleImage(null); setIsIsolated(false); // ✨ 취소 시 함께 리셋
+    setEditingRuleId(null); setEditingGroupRules([]); setSelectedTeeth([]); setNote(""); setStartStep(1); setEndStep(10); setRuleImage(null); setIsIsolated(false); 
 };
 
   const handleDeleteMultiRules = async () => {
@@ -2500,10 +2659,16 @@ const renderFullScreenGrid = () => {
         <div className="w-[360px] border-r bg-white flex flex-col h-screen sticky top-0 overflow-y-auto shrink-0 relative z-0">
            {activeTab === 'summary' ? (
                <>
-           <div ref={ruleFormRef} className={cn("p-4 border-b shrink-0 transition-colors duration-500", editingRuleId ? "bg-orange-50 border-orange-200" : "bg-slate-50")}>
+{/* ✨ NEW: Rule Definition 텍스트 우측에 이질감 없이 임포트 버튼 핀셋 추가 */}
+<div ref={ruleFormRef} className={cn("p-4 border-b shrink-0 transition-colors duration-500 flex justify-between items-center", editingRuleId ? "bg-orange-50 border-orange-200" : "bg-slate-50")}>
                <h2 className="font-bold flex items-center gap-2">{editingRuleId ? <><Pencil className="w-4 h-4 text-orange-500"/> Editing Rule</> : "Rule Definition"}</h2>
+               {!editingRuleId && (
+                   <Button variant="outline" size="sm" onClick={handleImportData} className="h-7 text-xs flex items-center gap-1.5 border-slate-300 text-slate-600 hover:bg-slate-100 shadow-sm" title="클립보드 데이터 임포트">
+                       <Clipboard className="w-3.5 h-3.5"/> 데이터 붙여넣기
+                   </Button>
+               )}
            </div>
-           
+
            <div ref={scrollContainerRef} className="p-4 space-y-4 overflow-y-auto flex-1 scroll-smooth">
            <div className="space-y-1">
                  <div className="flex items-center justify-between">
@@ -2930,12 +3095,12 @@ const renderFullScreenGrid = () => {
                                         ({rule.startStep}-{rule.endStep})
                                     </span>                                                        
                                 </div>
-                                {rule.note && (
+                                {showSmartMemo && rule.note && (
                                     <div className="text-[11px] font-bold text-slate-500 px-1 whitespace-pre-wrap break-words leading-tight mt-0.5">
                                         {rule.note}
                                     </div>
                                 )}
-                                <div className="h-[5px] w-full bg-slate-100 rounded-full mt-0.5 relative overflow-hidden border border-slate-200/50">                                                            
+                                                                <div className="h-[5px] w-full bg-slate-100 rounded-full mt-0.5 relative overflow-hidden border border-slate-200/50">                                                            
                                     <div 
                                         className="absolute h-full rounded-full transition-all"
                                         style={{ left: `${leftPercent}%`, width: `${widthPercent}%`, backgroundColor: itemColor }}
@@ -3090,28 +3255,34 @@ const renderFullScreenGrid = () => {
                                 )}
                             </div>
 
-                            {!isAllView && (
-                                <div 
-                                    className="absolute right-4 flex items-center gap-2 cursor-pointer group animate-in fade-in" 
-                                    onClick={() => setShowCheckedStatus(!showCheckedStatus)}
-                                >
-                                    <span className={cn("text-[11px] font-bold transition-colors duration-300", showCheckedStatus ? "text-green-600" : "text-slate-400")}>
-                                        완료 표시
+                            <div className="absolute right-4 flex items-center gap-5 animate-in fade-in">
+                                {/* ✨ NEW: 메모 표시 토글 (항상 표시) */}
+                                <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setShowSmartMemo(!showSmartMemo)}>
+                                    <span className={cn("text-[11px] font-bold transition-colors duration-300", showSmartMemo ? "text-green-600" : "text-slate-400")}>
+                                        메모 표시
                                     </span>
-                                    <div className={cn(
-                                        "w-12 h-5 rounded-full p-1 transition-colors duration-300 ease-in-out relative flex items-center shadow-inner overflow-hidden",
-                                        showCheckedStatus ? "bg-green-500" : "bg-slate-200"
-                                    )}>
-                                        <span className={cn("absolute left-1.5 text-[9px] font-extrabold text-white transition-opacity duration-300", showCheckedStatus ? "opacity-100" : "opacity-0")}>ON</span>
-                                        <span className={cn("absolute right-1 text-[9px] font-extrabold text-slate-400 transition-opacity duration-300", showCheckedStatus ? "opacity-0" : "opacity-100")}>OFF</span>
-                                        <div 
-                                            className="bg-white w-3.5 h-3.5 rounded-full shadow-sm transform transition-transform duration-300 ease-in-out z-10"
-                                            style={{ transform: showCheckedStatus ? 'translateX(26px)' : 'translateX(0px)' }} 
-                                        />
+                                    <div className={cn("w-12 h-5 rounded-full p-1 transition-colors duration-300 ease-in-out relative flex items-center shadow-inner overflow-hidden", showSmartMemo ? "bg-green-500" : "bg-slate-200")}>
+                                        <span className={cn("absolute left-1.5 text-[9px] font-extrabold text-white transition-opacity duration-300", showSmartMemo ? "opacity-100" : "opacity-0")}>ON</span>
+                                        <span className={cn("absolute right-1 text-[9px] font-extrabold text-slate-400 transition-opacity duration-300", showSmartMemo ? "opacity-0" : "opacity-100")}>OFF</span>
+                                        <div className="bg-white w-3.5 h-3.5 rounded-full shadow-sm transform transition-transform duration-300 ease-in-out z-10" style={{ transform: showSmartMemo ? 'translateX(26px)' : 'translateX(0px)' }} />
                                     </div>
                                 </div>
-                            )}
-                        </div>
+
+                                {/* 기존: 완료 표시 토글 (단일 단계 뷰에서만 표시) */}
+                                {!isAllView && (
+                                    <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setShowCheckedStatus(!showCheckedStatus)}>
+                                        <span className={cn("text-[11px] font-bold transition-colors duration-300", showCheckedStatus ? "text-green-600" : "text-slate-400")}>
+                                            완료 표시
+                                        </span>
+                                        <div className={cn("w-12 h-5 rounded-full p-1 transition-colors duration-300 ease-in-out relative flex items-center shadow-inner overflow-hidden", showCheckedStatus ? "bg-green-500" : "bg-slate-200")}>
+                                            <span className={cn("absolute left-1.5 text-[9px] font-extrabold text-white transition-opacity duration-300", showCheckedStatus ? "opacity-100" : "opacity-0")}>ON</span>
+                                            <span className={cn("absolute right-1 text-[9px] font-extrabold text-slate-400 transition-opacity duration-300", showCheckedStatus ? "opacity-0" : "opacity-100")}>OFF</span>
+                                            <div className="bg-white w-3.5 h-3.5 rounded-full shadow-sm transform transition-transform duration-300 ease-in-out z-10" style={{ transform: showCheckedStatus ? 'translateX(26px)' : 'translateX(0px)' }} />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                                                    </div>
 
                         <div className={cn("relative w-full max-w-[75%] pt-4 group transition-all", isAllView ? "pb-0 opacity-0 h-0 overflow-hidden pointer-events-none" : "pb-4 opacity-100")}>
                             <input 
@@ -3204,9 +3375,8 @@ const renderFullScreenGrid = () => {
                                                     </div>
                                                 );
 
-                                                const ItemContentEl = <InlineNoteEdit key={`item-content-${r.id}`} rule={r} store={store} patientId={patient.id} itemColor={itemColor} isUpper={isUpper} isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
-
-                                                const Divider = idx !== rulesToRender.length - 1 ? <div key={`div-${r.id}`} className="w-6 h-[1.5px] bg-slate-200 my-1" /> : null;
+                                                const ItemContentEl = <InlineNoteEdit key={`item-content-${r.id}`} rule={r} store={store} patientId={patient.id} itemColor={itemColor} isUpper={isUpper} isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} showMemo={showSmartMemo} />;
+                                                                                                const Divider = idx !== rulesToRender.length - 1 ? <div key={`div-${r.id}`} className="w-6 h-[1.5px] bg-slate-200 my-1" /> : null;
 
                                                 return (
                                                     <div key={r.id} className={cn("flex flex-col items-center w-full bg-transparent py-0.5 relative animate-in fade-in zoom-in-95", isUpper ? "mb-0.5" : "mt-0.5")}>
@@ -3259,15 +3429,15 @@ const renderFullScreenGrid = () => {
                                 <>
                                     {/* 공통 룰 영역 (상단 모서리 밀착) */}
                                     <div className="absolute top-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
-                                        {maxRulesList.map((r: Rule) => {
+                                    {maxRulesList.map((r: Rule) => {
                                             const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
-                                            return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
-                                                })}
+                                            return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} showMemo={showSmartMemo} />;
+                                        })}
                                         {genRulesList.map((r: Rule) => {
                                             const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
-                                            return <CornerRuleItem key={`max-${r.id}`} rule={r} label="MAX" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
-                                                })}
-                                    </div>
+                                            return <CornerRuleItem key={`gen-${r.id}`} rule={r} label="Gen" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} showMemo={showSmartMemo} />;
+                                        })}
+                                                                                                                    </div>
 
                                     {/* 상악 치아 배열 */}
                                     <div className="flex w-full items-end justify-center pb-2 z-10 flex-1">
@@ -3312,8 +3482,8 @@ const renderFullScreenGrid = () => {
                                     <div className="absolute bottom-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
                                         {manRulesList.map((r: Rule) => {
                                             const isRuleChecked = !isAllView && showCheckedStatus && patient.checklist_status?.some((s: any) => s.step === smartStage && s.ruleId === r.id && s.checked);
-                                            return <CornerRuleItem key={`man-${r.id}`} rule={r} label="MAN" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} />;
-                                                })}
+                                            return <CornerRuleItem key={`man-${r.id}`} rule={r} label="MAN" isChecked={isRuleChecked} onToggleCheck={() => store?.toggleChecklistItem(patient.id, smartStage, r.id)} showMemo={showSmartMemo} />;
+                                                                                            })}
                                     </div>
                                 </>
                             );
