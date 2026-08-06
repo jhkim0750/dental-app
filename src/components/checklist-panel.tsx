@@ -2197,9 +2197,15 @@ const handleSaveAsGraph = async () => {
                     start = parseInt(match[1], 10); end = match[2] === '끝' ? totalSteps : parseInt(match[2], 10); extractedNote = match[3].trim();
                 } else { extractedNote = memo.trim(); }
 
-                const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
                 const finalType = mappedType || "기타";
-                const extractedImages = item.images || [];
+
+                // ✨ NEW: 신규 셋업(0부터)이면서 텍스트에서 1로 추출되었고, 타겟 3개 항목(BOS, BC, Bite Ramp)인 경우만 0으로 강제 변환
+                if (isNewSetup && start === 1 && ["BOS", "BC", "Bite Ramp"].includes(finalType)) {
+                    start = 0;
+                }
+
+                const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
+                                const extractedImages = item.images || [];
 
                 // ✨ NEW: 치아 배열(teeth)을 분리하지 않고 그룹으로 유지, isActive(활성화 여부) 속성 추가
                 pendingRules.push({ type: finalType, startStep: start, endStep: end, note: extractedNote, teeth: teeth, isActive: true, isIsolated: false, availableImages: extractedImages });
@@ -2208,8 +2214,14 @@ const handleSaveAsGraph = async () => {
                 let start = defaultStartStep;
                 const stageMatch = item.stage_step?.match(/(\d+)\s*Step/i);
                 if (stageMatch) { start = parseInt(stageMatch[1], 10); }
+                
+                // ✨ NEW: 신규 셋업(0부터)이면서 텍스트에서 1로 추출된 경우 0으로 강제 변환 (AT 전용)
+                if (isNewSetup && start === 1) {
+                    start = 0;
+                }
+
                 const extractedNote = item.memo || "기존 AT는 모두 그대로 사용합니다.";
-                const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
+                                const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
                 const extractedImages = item.images || [];
 
                 // ✨ NEW: 그룹 유지 및 isActive 부여
