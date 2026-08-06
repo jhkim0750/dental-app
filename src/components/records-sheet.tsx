@@ -484,14 +484,27 @@ const handleSaveRecords = async () => {
       let allFlattenedData: RowObject[] = [];
       sheets.forEach(tab => {
         if (masterDataRef.current[tab]) {
-          // 내용이 텅 빈 행은 제외하고 저장하여 DB 과부하 방지
-          const validRows = masterDataRef.current[tab].filter((row: any) => 
-            Object.keys(row).some(k => k !== "_SHEET_NAME_" && row[k] !== "")
-          );
-          allFlattenedData = [...allFlattenedData, ...validRows];
+          const sheetRows = masterDataRef.current[tab];
+          let lastValidIndex = -1;
+          
+          // ✨ NEW: 시트의 맨 아래에서부터 위로 거꾸로 올라가며, '가장 마지막으로 내용이 적힌 행'을 찾습니다.
+          for (let i = sheetRows.length - 1; i >= 0; i--) {
+            const row = sheetRows[i];
+            const hasData = Object.keys(row).some(k => k !== "_SHEET_NAME_" && row[k] !== "");
+            if (hasData) {
+              lastValidIndex = i;
+              break;
+            }
+          }
+          
+          // ✨ NEW: 데이터가 하나라도 있다면, 0번째 행부터 마지막 데이터가 있는 행까지만 통째로 잘라서 저장합니다. (중간 빈 행은 그대로 보존됨)
+          if (lastValidIndex >= 0) {
+            const validRows = sheetRows.slice(0, lastValidIndex + 1);
+            allFlattenedData = [...allFlattenedData, ...validRows];
+          }
         }
       });
-  
+        
       // ✨ NEW: rows 뿐만 아니라, 현재 화면에 존재하는 탭 목록(sheetNames) 배열도 명시적으로 파이어베이스에 함께 저장
       await setDoc(doc(db, "patients_records", activePatient.id), { rows: allFlattenedData, sheetNames: sheets, lastUpdated: new Date().toISOString() }, { merge: true });
       alert("✅ 환자 Records 데이터가 안전하게 저장되었습니다!");
