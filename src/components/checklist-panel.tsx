@@ -2220,8 +2220,10 @@ const handleSaveAsGraph = async () => {
                     start = 0;
                 }
 
-                const extractedNote = item.memo || "기존 AT는 모두 그대로 사용합니다.";
-                                const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
+                // ✨ NEW: 하드코딩된 기본 멘트를 제거하고, 원본 메모가 없으면 빈칸("")으로 깔끔하게 처리
+                const extractedNote = item.memo ? item.memo.trim() : "";
+                
+                const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
                 const extractedImages = item.images || [];
 
                 // ✨ NEW: 그룹 유지 및 isActive 부여
