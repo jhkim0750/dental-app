@@ -224,41 +224,46 @@ export default function RecordsSheet() {
 
         const recordsSnap = await getDoc(doc(db, "patients_records", activePatient.id));
         let rawData: RowObject[] = [];
-        if (recordsSnap.exists() && recordsSnap.data().rows) rawData = recordsSnap.data().rows;
+        let savedSheetNames: string[] = []; // ✨ NEW: 명시적으로 저장된 시트 목록 변수 추가
+        if (recordsSnap.exists()) {
+            if (recordsSnap.data().rows) rawData = recordsSnap.data().rows;
+            if (recordsSnap.data().sheetNames) savedSheetNames = recordsSnap.data().sheetNames; // ✨ 시트 배열 획득
+        }
 
         const newColHeaders = templateCols.map((c: any) => c.title);
 
-// ✨ [수정] 데이터를 투명 꼬리표(_SHEET_NAME_) 기준으로 쪼개서 캐싱
-masterDataRef.current = {};
-const parsedSheets = new Set<string>();
+        // ✨ [수정] 데이터를 투명 꼬리표(_SHEET_NAME_) 기준으로 쪼개서 캐싱
+        masterDataRef.current = {};
+        const parsedSheets = new Set<string>();
 
-rawData.forEach((row: any) => {
-  // 기존 데이터(꼬리표 없음)는 무조건 Sheet1로 모음
-  const sheetName = row["_SHEET_NAME_"] || "Sheet1";
-  parsedSheets.add(sheetName);
-  if (!masterDataRef.current[sheetName]) masterDataRef.current[sheetName] = [];
-  masterDataRef.current[sheetName].push({ ...row });
-});
+        rawData.forEach((row: any) => {
+          // 기존 데이터(꼬리표 없음)는 무조건 Sheet1로 모음
+          const sheetName = row["_SHEET_NAME_"] || "Sheet1";
+          parsedSheets.add(sheetName);
+          if (!masterDataRef.current[sheetName]) masterDataRef.current[sheetName] = [];
+          masterDataRef.current[sheetName].push({ ...row });
+        });
 
-const finalSheets = parsedSheets.size > 0 ? Array.from(parsedSheets) : ["Sheet1"];
+        // ✨ NEW: DB에 저장된 시트 목록(savedSheetNames)이 있으면 그것을 최우선으로 사용하여 빈 시트 증발을 막고, 과거 데이터인 경우에만 parsedSheets 사용
+        const finalSheets = savedSheetNames.length > 0 ? savedSheetNames : (parsedSheets.size > 0 ? Array.from(parsedSheets) : ["Sheet1"]);
 
-finalSheets.forEach((sheet: string) => {
-  if (!masterDataRef.current[sheet]) masterDataRef.current[sheet] = [];
-  const sheetData = masterDataRef.current[sheet];
-  if (sheetData.length < templateRowCount) {
-    const rowsToAdd = templateRowCount - sheetData.length;
-    for (let i = 0; i < rowsToAdd; i++) {
-      const emptyRow: RowObject = {};
-      newColHeaders.forEach((header: string) => { emptyRow[header] = ""; });
-      sheetData.push(emptyRow);
-    }
-  }
-});
+        finalSheets.forEach((sheet: string) => {
+          if (!masterDataRef.current[sheet]) masterDataRef.current[sheet] = [];
+          const sheetData = masterDataRef.current[sheet];
+          if (sheetData.length < templateRowCount) {
+            const rowsToAdd = templateRowCount - sheetData.length;
+            for (let i = 0; i < rowsToAdd; i++) {
+              const emptyRow: RowObject = {};
+              newColHeaders.forEach((header: string) => { emptyRow[header] = ""; });
+              sheetData.push(emptyRow);
+            }
+          }
+        });
 
-setSheets(finalSheets);
-const initialTab = finalSheets[0];
-setActiveTab(initialTab);
-const clonedData = masterDataRef.current[initialTab]; // 초기 표출 데이터
+        setSheets(finalSheets);
+        const initialTab = finalSheets[0];
+        setActiveTab(initialTab);
+        const clonedData = masterDataRef.current[initialTab]; // 초기 표출 데이터
 
         const newColumns = templateCols.map((c: any) => {
           const def: any = { data: c.title, type: "text", width: c.width, className: "htCenter htMiddle" };
@@ -468,7 +473,7 @@ const clonedData = masterDataRef.current[initialTab]; // 초기 표출 데이터
     }
   };
   
-  const handleSaveRecords = async () => {
+const handleSaveRecords = async () => {
     if (!activePatient?.id) return;
     const hot = hotRef.current?.hotInstance;
     if (!hot) return;
@@ -487,11 +492,12 @@ const clonedData = masterDataRef.current[initialTab]; // 초기 표출 데이터
         }
       });
   
-      await setDoc(doc(db, "patients_records", activePatient.id), { rows: allFlattenedData, lastUpdated: new Date().toISOString() }, { merge: true });
+      // ✨ NEW: rows 뿐만 아니라, 현재 화면에 존재하는 탭 목록(sheetNames) 배열도 명시적으로 파이어베이스에 함께 저장
+      await setDoc(doc(db, "patients_records", activePatient.id), { rows: allFlattenedData, sheetNames: sheets, lastUpdated: new Date().toISOString() }, { merge: true });
       alert("✅ 환자 Records 데이터가 안전하게 저장되었습니다!");
     } catch (error) { console.error(error); alert("데이터 저장 실패!"); }
   };
-  // ✨ NEW: 저장 함수 최신화 거울(Ref) 도입 (Ctrl+S 데이터 증발 버그 완벽 해결)
+    // ✨ NEW: 저장 함수 최신화 거울(Ref) 도입 (Ctrl+S 데이터 증발 버그 완벽 해결)
   const handleSaveRecordsRef = useRef(handleSaveRecords);
   useEffect(() => {
     handleSaveRecordsRef.current = handleSaveRecords;
@@ -520,7 +526,7 @@ const clonedData = masterDataRef.current[initialTab]; // 초기 표출 데이터
       window.removeEventListener("blur", handleBlur);
     };
   }, [activePatient]);
-  
+
     const handleAddRow = () => {
     const hot = hotRef.current?.hotInstance;
     if (!hot) return;
