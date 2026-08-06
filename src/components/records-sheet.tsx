@@ -178,29 +178,6 @@ export default function RecordsSheet() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // ✨ 5번 요청: Ctrl + S 단축키 및 키보드 상태 관리
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => { 
-      if (e.key === "Control" || e.metaKey) isCtrlDownRef.current = true; 
-      
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        handleSaveRecords();
-      }
-    };
-    const handleKeyUp = (e: KeyboardEvent) => { if (e.key === "Control" || !e.metaKey) isCtrlDownRef.current = false; };
-    const handleBlur = () => { isCtrlDownRef.current = false; };
-
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("blur", handleBlur);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("blur", handleBlur);
-    };
-  }, [activePatient]);
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((u) => { setIsMaster(u?.email === MASTER_EMAIL); });
@@ -461,22 +438,25 @@ const clonedData = masterDataRef.current[initialTab]; // 초기 표출 데이터
   const syncCurrentTabToMaster = () => {
     const hot = hotRef.current?.hotInstance;
     if (!hot || !activeTab) return;
-    const headers = hot.getColHeader() as string[];
-    const rawVisualData = hot.getData() as any[][];
-    const cleanData: RowObject[] = rawVisualData.map((rowArr: any[]) => {
-      const rowObj: RowObject = {};
-      headers.forEach((header, index) => {
-        const value = rowArr[index];
-        if (header === "STEP") rowObj[header] = (value == null || value === "") ? "" : Number(value);
-        else rowObj[header] = value == null ? "" : String(value);
+    
+    // ✨ NEW: 시각적 배열(getData) 대신 원본 객체(getSourceData)를 직접 추출하여 매핑 오류 원천 차단
+    const sourceData = hot.getSourceData() as RowObject[];
+    const cleanData: RowObject[] = sourceData.map((row: RowObject) => {
+      const rowObj: RowObject = { ...row };
+      Object.keys(rowObj).forEach(key => {
+        if (key === "_SHEET_NAME_") return;
+        const value = rowObj[key];
+        if (key === "STEP") rowObj[key] = (value == null || value === "") ? "" : Number(value);
+        else rowObj[key] = value == null ? "" : String(value);
       });
       // 백그라운드 투명 꼬리표 강제 부착
       rowObj["_SHEET_NAME_"] = activeTab;
       return rowObj;
     });
+    
     masterDataRef.current[activeTab] = cleanData;
   };
-  
+
   const handleTabChange = (tab: string) => {
     if (tab === activeTab) return;
     syncCurrentTabToMaster(); 
@@ -511,6 +491,36 @@ const clonedData = masterDataRef.current[initialTab]; // 초기 표출 데이터
       alert("✅ 환자 Records 데이터가 안전하게 저장되었습니다!");
     } catch (error) { console.error(error); alert("데이터 저장 실패!"); }
   };
+  // ✨ NEW: 저장 함수 최신화 거울(Ref) 도입 (Ctrl+S 데이터 증발 버그 완벽 해결)
+  const handleSaveRecordsRef = useRef(handleSaveRecords);
+  useEffect(() => {
+    handleSaveRecordsRef.current = handleSaveRecords;
+  }, [handleSaveRecords]);
+
+  // ✨ 5번 요청: Ctrl + S 단축키 및 키보드 상태 관리
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => { 
+      if (e.key === "Control" || e.metaKey) isCtrlDownRef.current = true; 
+      
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        handleSaveRecordsRef.current(); 
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => { if (e.key === "Control" || !e.metaKey) isCtrlDownRef.current = false; };
+    const handleBlur = () => { isCtrlDownRef.current = false; };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [activePatient]);
+  
     const handleAddRow = () => {
     const hot = hotRef.current?.hotInstance;
     if (!hot) return;
@@ -618,7 +628,7 @@ const clonedData = masterDataRef.current[initialTab]; // 초기 표출 데이터
           <Plus className="w-4 h-4 font-bold" />
         </button>
       </div>
-      
+
       <div className="flex-1 p-2 bg-white relative z-10">
         {isLoading && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-[100] flex flex-col items-center justify-center text-slate-400"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-2" /><span className="text-sm font-bold">환자 데이터를 불러오는 중...</span></div>
