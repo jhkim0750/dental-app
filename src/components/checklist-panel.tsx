@@ -1006,6 +1006,17 @@ const [startStep, setStartStep] = useState(1);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [showCheckedStatus, setShowCheckedStatus] = useState(true); // ✨ 완료 상태 표시 토글
   const [showSmartMemo, setShowSmartMemo] = useState(true); // ✨ NEW: 스마트 서머리 메모 표시 토글
+// ✨ NEW: 다중 이미지 선택 및 임포트 제어용 모달 상태
+const [importModalConfig, setImportModalConfig] = useState<{
+    isOpen: boolean;
+    pendingRules: any[];
+    timelineImages: string[];
+    selectedRuleImages: Record<number, string>; // ruleIndex -> 선택된 이미지(Base64)
+    selectedTimelineImage: string | null;
+    isUploading: boolean;
+    addedCount: number;
+    skippedCount: number;
+}>({ isOpen: false, pendingRules: [], timelineImages: [], selectedRuleImages: {}, selectedTimelineImage: null, isUploading: false, addedCount: 0, skippedCount: 0 });
 
 // ✨ NEW: 체크리스트 그리드 드래그(페인팅) & 되돌아가기(Backtrack) 상태 관리용 Ref
 const gridDragRef = useRef<{ 
@@ -2140,8 +2151,8 @@ const handleSaveAsGraph = async () => {
 
   const toggleTooth = (t: string) => setSelectedTeeth(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   
-// ✨ NEW: 북마크릿 클립보드 데이터를 임포트하고 매핑/파싱하는 스마트 로직
-// ✨ NEW: 북마크릿 클립보드 데이터를 임포트하고 매핑/파싱하는 스마트 로직
+// ✨ NEW: 북마크릿 클립보드 데이터를 임포트하고 매핑/파싱하는 스마트 로직 (0단계/1단계 동적 선택 추가)
+// ✨ NEW: 북마크릿 데이터 파싱 및 다중 이미지 선택 모달 호출
 const handleImportData = async () => {
     if (!store) return;
     try {
@@ -2153,13 +2164,14 @@ const handleImportData = async () => {
             return;
         }
 
-        if (!confirm(`총 ${parsedData.length}개의 데이터를 분석하여 임포트하시겠습니까?\n(기존 데이터 맨 아래에 안전하게 추가됩니다)`)) return;
+        const isNewSetup = confirm("이 데이터는 '신규 셋업' 입니까?\n\n[확인]을 누르면 0단계(PRE)부터 시작합니다.\n[취소]를 누르면 1단계부터 시작합니다.");
+        const defaultStartStep = isNewSetup ? 0 : 1;
 
         let addedCount = 0;
         let skippedCount = 0;
-        const pendingRules: any[] = []; // ✨ NEW: 저장할 데이터를 임시 보관할 배열
+        const pendingRules: any[] = [];
+        let timelineImages: string[] = [];
 
-        // 1. 번역 및 필터링 사전 (Mapping Dictionary)
         const typeMapping: Record<string, string> = {
             "ABP": "Bite Ramp", "BC": "BC", "BOS": "BOS",
             "Class 1 elastic": "X", "Class 2 elastic": "X", "Class 3 elastic": "X",
@@ -2170,86 +2182,114 @@ const handleImportData = async () => {
         };
 
         for (const item of parsedData) {
+            // 타임라인 이미지 추출
+            if (item.category === "Timeline" && item.images && item.images.length > 0) {
+                timelineImages = [...timelineImages, ...item.images];
+                continue;
+            }
+
             if (item.category === "부가력") {
-                // 2. 이름 번역 및 'X' 항목 차단
                 const rawType = item.type || "";
                 const mappedType = typeMapping[rawType] !== undefined ? typeMapping[rawType] : rawType;
-                
-                if (mappedType === "X") {
-                    skippedCount++;
-                    continue; // 아예 안 쓰는 항목은 완벽하게 버림 (Skip)
-                }
+                if (mappedType === "X") { skippedCount++; continue; }
 
-                // 3. 단계(Step) 및 메모 정규식 파싱
-                let start = 1;
-                let end = totalSteps;
-                let extractedNote = "";
-
+                let start = defaultStartStep; let end = totalSteps; let extractedNote = "";
                 const memo = item.memo_upper || item.memo_lower || "";
-                
-                // 패턴: "숫자단계-숫자(또는 끝)단계 : 메모"
                 const match = memo.match(/(\d+)단계-(끝|\d+)단계\s*:\s*(.*)/);
                 if (match) {
-                    start = parseInt(match[1], 10);
-                    end = match[2] === '끝' ? totalSteps : parseInt(match[2], 10);
-                    extractedNote = match[3].trim();
-                } else {
-                    // 패턴이 안 맞으면 기본값 넣고 메모 원본 유지
-                    extractedNote = memo.trim();
-                }
+                    start = parseInt(match[1], 10); end = match[2] === '끝' ? totalSteps : parseInt(match[2], 10); extractedNote = match[3].trim();
+                } else { extractedNote = memo.trim(); }
 
                 const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
-                const finalType = mappedType || "기타"; // 사전에 없으면 텍스트 그대로 살리고 '기타' 취급
+                const finalType = mappedType || "기타";
+                const extractedImages = item.images || [];
 
                 for (const t of teeth) {
-                    pendingRules.push({ type: finalType, startStep: start, endStep: end, note: extractedNote, tooth: t, isIsolated: false });
+                    pendingRules.push({ type: finalType, startStep: start, endStep: end, note: extractedNote, tooth: t, isIsolated: false, availableImages: extractedImages });
                 }
                 addedCount++;
             } else if (item.category === "AT") {
-                // 4. AT 로직 (Start = End 동일하게 처리)
-                let start = 1;
+                let start = defaultStartStep;
                 const stageMatch = item.stage_step?.match(/(\d+)\s*Step/i);
-                if (stageMatch) {
-                    start = parseInt(stageMatch[1], 10);
-                }
-
-                const end = start; // AT는 시작과 끝을 같게!
+                if (stageMatch) { start = parseInt(stageMatch[1], 10); }
                 const extractedNote = item.memo || "기존 AT는 모두 그대로 사용합니다.";
                 const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
+                const extractedImages = item.images || [];
 
                 for (const t of teeth) {
-                    pendingRules.push({ type: "Attachment", startStep: start, endStep: end, note: extractedNote, tooth: t, isIsolated: false });
+                    pendingRules.push({ type: "Attachment", startStep: start, endStep: start, note: extractedNote, tooth: t, isIsolated: false, availableImages: extractedImages });
                 }
                 addedCount++;
             }
         }
 
-        // ✨ NEW: 중복 검사 로직 추가 (저장 전에 미리 스캔)
+        // 중복 검사
         const existingRules = patient.rules || [];
-        const hasDuplicate = pendingRules.some(newRule => 
-            existingRules.some((ex: any) => 
-                ex.tooth === newRule.tooth && 
-                ex.type === newRule.type && 
-                ex.startStep === newRule.startStep && 
-                ex.endStep === newRule.endStep
-            )
-        );
-
+        const hasDuplicate = pendingRules.some(newRule => existingRules.some((ex: any) => ex.tooth === newRule.tooth && ex.type === newRule.type && ex.startStep === newRule.startStep && ex.endStep === newRule.endStep));
         if (hasDuplicate) {
-            if (!confirm("⚠️ 이미 입력된 중복 데이터(치아 번호, 타입, 단계 동일)가 포함되어 있습니다.\n그래도 무시하고 중복으로 모두 추가하시겠습니까?\n\n(취소를 누르면 임포트가 중단됩니다)")) {
-                return; // 취소 시 임포트 전면 중단
-            }
+            if (!confirm("⚠️ 이미 입력된 중복 데이터가 포함되어 있습니다.\n무시하고 추가하시겠습니까?")) return;
         }
 
-        // ✨ NEW: 검사를 무사히 통과(또는 강제 승인)하면 일괄 저장
-        for (const ruleData of pendingRules) {
-            await store.addRule(patient.id, ruleData);
-        }
+        // 모달 열기 (이미지 선택 과정을 위해 UI 일시정지)
+        setImportModalConfig({
+            isOpen: true, pendingRules, timelineImages, selectedRuleImages: {},
+            selectedTimelineImage: timelineImages.length > 0 ? timelineImages[0] : null, // 타임라인 기본 첫번째 자동선택
+            isUploading: false, addedCount, skippedCount
+        });
 
-        alert(`✅ 임포트 완료!\n추가됨: ${addedCount}개 그룹\n제외됨(X): ${skippedCount}개 그룹`);
     } catch (error) {
         console.error("Import Error:", error);
         alert("클립보드 데이터를 읽어오지 못했거나 올바른 데이터가 아닙니다.");
+    }
+};
+
+// ✨ NEW: 모달에서 [최종 저장] 버튼 클릭 시, 실제 Firebase 업로드 및 저장 수행
+const executeFinalImport = async () => {
+    if (!store) return;
+    setImportModalConfig(p => ({ ...p, isUploading: true }));
+
+    const base64ToBlob = (base64Str: string): Blob => {
+        const parts = base64Str.split(';base64,');
+        const contentType = parts[0].replace('data:', '') || 'image/png';
+        const raw = window.atob(parts[1] || parts[0]);
+        const uInt8Array = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; ++i) { uInt8Array[i] = raw.charCodeAt(i); }
+        return new Blob([uInt8Array], { type: contentType });
+    };
+
+    try {
+        // 1. 타임라인 이미지 저장
+        if (importModalConfig.selectedTimelineImage) {
+            const blob = base64ToBlob(importModalConfig.selectedTimelineImage);
+            const storageRef = ref(storage, `patients/${patient.id}/graph_images/imported_${Date.now()}.png`);
+            await uploadBytes(storageRef, blob);
+            const url = await getDownloadURL(storageRef);
+            const currentSummary = patient.summary || {};
+            await store.saveSummary(patient.id, { ...currentSummary, graphImage: url });
+        }
+
+        // 2. 룰(부가력) 데이터 저장
+        for (let i = 0; i < importModalConfig.pendingRules.length; i++) {
+            let ruleData = { ...importModalConfig.pendingRules[i] };
+            delete ruleData.availableImages; // 임시 필드 제거
+
+            const selectedImageForThisRule = importModalConfig.selectedRuleImages[i];
+            if (selectedImageForThisRule) {
+                const blob = base64ToBlob(selectedImageForThisRule);
+                const storageRef = ref(storage, `patients/${patient.id}/rule_images/imported_rule_${Date.now()}_${i}.png`);
+                await uploadBytes(storageRef, blob);
+                ruleData.imageUrl = await getDownloadURL(storageRef);
+            }
+            await store.addRule(patient.id, ruleData);
+        }
+
+        alert(`✅ 임포트 및 이미지 등록 완료!\n추가됨: ${importModalConfig.addedCount}개 그룹\n제외됨: ${importModalConfig.skippedCount}개 그룹`);
+        setImportModalConfig(p => ({ ...p, isOpen: false, isUploading: false }));
+
+    } catch (err) {
+        console.error("Upload error during import:", err);
+        alert("이미지 업로드 중 오류가 발생했습니다.");
+        setImportModalConfig(p => ({ ...p, isUploading: false }));
     }
 };
 
@@ -3800,7 +3840,78 @@ const renderFullScreenGrid = () => {
               onClose={() => setShowGraphPopup(false)} 
           />
       )}
-      
+      {/* ✨ NEW: 데이터 임포트 시 다중 이미지 선택 모달 UI */}
+      {importModalConfig.isOpen && (
+          <div className="fixed inset-0 z-[999999] flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.4)] w-[900px] max-w-[90vw] max-h-[85vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+                  <div className="flex justify-between items-center mb-4 border-b pb-3 shrink-0">
+                      <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><ImageIcon className="w-5 h-5 text-blue-600"/> 붙여넣기 데이터 분석 완료 (이미지 매핑)</h2>
+                      <button onClick={() => !importModalConfig.isUploading && setImportModalConfig(p => ({ ...p, isOpen: false }))} className="p-1.5 rounded hover:bg-slate-100 text-slate-500"><X className="w-5 h-5"/></button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6">
+                      {/* 타임라인 이미지 영역 */}
+                      {importModalConfig.timelineImages.length > 0 && (
+                          <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100">
+                              <h3 className="text-sm font-bold text-purple-800 mb-2 flex items-center gap-1.5"><TrendingUp className="w-4 h-4"/> 타임라인 이미지 ➔ 이동 그래프 자동 등록</h3>
+                              <p className="text-xs text-slate-500 mb-3">등록할 이동 그래프 이미지를 선택하세요.</p>
+                              <div className="flex gap-3 overflow-x-auto pb-2">
+                                  {importModalConfig.timelineImages.map((imgBase64, idx) => (
+                                      <div key={idx} onClick={() => setImportModalConfig(p => ({ ...p, selectedTimelineImage: imgBase64 }))} className={cn("relative w-40 h-28 shrink-0 rounded-lg cursor-pointer border-[3px] transition-all overflow-hidden", importModalConfig.selectedTimelineImage === imgBase64 ? "border-purple-600 shadow-md" : "border-transparent hover:border-slate-300 opacity-60")}>
+                                          <img src={imgBase64} className="w-full h-full object-cover" alt="timeline" />
+                                          {importModalConfig.selectedTimelineImage === imgBase64 && <div className="absolute top-1 right-1 bg-purple-600 text-white rounded-full p-0.5"><Check className="w-3 h-3"/></div>}
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      )}
+
+                      {/* 부가력 룰 영역 */}
+                      {importModalConfig.pendingRules.length > 0 && (
+                          <div className="space-y-3">
+                              <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5"><ListTree className="w-4 h-4 text-blue-600"/> 룰 (부가력/AT) 레퍼런스 이미지 선택</h3>
+                              <div className="grid grid-cols-2 gap-4">
+                                  {importModalConfig.pendingRules.map((rule, ruleIdx) => (
+                                      <div key={ruleIdx} className="border border-slate-200 rounded-lg p-3 bg-slate-50 shadow-sm flex flex-col">
+                                          <div className="flex items-center gap-2 mb-2 border-b border-slate-200 pb-2">
+                                              <span className={cn("font-bold text-xs", getTypeColor(rule.type))}>{rule.tooth === 0 ? "Gen" : `#${rule.tooth}`} {rule.type}</span>
+                                              <span className="text-[10px] text-slate-500 bg-slate-200 px-1.5 py-0.5 rounded">Step {rule.startStep}-{rule.endStep}</span>
+                                          </div>
+                                          {rule.note && <div className="text-[11px] text-slate-600 mb-2 truncate" title={rule.note}>{rule.note}</div>}
+                                          
+                                          {rule.availableImages && rule.availableImages.length > 0 ? (
+                                              <div className="flex gap-2 overflow-x-auto pb-1 mt-auto">
+                                                  {rule.availableImages.map((imgBase64: string, imgIdx: number) => {
+                                                      const isSelected = importModalConfig.selectedRuleImages[ruleIdx] === imgBase64;
+                                                      return (
+                                                          <div key={imgIdx} onClick={() => setImportModalConfig(p => { const newObj = { ...p.selectedRuleImages }; if(isSelected) delete newObj[ruleIdx]; else newObj[ruleIdx] = imgBase64; return { ...p, selectedRuleImages: newObj }; })} className={cn("relative w-20 h-14 shrink-0 rounded cursor-pointer border-[2.5px] transition-all overflow-hidden", isSelected ? "border-blue-600 shadow-sm" : "border-slate-300 hover:border-blue-300 opacity-60")}>
+                                                              <img src={imgBase64} className="w-full h-full object-cover" alt="rule" />
+                                                              {isSelected && <div className="absolute bottom-0.5 right-0.5 bg-blue-600 text-white rounded-full p-0.5"><Check className="w-2.5 h-2.5"/></div>}
+                                                          </div>
+                                                      )
+                                                  })}
+                                              </div>
+                                          ) : (
+                                              <div className="text-[10px] text-slate-400 italic mt-auto flex items-center gap-1"><FileImage className="w-3 h-3"/> 첨부된 이미지 없음</div>
+                                          )}
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      )}
+                  </div>
+                  
+                  <div className="mt-5 pt-4 border-t flex justify-end gap-3 shrink-0">
+                      <Button variant="outline" onClick={() => setImportModalConfig(p => ({ ...p, isOpen: false }))} disabled={importModalConfig.isUploading}>취소</Button>
+                      <Button className="bg-blue-600 hover:bg-blue-700 min-w-[120px]" onClick={executeFinalImport} disabled={importModalConfig.isUploading}>
+                          {importModalConfig.isUploading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin"/> 업로드 중...</> : <><Save className="w-4 h-4 mr-2"/> 선택 완료 및 저장</>}
+                      </Button>
+                  </div>
+              </div>
+          </div>
+      )}
+      {/* ✨ 추가 끝 */}
+
       {isGridOpen && renderFullScreenGrid()}
     </>
   );

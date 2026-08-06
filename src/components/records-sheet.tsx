@@ -75,6 +75,61 @@ export default function RecordsSheet() {
   const [isMaster, setIsMaster] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<string>("");
+  const [sheets, setSheets] = useState<string[]>([]);
+  const [editingSheetIndex, setEditingSheetIndex] = useState<number | null>(null);
+  const [editingSheetName, setEditingSheetName] = useState("");
+
+  const handleAddSheet = () => {
+    let newNum = sheets.length + 1;
+    let newName = `Sheet${newNum}`;
+    while (sheets.includes(newName)) { newNum++; newName = `Sheet${newNum}`; }
+    syncCurrentTabToMaster(); 
+    setSheets([...sheets, newName]);
+    
+    // 새 탭 기본 20행 생성
+    const newTabRows = [];
+    const hot = hotRef.current?.hotInstance;
+    const headers = hot ? (hot.getColHeader() as string[]) : [];
+    for (let i = 0; i < 20; i++) {
+      const emptyRow: RowObject = {};
+      headers.forEach(h => { emptyRow[h] = ""; });
+      newTabRows.push(emptyRow);
+    }
+    masterDataRef.current[newName] = newTabRows;
+    setActiveTab(newName);
+    setTimeout(() => hotRef.current?.hotInstance?.loadData(masterDataRef.current[newName]), 50);
+  };
+
+  const handleDeleteSheet = (targetSheet: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (sheets.length <= 1) { alert("최소 1개의 시트는 유지해야 합니다."); return; }
+    if (confirm(`'${targetSheet}' 시트를 삭제하시겠습니까?\n(저장 전까지는 DB에서 지워지지 않습니다)`)) {
+      const newSheets = sheets.filter(s => s !== targetSheet);
+      delete masterDataRef.current[targetSheet];
+      setSheets(newSheets);
+      if (activeTab === targetSheet) handleTabChange(newSheets[0]);
+    }
+  };
+
+  const handleRenameSheetComplete = (index: number) => {
+    const newName = editingSheetName.trim();
+    if (!newName || newName === sheets[index]) { setEditingSheetIndex(null); return; }
+    if (sheets.includes(newName)) { alert("이미 존재하는 시트 이름입니다."); return; }
+    
+    const oldName = sheets[index];
+    const newSheets = [...sheets];
+    newSheets[index] = newName;
+
+    syncCurrentTabToMaster(); 
+    masterDataRef.current[newName] = masterDataRef.current[oldName];
+    delete masterDataRef.current[oldName];
+
+    setSheets(newSheets);
+    if (activeTab === oldName) setActiveTab(newName);
+    setEditingSheetIndex(null);
+  };
+    const masterDataRef = useRef<Record<string, RowObject[]>>({});
 
   const [tableHeight, setTableHeight] = useState<number>(700);
   const [isFormattingModalOpen, setIsFormattingModalOpen] = useState(false);
@@ -194,17 +249,39 @@ export default function RecordsSheet() {
         let rawData: RowObject[] = [];
         if (recordsSnap.exists() && recordsSnap.data().rows) rawData = recordsSnap.data().rows;
 
-        const clonedData: RowObject[] = rawData.map((row: any) => ({ ...row }));
         const newColHeaders = templateCols.map((c: any) => c.title);
 
-        if (clonedData.length < templateRowCount) {
-          const rowsToAdd = templateRowCount - clonedData.length;
-          for (let i = 0; i < rowsToAdd; i++) {
-            const emptyRow: RowObject = {};
-            newColHeaders.forEach((header: string) => { emptyRow[header] = ""; });
-            clonedData.push(emptyRow);
-          }
-        }
+// ✨ [수정] 데이터를 투명 꼬리표(_SHEET_NAME_) 기준으로 쪼개서 캐싱
+masterDataRef.current = {};
+const parsedSheets = new Set<string>();
+
+rawData.forEach((row: any) => {
+  // 기존 데이터(꼬리표 없음)는 무조건 Sheet1로 모음
+  const sheetName = row["_SHEET_NAME_"] || "Sheet1";
+  parsedSheets.add(sheetName);
+  if (!masterDataRef.current[sheetName]) masterDataRef.current[sheetName] = [];
+  masterDataRef.current[sheetName].push({ ...row });
+});
+
+const finalSheets = parsedSheets.size > 0 ? Array.from(parsedSheets) : ["Sheet1"];
+
+finalSheets.forEach((sheet: string) => {
+  if (!masterDataRef.current[sheet]) masterDataRef.current[sheet] = [];
+  const sheetData = masterDataRef.current[sheet];
+  if (sheetData.length < templateRowCount) {
+    const rowsToAdd = templateRowCount - sheetData.length;
+    for (let i = 0; i < rowsToAdd; i++) {
+      const emptyRow: RowObject = {};
+      newColHeaders.forEach((header: string) => { emptyRow[header] = ""; });
+      sheetData.push(emptyRow);
+    }
+  }
+});
+
+setSheets(finalSheets);
+const initialTab = finalSheets[0];
+setActiveTab(initialTab);
+const clonedData = masterDataRef.current[initialTab]; // 초기 표출 데이터
 
         const newColumns = templateCols.map((c: any) => {
           const def: any = { data: c.title, type: "text", width: c.width, className: "htCenter htMiddle" };
@@ -381,35 +458,60 @@ export default function RecordsSheet() {
     } catch (error) { console.error(error); alert("조건부 서식 저장 실패!"); }
   };
 
+  const syncCurrentTabToMaster = () => {
+    const hot = hotRef.current?.hotInstance;
+    if (!hot || !activeTab) return;
+    const headers = hot.getColHeader() as string[];
+    const rawVisualData = hot.getData() as any[][];
+    const cleanData: RowObject[] = rawVisualData.map((rowArr: any[]) => {
+      const rowObj: RowObject = {};
+      headers.forEach((header, index) => {
+        const value = rowArr[index];
+        if (header === "STEP") rowObj[header] = (value == null || value === "") ? "" : Number(value);
+        else rowObj[header] = value == null ? "" : String(value);
+      });
+      // 백그라운드 투명 꼬리표 강제 부착
+      rowObj["_SHEET_NAME_"] = activeTab;
+      return rowObj;
+    });
+    masterDataRef.current[activeTab] = cleanData;
+  };
+  
+  const handleTabChange = (tab: string) => {
+    if (tab === activeTab) return;
+    syncCurrentTabToMaster(); 
+    setActiveTab(tab);
+    const hot = hotRef.current?.hotInstance;
+    if (hot) {
+      hot.loadData(masterDataRef.current[tab]);
+      setTimeout(() => adjustTableToViewport(), 50);
+    }
+  };
+  
   const handleSaveRecords = async () => {
     if (!activePatient?.id) return;
     const hot = hotRef.current?.hotInstance;
     if (!hot) return;
-
+  
     try {
-      const headers = hot.getColHeader() as string[];
-      const rawVisualData = hot.getData() as any[][];
-
-      // ✨ 5번 요청: .filter 부분을 제거하여 빈 행(gap)도 데이터 배열에 포함시켜 그대로 저장합니다.
-      const cleanData: RowObject[] = rawVisualData.map((rowArr: any[]) => {
-        const rowObj: RowObject = {};
-        headers.forEach((header, index) => {
-          const value = rowArr[index];
-          if (header === "STEP") {
-            rowObj[header] = (value == null || value === "") ? "" : Number(value);
-          } else {
-            rowObj[header] = value == null ? "" : String(value);
-          }
-        });
-        return rowObj;
+      syncCurrentTabToMaster(); 
+  
+      let allFlattenedData: RowObject[] = [];
+      sheets.forEach(tab => {
+        if (masterDataRef.current[tab]) {
+          // 내용이 텅 빈 행은 제외하고 저장하여 DB 과부하 방지
+          const validRows = masterDataRef.current[tab].filter((row: any) => 
+            Object.keys(row).some(k => k !== "_SHEET_NAME_" && row[k] !== "")
+          );
+          allFlattenedData = [...allFlattenedData, ...validRows];
+        }
       });
-
-      await setDoc(doc(db, "patients_records", activePatient.id), { rows: cleanData, lastUpdated: new Date().toISOString() }, { merge: true });
+  
+      await setDoc(doc(db, "patients_records", activePatient.id), { rows: allFlattenedData, lastUpdated: new Date().toISOString() }, { merge: true });
       alert("✅ 환자 Records 데이터가 안전하게 저장되었습니다!");
     } catch (error) { console.error(error); alert("데이터 저장 실패!"); }
   };
-
-  const handleAddRow = () => {
+    const handleAddRow = () => {
     const hot = hotRef.current?.hotInstance;
     if (!hot) return;
   
@@ -458,6 +560,65 @@ export default function RecordsSheet() {
         </div>
       </div>
 
+{/* ✨ [수동 시트 UI 영역] */}
+<div className="bg-slate-50 border-b border-slate-200 px-2 pt-2 flex items-center gap-1 overflow-x-auto custom-scrollbar shrink-0 z-20">
+        {sheets.map((sheet, index) => (
+          <div key={index} className="flex items-center relative group" style={{ marginBottom: "-1px" }}>
+            {editingSheetIndex === index ? (
+              <input
+                autoFocus
+                value={editingSheetName}
+                onChange={(e) => setEditingSheetName(e.target.value)}
+                onBlur={() => handleRenameSheetComplete(index)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRenameSheetComplete(index);
+                  if (e.key === "Escape") setEditingSheetIndex(null);
+                }}
+                className="px-3 py-2 w-28 text-sm font-bold outline-none border border-b-0 border-blue-500 rounded-t-md bg-white text-blue-600 shadow-[0_2px_0_0_white]"
+              />
+            ) : (
+              <button
+                onClick={() => handleTabChange(sheet)}
+                onDoubleClick={() => {
+                  setEditingSheetIndex(index);
+                  setEditingSheetName(sheet);
+                }}
+                className={`px-4 py-2 pr-8 text-sm font-bold rounded-t-md transition-colors whitespace-nowrap border border-b-0 relative ${
+                  activeTab === sheet 
+                    ? "bg-white text-blue-600 border-slate-300 shadow-[0_2px_0_0_white] z-10" 
+                    : "bg-slate-100 text-slate-500 border-transparent hover:bg-slate-200 z-0"
+                }`}
+                title="더블클릭하여 시트 이름 변경"
+              >
+                {sheet}
+              </button>
+            )}
+            
+            {/* 시트 삭제(X) 버튼 */}
+            {sheets.length > 1 && editingSheetIndex !== index && (
+              <button
+                onClick={(e) => handleDeleteSheet(sheet, e)}
+                className={`absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full flex items-center justify-center transition-all ${
+                  activeTab === sheet ? "text-slate-400 hover:bg-red-100 hover:text-red-500 opacity-100" : "text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-300"
+                }`}
+                title="시트 삭제"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        ))}
+
+        {/* 시트 추가(+) 버튼 */}
+        <button
+          onClick={handleAddSheet}
+          className="ml-1 px-3 py-1.5 flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors mb-1"
+          title="새 시트 추가"
+        >
+          <Plus className="w-4 h-4 font-bold" />
+        </button>
+      </div>
+      
       <div className="flex-1 p-2 bg-white relative z-10">
         {isLoading && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-[100] flex flex-col items-center justify-center text-slate-400"><Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-2" /><span className="text-sm font-bold">환자 데이터를 불러오는 중...</span></div>
