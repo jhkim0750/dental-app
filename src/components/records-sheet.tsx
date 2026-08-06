@@ -75,6 +75,7 @@ export default function RecordsSheet() {
   const [isMaster, setIsMaster] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false); // ✨ NEW: 저장 중복 방지 상태
   const [activeTab, setActiveTab] = useState<string>("");
   const [sheets, setSheets] = useState<string[]>([]);
   const [editingSheetIndex, setEditingSheetIndex] = useState<number | null>(null);
@@ -474,10 +475,18 @@ export default function RecordsSheet() {
   };
   
 const handleSaveRecords = async () => {
-    if (!activePatient?.id) return;
+    if (!activePatient?.id || isSaving) return; // ✨ NEW: 이미 저장 중이면 중복 실행 차단
     const hot = hotRef.current?.hotInstance;
     if (!hot) return;
   
+    // ✨ NEW: 작성 중인 셀(텍스트 에디터)이 열려있다면 강제로 입력을 완료(Commit)시킴
+    const editor = hot.getActiveEditor();
+    if (editor && editor.isOpened()) {
+      editor.finishEditing();
+    }
+
+    setIsSaving(true); // ✨ NEW: 빗장 걸기 (저장 시작)
+
     try {
       syncCurrentTabToMaster(); 
   
@@ -487,7 +496,6 @@ const handleSaveRecords = async () => {
           const sheetRows = masterDataRef.current[tab];
           let lastValidIndex = -1;
           
-          // ✨ NEW: 시트의 맨 아래에서부터 위로 거꾸로 올라가며, '가장 마지막으로 내용이 적힌 행'을 찾습니다.
           for (let i = sheetRows.length - 1; i >= 0; i--) {
             const row = sheetRows[i];
             const hasData = Object.keys(row).some(k => k !== "_SHEET_NAME_" && row[k] !== "");
@@ -497,20 +505,23 @@ const handleSaveRecords = async () => {
             }
           }
           
-          // ✨ NEW: 데이터가 하나라도 있다면, 0번째 행부터 마지막 데이터가 있는 행까지만 통째로 잘라서 저장합니다. (중간 빈 행은 그대로 보존됨)
           if (lastValidIndex >= 0) {
             const validRows = sheetRows.slice(0, lastValidIndex + 1);
             allFlattenedData = [...allFlattenedData, ...validRows];
           }
         }
       });
-        
-      // ✨ NEW: rows 뿐만 아니라, 현재 화면에 존재하는 탭 목록(sheetNames) 배열도 명시적으로 파이어베이스에 함께 저장
+  
       await setDoc(doc(db, "patients_records", activePatient.id), { rows: allFlattenedData, sheetNames: sheets, lastUpdated: new Date().toISOString() }, { merge: true });
       alert("✅ 환자 Records 데이터가 안전하게 저장되었습니다!");
-    } catch (error) { console.error(error); alert("데이터 저장 실패!"); }
+    } catch (error) { 
+      console.error(error); 
+      alert("데이터 저장 실패!"); 
+    } finally {
+      setIsSaving(false); // ✨ NEW: 성공하든 실패하든 무조건 빗장 풀기
+    }
   };
-    // ✨ NEW: 저장 함수 최신화 거울(Ref) 도입 (Ctrl+S 데이터 증발 버그 완벽 해결)
+      // ✨ NEW: 저장 함수 최신화 거울(Ref) 도입 (Ctrl+S 데이터 증발 버그 완벽 해결)
   const handleSaveRecordsRef = useRef(handleSaveRecords);
   useEffect(() => {
     handleSaveRecordsRef.current = handleSaveRecords;
@@ -583,10 +594,11 @@ const handleSaveRecords = async () => {
             </div>
           )}
           
-          <button onClick={handleSaveRecords} className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white text-sm font-bold rounded-md hover:bg-blue-700 transition-colors shadow-sm">
-            <Save className="w-4 h-4" /> 차트 저장 (DB)
+          <button onClick={handleSaveRecords} disabled={isSaving} className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white text-sm font-bold rounded-md hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-70 disabled:cursor-not-allowed">
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} 
+            {isSaving ? "저장 중..." : "차트 저장 (DB)"}
           </button>
-        </div>
+                  </div>
       </div>
 
 {/* ✨ [수동 시트 UI 영역] */}
