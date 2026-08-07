@@ -1016,7 +1016,8 @@ const [importModalConfig, setImportModalConfig] = useState<{
     isUploading: boolean;
     addedCount: number;
     skippedCount: number;
-}>({ isOpen: false, pendingRules: [], timelineImages: [], selectedRuleImages: {}, selectedTimelineImage: null, isUploading: false, addedCount: 0, skippedCount: 0 });
+    defaultStartStep: number; // ✨ NEW: 신규 환자(0) 여부 추적용
+}>({ isOpen: false, pendingRules: [], timelineImages: [], selectedRuleImages: {}, selectedTimelineImage: null, isUploading: false, addedCount: 0, skippedCount: 0, defaultStartStep: 1 });
 
 // ✨ NEW: 체크리스트 그리드 드래그(페인팅) & 되돌아가기(Backtrack) 상태 관리용 Ref
 const gridDragRef = useRef<{ 
@@ -2249,7 +2250,8 @@ setImportModalConfig({
     selectedTimelineImage: timelineImages.length > 0 ? timelineImages[0] : null,
     isUploading: false, 
     addedCount, 
-    skippedCount
+    skippedCount,
+    defaultStartStep // ✨ NEW: 0인지 1인지 저장
 });
 
 } catch (error) {
@@ -3921,19 +3923,35 @@ const renderFullScreenGrid = () => {
                           </div>
                       )}
 
-                      {/* 부가력 룰 영역 (1열 세로 배치, 편집 폼, 체크 토글) */}
-                      {importModalConfig.pendingRules.length > 0 && (
+{/* 부가력 룰 영역 (1열 세로 배치, 편집 폼, 체크 토글) */}
+{importModalConfig.pendingRules.length > 0 && (
                           <div className="space-y-3">
                               <div className="flex justify-between items-center">
-                                  <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5"><ListTree className="w-4 h-4 text-blue-600"/> 룰 (부가력/AT) 레퍼런스 이미지 선택 및 편집</h3>
-                                  <span className="text-xs text-slate-500">우측 상단 체크 해제 시 제외됩니다.</span>
+                                  <div className="flex items-center gap-3">
+                                      <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5"><ListTree className="w-4 h-4 text-blue-600"/> 룰 (부가력/AT) 편집</h3>
+{/* ✨ NEW: 빠른 추가 버튼 영역 (사진 밀림 방지 로직 + 타입 교체 완벽 적용) */}
+<div className="flex items-center gap-1.5 ml-2 border-l border-slate-200 pl-3">
+                                          <button onClick={() => setImportModalConfig(p => { const shifted: Record<number, string> = {}; Object.keys(p.selectedRuleImages).forEach(k => shifted[Number(k) + 1] = p.selectedRuleImages[Number(k)]); return { ...p, pendingRules: [{ type: "TAG", startStep: p.defaultStartStep, endStep: totalSteps, note: "", teeth: [10], isActive: true, isIsolated: false, availableImages: [] }, ...p.pendingRules], selectedRuleImages: shifted }; })} className="px-2 py-1 text-[10px] font-extrabold bg-blue-50 text-blue-600 hover:bg-blue-100 rounded border border-blue-200 transition-colors">+ 상악 TAG</button>
+                                          <button onClick={() => setImportModalConfig(p => { const shifted: Record<number, string> = {}; Object.keys(p.selectedRuleImages).forEach(k => shifted[Number(k) + 1] = p.selectedRuleImages[Number(k)]); return { ...p, pendingRules: [{ type: "TAG", startStep: p.defaultStartStep, endStep: totalSteps, note: "", teeth: [30], isActive: true, isIsolated: false, availableImages: [] }, ...p.pendingRules], selectedRuleImages: shifted }; })} className="px-2 py-1 text-[10px] font-extrabold bg-red-50 text-red-600 hover:bg-red-100 rounded border border-red-200 transition-colors">+ 하악 TAG</button>
+                                          {/* 신규 환자(0단계 시작)일 때만 리무버 홈 버튼 표시 */}
+                                          {importModalConfig.defaultStartStep === 0 && (
+                                              <>
+                                                  {/* ✨ NEW: type을 "기타"에서 "리무버 홈"으로 교체하고 note를 비움 */}
+                                                  <button onClick={() => setImportModalConfig(p => { const shifted: Record<number, string> = {}; Object.keys(p.selectedRuleImages).forEach(k => shifted[Number(k) + 1] = p.selectedRuleImages[Number(k)]); return { ...p, pendingRules: [{ type: "리무버 홈", startStep: 0, endStep: 4, note: "", teeth: [10], isActive: true, isIsolated: false, availableImages: [] }, ...p.pendingRules], selectedRuleImages: shifted }; })} className="px-2 py-1 text-[10px] font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 rounded border border-slate-300 transition-colors ml-1">+ 상악 리무버 홈</button>
+                                                  <button onClick={() => setImportModalConfig(p => { const shifted: Record<number, string> = {}; Object.keys(p.selectedRuleImages).forEach(k => shifted[Number(k) + 1] = p.selectedRuleImages[Number(k)]); return { ...p, pendingRules: [{ type: "리무버 홈", startStep: 0, endStep: 4, note: "", teeth: [30], isActive: true, isIsolated: false, availableImages: [] }, ...p.pendingRules], selectedRuleImages: shifted }; })} className="px-2 py-1 text-[10px] font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 rounded border border-slate-300 transition-colors">+ 하악 리무버 홈</button>
+                                              </>
+                                          )}
+                                      </div>
+                                   </div>
+                                  <span className="text-xs text-slate-500 shrink-0">우측 상단 체크 해제 시 제외됩니다.</span>
                               </div>
-                              {/* ✨ NEW: grid-cols-2를 날리고 flex-col로 1열 시원하게 배치 */}
-                              <div className="flex flex-col gap-4">
+                                                            {/* ✨ NEW: grid-cols-2를 날리고 flex-col로 1열 시원하게 배치 */}
+                                                            <div className="flex flex-col gap-4">
                                   {importModalConfig.pendingRules.map((rule, ruleIdx) => {
-                                      const teethStr = rule.teeth.map((t: number) => t === 0 ? "Gen" : `#${t}`).join(", ");
+                                      // ✨ NEW: 10은 MAX, 30은 MAN으로 화면(UI)에만 직관적으로 표기
+                                      const teethStr = rule.teeth.map((t: number) => t === 0 ? "Gen" : t === 10 ? "MAX" : t === 30 ? "MAN" : `#${t}`).join(", ");
                                       return (
-                                      <div key={ruleIdx} className={cn("border border-slate-200 rounded-lg p-4 shadow-sm flex flex-col transition-opacity", rule.isActive ? "bg-slate-50" : "bg-slate-100 opacity-50")}>
+                                                                              <div key={ruleIdx} className={cn("border border-slate-200 rounded-lg p-4 shadow-sm flex flex-col transition-opacity", rule.isActive ? "bg-slate-50" : "bg-slate-100 opacity-50")}>
                                           <div className="flex items-center justify-between gap-2 mb-3 border-b border-slate-200 pb-3">
                                               <div className="flex items-center gap-3">
                                                   <span className={cn("font-bold text-sm", getTypeColor(rule.type))}>{teethStr} {rule.type}</span>
