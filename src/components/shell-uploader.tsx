@@ -53,7 +53,7 @@ export function ShellUploader({ patient }: ShellUploaderProps) {
   const caseNumber = patient?.case_number || "환자번호없음";
 
   // 기본 양식 생성
-  const defaultFormat = `${setupName} (${caseNumber}) STAGE?-?~? T0.5 OFF0.05`;
+  const defaultFormat = `${setupName} (${caseNumber}) STAGE T0.5 OFF0.05`;
 
   const handleOpenModal = () => {
     setNewFolderName(defaultFormat);
@@ -121,10 +121,11 @@ let driveFolderId = existingDriveFolderId;
       
 // ✨ NEW: 기존 폴더가 있다면, 휴지통에 버려졌거나 영구 삭제되었는지 '사전 검문'
 if (driveFolderId) {
-  const checkRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFolderId}?fields=trashed`, {
+  // 💡 수정: 공유 드라이브 접근 통행증(&supportsAllDrives=true) 완벽 추가!
+  const checkRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFolderId}?fields=trashed&supportsAllDrives=true`, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
   });
-  
+
   // 1. 완전히 영구 삭제되어 찾을 수 없는 경우 (404 등)
   if (!checkRes.ok) {
     throw new Error("폴더가 삭제되었을 수 있습니다");
@@ -235,8 +236,14 @@ for (let i = 0; i < files.length; i++) {
                   </div>
                   
                   <div className="flex items-center gap-2">
+                    {/* ✨ NEW: 폴더 우측 생성 날짜 표시 (파일 날짜와 디자인 100% 동일) */}
+                    {folder.createdAt && (
+                      <span className="text-[10px] text-slate-400 font-mono shrink-0 mr-1">
+                        {new Date(folder.createdAt).toLocaleString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
 {/* ✨ NEW: jhkim@odsresin.com 관리자 전용 삭제 버튼 (실제 로그인 유저 기준) */}
-{currentUserEmail === "jhkim@odsresin.com" && (
+{currentUserEmail === "jhkim@odsresin.com" && (  
                       <button
                         onClick={(e) => handleDeleteFolderLog(e, folder.id)}                        
                         className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
