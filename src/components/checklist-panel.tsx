@@ -4,14 +4,15 @@ import React, { useState, useRef, useEffect } from "react";
 import { usePatientStoreHydrated, Rule } from "@/hooks/use-patient-store";
 import { createPortal } from "react-dom";
 import { 
-  CheckCheck, Plus, Trash2, Pencil, Save, Layout, FileImage, 
-  Type, Eraser, PenTool, Minus, Undo, Redo, CheckSquare,
-  Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter,
-  Loader2, Square, Circle, Triangle, Copy, Clipboard, ChevronDown,
-  Crop, RotateCcw, Check, X, Table, LayoutDashboard, ListTree, TrendingUp,
-  Link as LinkIcon
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+    CheckCheck, Plus, Trash2, Pencil, Save, Layout, FileImage, 
+    Type, Eraser, PenTool, Minus, Undo, Redo, CheckSquare,
+    Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter,
+    Loader2, Square, Circle, Triangle, Copy, Clipboard, ChevronDown,
+    Crop, RotateCcw, Check, X, Table, LayoutDashboard, ListTree, TrendingUp,
+    Link as LinkIcon, CloudUpload // ✨ 여기에 추가됨
+  } from "lucide-react";
+  import { ShellUploader } from "./shell-uploader"; // ✨ 새로운 파일 불러오기
+  import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ToothGrid } from "@/components/tooth-grid";
 import { storage } from "@/lib/firebase";
@@ -907,7 +908,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [isGridOpen, setIsGridOpen] = useState(false);
   const [pageStartStep, setPageStartStep] = useState(0);
   const [isImageUploading, setIsImageUploading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'summary' | 'records'>('summary'); 
+  const [activeTab, setActiveTab] = useState<'summary' | 'records' | 'shell'>('summary');
 
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [editingGroupRules, setEditingGroupRules] = useState<any[]>([]); // ✨ NEW: 그룹 수정 상태
@@ -1244,12 +1245,17 @@ if (e.altKey && !e.ctrlKey && !e.shiftKey) {
                 if (patientBtn) (patientBtn as HTMLElement).click();
             }
             break;
-                    case 'x': // ✨ Alt + X (Records Tab - 이동 시 그리드는 닫힘)
+case 'x': // ✨ Alt + X (Records Tab - 이동 시 그리드는 닫힘)
             e.preventDefault();
             closeGridOnNavigate();
             setActiveTab('records');
             break;
-            // ✨ [NEW] Alt + 1: 화면 어디서든 셋업 작업 노트(링크) 열기 & 등록하기
+            case 'e': // ✨ NEW: Alt + E (Shell Upload Tab)
+            e.preventDefault();
+            closeGridOnNavigate();
+            setActiveTab('shell');
+            break;
+                        // ✨ [NEW] Alt + 1: 화면 어디서든 셋업 작업 노트(링크) 열기 & 등록하기
         case '1': 
         e.preventDefault();
         {
@@ -2753,8 +2759,8 @@ const renderFullScreenGrid = () => {
     <>
       <div className="flex min-h-screen">
         
-        <div className="w-[360px] border-r bg-white flex flex-col h-screen sticky top-0 overflow-y-auto shrink-0 relative z-0">
-           {activeTab === 'summary' ? (
+      <div className="w-[360px] border-r bg-white flex flex-col h-screen sticky top-0 overflow-y-auto shrink-0 relative z-0">
+           {activeTab === 'summary' && (
                <>
 {/* ✨ NEW: Rule Definition 텍스트 우측에 이질감 없이 임포트 버튼 핀셋 추가 */}
 <div ref={ruleFormRef} className={cn("p-4 border-b shrink-0 transition-colors duration-500 flex justify-between items-center", editingRuleId ? "bg-orange-50 border-orange-200" : "bg-slate-50")}>
@@ -2953,16 +2959,34 @@ const renderFullScreenGrid = () => {
                          <span className="text-[10px] font-bold">Drag 단어를 여기에 삭제</span>
                      </div>
                  )}
-              </div>
+</div>
            </div>
            </>
-) : (
+)}
+
+{activeTab === 'records' && (
     <div className="p-5 flex flex-col gap-4">
         <h2 className="font-bold text-slate-700 flex items-center gap-2 text-lg border-b pb-3 tracking-tight">
             <Table className="w-5 h-5 text-slate-700"/> Records Tools
         </h2>
         <div className="p-4 bg-slate-50 rounded border border-slate-200 text-sm text-slate-500 shadow-inner">
             Admin conditional formatting, quick format buttons, and data filters will be placed here.
+        </div>
+    </div>
+)}
+
+{/* ✨ NEW: B안 - Shell Upload 선택 시 좌측에 뜨는 전용 안내 패널 */}
+{activeTab === 'shell' && (
+    <div className="p-5 flex flex-col gap-4">
+        <h2 className="font-bold text-slate-700 flex items-center gap-2 text-lg border-b pb-3 tracking-tight">
+            <CloudUpload className="w-5 h-5 text-slate-700"/> Shell Guide
+        </h2>
+        <div className="p-4 bg-blue-50/50 rounded-lg border border-blue-100 text-sm text-slate-600 shadow-inner flex flex-col gap-3 leading-relaxed">
+            <p className="font-bold text-blue-800">구글 드라이브 업로드 터미널입니다.</p>
+            <ul className="list-disc pl-4 space-y-2">
+                <li>우측 화면 상단의 <strong className="text-blue-600">+ 폴더 추가</strong> 버튼을 눌러 규칙에 맞는 폴더를 생성하세요.</li>
+                <li>생성된 폴더 탭을 클릭하여 열고, 그 안에 <strong className="text-slate-800">.stl 쉘 파일</strong>을 드래그 앤 드롭 하세요.</li>
+            </ul>
         </div>
     </div>
 )}
@@ -2990,6 +3014,16 @@ const renderFullScreenGrid = () => {
                    >
                        <Table className="w-4 h-4"/> Records
                    </button>
+                    {/* ✨ NEW: Shell Upload 탭 추가 */}
+                    <button 
+                        onClick={() => setActiveTab('shell')}
+                        className={cn("text-sm font-bold px-6 py-2.5 transition-all flex items-center gap-2 rounded-t-lg border-t border-x relative top-[1px]", 
+                            activeTab === 'shell' 
+                            ? "bg-white border-slate-300 text-blue-700 z-10 shadow-[0_-2px_5px_rgba(0,0,0,0.02)]" 
+                            : "bg-transparent border-transparent text-slate-500 hover:bg-slate-50 z-0")}
+                    >
+                        <CloudUpload className="w-4 h-4"/> Shell Upload
+                    </button>
                </div>
 
                {/* ✨ [NEW] 탭들 우측 빈 공간으로 밀어낸 '셋업 작업 노트' 버튼 영역 */}
@@ -3049,10 +3083,10 @@ const renderFullScreenGrid = () => {
                </div>
            </div>
 
-           {activeTab === 'summary' ? (
+{activeTab === 'summary' && (
                <>
                  <div className="px-4 py-3 bg-slate-100 border-b flex flex-nowrap items-center gap-4 overflow-x-auto shrink-0 select-none">
-                     <div className="flex items-center gap-1.5 border-r pr-4 shrink-0">
+                                      <div className="flex items-center gap-1.5 border-r pr-4 shrink-0">
                          <span className="text-[10px] font-bold text-blue-600 mr-1">MAXILLA</span>
                          {UPPER_TEETH.map(num => (
                              <div key={num} draggable onDragStart={(e) => e.dataTransfer.setData('sticker', num.toString())} 
@@ -3876,20 +3910,30 @@ const renderFullScreenGrid = () => {
             </div> 
         </>
     )}
-    {items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
-        </div>
-   </>
+{items.length === 0 && penStrokes.length === 0 && !textInput && ( <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 pointer-events-none"> <FileImage className="w-16 h-16 mb-4 opacity-50"/> <p className="font-bold text-lg">Add Images or Draw</p> </div> )}
+    </div>
+       </>
+    )}
+                         </div>
+                      </div>
+                   </>
 )}
-                     </div>
-                  </div>
-              </>
-) : (
-   <div className="flex-1 w-full h-full relative overflow-y-auto bg-white p-6">
+
+{activeTab === 'records' && (
+       <div className="flex-1 w-full h-full relative overflow-y-auto bg-white p-6">
        <RecordsSheet />
    </div>
-)}        </div>
+)}
+
+{/* ✨ NEW: Shell Upload 렌더링 영역 */}
+{activeTab === 'shell' && (
+   <div className="flex-1 w-full h-full relative overflow-hidden bg-slate-50 p-6">
+       <ShellUploader patient={patient} />
+   </div>
+)}
+        </div>
       </div>
-      
+
       {/* ✨ NEW: 이동 그래프 팝업 뷰어 렌더링 */}
       {showGraphPopup && patient.summary?.graphImage && (
           <GraphViewer 

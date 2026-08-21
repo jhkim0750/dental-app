@@ -1,2 +1,4 @@
 node_modules
 .next
+# Google Cloud Service Account Secret Key
+dental-app-ods-8c7cef9cc2de.json

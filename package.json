@@ -21,6 +21,7 @@
     "clsx": "^2.1.1",
     "file-saver": "^2.0.5",
     "firebase": "^12.9.0",
+    "google-auth-library": "^11.0.2",
     "handsontable": "^16.2.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.453.0",

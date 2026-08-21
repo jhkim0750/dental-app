@@ -20,6 +20,7 @@ export interface Stage {
   createdAt: number;
   isDeleted?: boolean;
   externalLink?: string; // ✨ NEW: 셋업 작업 노트 (스테이지별 독립 링크)
+  shellLogs?: { id: string; name: string; createdAt: number; driveFolderId?: string; files: string[] }[]; // ✨ NEW: 셋업별 독립적인 쉘 업로드 기록
 }
 
 export interface Rule {
@@ -79,7 +80,8 @@ interface PatientStore {
 
   addStage: (patientId: string, stageName: string) => Promise<void>;
   selectStage: (patientId: string, stageId: string) => void;
-  updateStageInfo: (patientId: string, stageId: string, updates: { name?: string, total_steps?: number }) => Promise<void>;
+  updateStageInfo: (patientId: string, stageId: string, updates: Partial<Stage>) => Promise<void>;  
+  
   
   softDeleteStage: (patientId: string, stageId: string) => Promise<void>;
   restoreStage: (patientId: string, stageId: string) => Promise<void>;
