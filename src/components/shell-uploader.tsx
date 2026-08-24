@@ -23,7 +23,14 @@ interface ShellFolder {
 
 export function ShellUploader({ patient }: ShellUploaderProps) {
   const store = usePatientStoreHydrated(); // ✨ NEW
-  const [folders, setFolders] = useState<ShellFolder[]>([]);
+
+  // ✨ NEW (클로저 트랩 100% 방어): 40초 뒤에도 '가장 최신'의 데이터를 볼 수 있도록 실시간 거울(Ref)을 설치합니다.
+  const latestDataRef = React.useRef({ store, patient });
+  React.useEffect(() => {
+    latestDataRef.current = { store, patient };
+  }, [store, patient]);
+
+  const [folders, setFolders] = useState<ShellFolder[]>([]);  
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null); // ✨ NEW: 현재 로그인한 이메일
 
   // ✨ NEW: 화면이 켜질 때 파이어베이스에서 로그인된 이메일을 가져옵니다
@@ -40,15 +47,25 @@ export function ShellUploader({ patient }: ShellUploaderProps) {
   // 현재 활성화된 스테이지 이름과 환자 번호 가져오기
   const currentStage = patient?.stages?.find((s: any) => s.id === patient.activeStageId) || patient?.stages?.[0];
 
-  // ✨ NEW: 셋업(스테이지)이 바뀔 때마다 해당 셋업의 폴더 기록을 불러와서 화면에 복원 (완벽한 격리)
-  useEffect(() => {
-    if (currentStage?.shellLogs) {
-      setFolders(currentStage.shellLogs.map((log: any) => ({ ...log, isUploading: false, progress: 0 })));
-    } else {
-      setFolders([]);
-    }
-  }, [currentStage?.id, currentStage?.shellLogs]);  
-  
+// ✨ NEW: 셋업(스테이지)이 바뀔 때마다 해당 셋업의 폴더 기록을 불러와서 화면에 복원 (완벽한 격리)
+useEffect(() => {
+  if (currentStage?.shellLogs) {
+    // 💡 수정: 무조건 로딩을 끄지 않고, 돌고 있던 게이지가 있으면 살려둡니다! (클로저 덮어쓰기 방지)
+    setFolders(prev => {
+      return currentStage.shellLogs.map((log: any) => {
+        const existingFolder = prev.find(f => f.id === log.id);
+        return {
+          ...log,
+          isUploading: existingFolder ? existingFolder.isUploading : false,
+          progress: existingFolder ? existingFolder.progress : 0
+        };
+      });
+    });
+  } else {
+    setFolders([]);
+  }
+}, [currentStage?.id, currentStage?.shellLogs]);
+
   const setupName = currentStage?.name || "신규";
   const caseNumber = patient?.case_number || "환자번호없음";
 
@@ -77,9 +94,10 @@ export function ShellUploader({ patient }: ShellUploaderProps) {
       store.updateStageInfo(patient.id, currentStage.id, { shellLogs: newLogs });
     }
     
-    setFolders(newLogs);
-    setIsModalOpen(false);
-    setExpandedFolderId(newFolder.id);
+// 💡 수정: 기존에 돌고 있던 로딩 게이지 UI 상태(prev)를 100% 보존하면서 새 폴더만 맨 앞에 추가합니다.
+setFolders(prev => [newFolder, ...prev]);
+setIsModalOpen(false);
+setExpandedFolderId(newFolder.id);    
   };
 
   const createGoogleDriveFolder = async (folderName: string, accessToken: string) => {
@@ -139,9 +157,20 @@ if (driveFolderId) {
 } else {
   // 기존 폴더가 없으면 새로 생성
   driveFolderId = await createGoogleDriveFolder(folderName, accessToken);
+
+  // ✨ NEW (ID 즉시 박제): 폴더 생성 직후, 40초 기다리지 않고 거울(Ref)을 통해 구글 ID를 DB에 즉시 저장합니다!
+  const { store: currentStore, patient: currentPatient } = latestDataRef.current;
+  if (currentStore && currentStage) {
+    const latestPatient = currentStore.patients?.find((p: any) => p.id === currentPatient.id) || currentPatient;
+    const latestStage = latestPatient.stages?.find((s: any) => s.id === currentStage.id) || currentStage;
+    const updatedLogs = (latestStage.shellLogs || []).map((log: any) => 
+      log.id === folderId ? { ...log, driveFolderId } : log
+    );
+    await currentStore.updateStageInfo(currentPatient.id, currentStage.id, { shellLogs: updatedLogs });
+  }
 }
 
-for (let i = 0; i < files.length; i++) {        
+for (let i = 0; i < files.length; i++) {          
         const file = files[i];
         const metadata = { name: file.name, parents: [driveFolderId] };
         const formData = new FormData();
@@ -160,18 +189,26 @@ for (let i = 0; i < files.length; i++) {
         setFolders(prev => prev.map(f => f.id === folderId ? { ...f, progress: Math.round(((i + 1) / files.length) * 100) } : f));        
       }
 
-      // 💡 업로드된 파일명과 현재 시간을 파이어베이스 배열에 누적(Append) 저장
-      if (store && currentStage) {
-          const now = Date.now();
-          const uploadedFilesWithDate = files.map(f => ({ name: f.name, date: now }));
-          const newLogs = (currentStage.shellLogs || []).map((log: any) => {
-              if (log.id === folderId) {
-                  return { ...log, driveFolderId, files: [...(log.files || []), ...uploadedFilesWithDate] };
-              }
-              return log;
-          });
-          await store.updateStageInfo(patient.id, currentStage.id, { shellLogs: newLogs });
-      }
+// 💡 업로드된 파일명과 현재 시간을 파이어베이스 배열에 누적(Append) 저장
+const { store: finalStore, patient: finalPatient } = latestDataRef.current;
+if (finalStore && currentStage) {
+    const now = Date.now();
+    const uploadedFilesWithDate = files.map(f => ({ name: f.name, date: now }));
+    
+    // ✨ NEW (클로저 100% 방어): 거울(Ref)을 통해 업로드가 끝난 시점의 '가장 최신 DB'를 확실하게 꺼내옵니다.
+    const latestPatient = finalStore.patients?.find((p: any) => p.id === finalPatient.id) || finalPatient;
+    const latestStage = latestPatient.stages?.find((s: any) => s.id === currentStage.id) || currentStage;
+    const currentLogs = latestStage.shellLogs || [];
+
+    const newLogs = currentLogs.map((log: any) => {
+        if (log.id === folderId) {
+            // 기존 파일을 절대 덮어쓰지 않고 최신 상태 뒤에 안전하게 이어붙입니다(Merge).
+            return { ...log, driveFolderId, files: [...(log.files || []), ...uploadedFilesWithDate] };
+        }
+        return log;
+    });
+    await finalStore.updateStageInfo(finalPatient.id, currentStage.id, { shellLogs: newLogs });
+}
 
     } catch (error: any) {
       console.error("업로드 에러:", error);
@@ -200,8 +237,9 @@ for (let i = 0; i < files.length; i++) {
     if (store && currentStage) {
       const updatedLogs = (currentStage.shellLogs || []).filter((log: any) => log.id !== folderId);
       await store.updateStageInfo(patient.id, currentStage.id, { shellLogs: updatedLogs });
-      setFolders(updatedLogs);
-    }
+      // 💡 수정: 삭제 시에도 기존에 전송 중이던 다른 폴더의 로딩 게이지 UI 상태(prev)를 100% 보존합니다.
+      setFolders(prev => prev.filter(f => f.id !== folderId));
+    }    
   };
 
   return (

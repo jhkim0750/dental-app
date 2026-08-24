@@ -46,6 +46,9 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&
 
 const customTextRenderer = function (instance: any, td: HTMLTableCellElement, row: number, col: number, prop: string | number, value: any) {
   td.innerHTML = "";
+  // 💡 중요: 스크롤 시 셀이 재사용될 때 빨간색이 다른 셀로 번지는 것을 막는 방어막(초기화)입니다.
+  td.style.color = "";
+  td.style.fontWeight = "";
   td.style.verticalAlign = "middle"; td.style.textAlign = "left";
   td.style.whiteSpace = "pre-wrap"; td.style.wordBreak = "break-word";
 
@@ -53,17 +56,17 @@ const customTextRenderer = function (instance: any, td: HTMLTableCellElement, ro
   if (!rawText) { td.textContent = ""; return td; }
   if (!formattingKeywords.length) { td.textContent = rawText; return td; }
 
-  let html = rawText;
-  formattingKeywords
-    .filter((keyword) => keyword && keyword.trim() !== "")
-    .sort((a, b) => b.length - a.length)
-    .forEach((keyword) => {
-      const escaped = escapeRegExp(keyword);
-      const regex = new RegExp(`(${escaped})`, "g");
-      html = html.replace(regex, `<span style="color:#dc2626;font-weight:700;">$1</span>`);
-    });
+  // 💡 수정: 복잡한 HTML 치환을 버리고, 단어가 하나라도 포함되어 있는지 아주 가볍게 스캔만 합니다.
+  const hasKeyword = formattingKeywords.some(keyword => 
+    keyword && keyword.trim() !== "" && rawText.includes(keyword.trim())
+  );
 
-  td.innerHTML = html;
+  if (hasKeyword) {
+    td.style.color = "#dc2626"; // 텍스트 전체 빨간색
+    td.style.fontWeight = "700"; // 텍스트 전체 굵게
+  }
+
+  td.textContent = rawText; // 💡 HTML 찌꺼기 없이 순수 100% 무결점 텍스트로 렌더링합니다.
   return td;
 };
 
