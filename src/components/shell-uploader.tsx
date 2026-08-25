@@ -21,7 +21,10 @@ interface ShellFolder {
   progress?: number;
 }
 
-export function ShellUploader({ patient }: ShellUploaderProps) {
+// ✨ NEW: 탭 이동으로 화면이 파괴되어도 절대 지워지지 않는 '전역 임시 기록장'
+const globalUploadMemory = new Map<string, { isUploading: boolean, progress: number }>();
+
+export function ShellUploader({ patient }: ShellUploaderProps) {  
   const store = usePatientStoreHydrated(); // ✨ NEW
 
   // ✨ NEW (클로저 트랩 100% 방어): 40초 뒤에도 '가장 최신'의 데이터를 볼 수 있도록 실시간 거울(Ref)을 설치합니다.
@@ -50,14 +53,15 @@ export function ShellUploader({ patient }: ShellUploaderProps) {
 // ✨ NEW: 셋업(스테이지)이 바뀔 때마다 해당 셋업의 폴더 기록을 불러와서 화면에 복원 (완벽한 격리)
 useEffect(() => {
   if (currentStage?.shellLogs) {
-    // 💡 수정: 무조건 로딩을 끄지 않고, 돌고 있던 게이지가 있으면 살려둡니다! (클로저 덮어쓰기 방지)
+    // 💡 수정: 화면이 다시 켜질 때 '전역 임시 기록장'을 훔쳐보고 게이지를 완벽하게 복원합니다!
     setFolders(prev => {
       return currentStage.shellLogs.map((log: any) => {
         const existingFolder = prev.find(f => f.id === log.id);
+        const memory = globalUploadMemory.get(log.id);
         return {
           ...log,
-          isUploading: existingFolder ? existingFolder.isUploading : false,
-          progress: existingFolder ? existingFolder.progress : 0
+          isUploading: memory ? memory.isUploading : (existingFolder ? existingFolder.isUploading : false),
+          progress: memory ? memory.progress : (existingFolder ? existingFolder.progress : 0)
         };
       });
     });
@@ -65,6 +69,20 @@ useEffect(() => {
     setFolders([]);
   }
 }, [currentStage?.id, currentStage?.shellLogs]);
+
+// ✨ NEW: 브라우저 종료/새로고침 방지 안전벨트
+useEffect(() => {
+  const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+    const isUploadingAny = folders.some(f => f.isUploading);
+    if (isUploadingAny) {
+      e.preventDefault();
+      // 최신 브라우저는 기본 멘트를 띄우지만, 규칙상 returnValue에 값을 넣어야 경고창이 발동합니다.
+      e.returnValue = "업로드 중입니다! 페이지를 나가시겠습니까?";
+    }
+  };
+  window.addEventListener("beforeunload", handleBeforeUnload);
+  return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+}, [folders]);
 
   const setupName = currentStage?.name || "신규";
   const caseNumber = patient?.case_number || "환자번호없음";
@@ -186,8 +204,11 @@ for (let i = 0; i < files.length; i++) {
         // ✨ NEW: 구글에서 폴더를 못 찾거나 실패하면 즉시 에러 발생! (가짜 박제 방지)
         if (!uploadRes.ok) throw new Error("구글 드라이브 업로드 실패 (폴더가 삭제되었을 수 있습니다)");
 
-        setFolders(prev => prev.map(f => f.id === folderId ? { ...f, progress: Math.round(((i + 1) / files.length) * 100) } : f));        
-      }
+// [변경]
+const currentProgress = Math.round(((i + 1) / files.length) * 100);
+globalUploadMemory.set(folderId, { isUploading: true, progress: currentProgress }); // ✨ 전역 기록장에도 적기!
+setFolders(prev => prev.map(f => f.id === folderId ? { ...f, progress: currentProgress } : f));        
+}
 
 // 💡 업로드된 파일명과 현재 시간을 파이어베이스 배열에 누적(Append) 저장
 const { store: finalStore, patient: finalPatient } = latestDataRef.current;
@@ -220,15 +241,19 @@ if (finalStore && currentStage) {
         alert("구글 드라이브 업로드 중 오류가 발생했습니다.");
       }
       
+// [변경]
       // ✨ NEW: 업로드 실패 시, 게이지를 100%로 덮어씌우지 않고 0%로 초기화 후 함수 종료
+      globalUploadMemory.delete(folderId); // ✨ 에러 났으니 기록장 지우기
       setFolders(prev => prev.map(f => f.id === folderId ? { ...f, isUploading: false, progress: 0 } : f));
-      return; 
+      return;      
     } 
     
+// [변경]
     // ✨ NEW: 에러 없이 완벽하게 성공했을 때만 100% 완료 처리
+    globalUploadMemory.delete(folderId); // ✨ 성공했으니 기록장에서 삭제
     setFolders(prev => prev.map(f => f.id === folderId ? { ...f, isUploading: false, progress: 100 } : f));
   };
-
+  
   // ✨ NEW: 관리자 전용 폴더 기록 삭제 함수 (화면/DB 상의 기록만 삭제)
   const handleDeleteFolderLog = async (e: React.MouseEvent, folderId: string) => {
     e.stopPropagation(); // 폴더 펼침/접힘 이벤트 방지
