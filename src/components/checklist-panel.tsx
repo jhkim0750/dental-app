@@ -2201,9 +2201,9 @@ const handleSaveAsGraph = async () => {
                 const extractedImages = item.images || [];
                 const allTeeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
 
-                // ✨ NEW: 상악과 하악 치아 배열 반갈죽
-                const upperTeeth = allTeeth.filter(t => t === 0 || (t >= 10 && t < 30));
-                const lowerTeeth = allTeeth.filter(t => t === 0 || (t >= 30 && t < 50));
+// ✨ NEW: 상악과 하악 치아 배열 반갈죽 (TypeScript 타입 명시)
+const upperTeeth = allTeeth.filter((t: number) => t === 0 || (t >= 10 && t < 30));
+const lowerTeeth = allTeeth.filter((t: number) => t === 0 || (t >= 30 && t < 50));
 
                 const processMemo = (memoStr: string, targetTeeth: number[]) => {
                     if (targetTeeth.length === 0 || !memoStr) return;
@@ -2240,10 +2240,10 @@ const handleSaveAsGraph = async () => {
             const outMemos = item.out_memos || {}; // ✨ NEW: 복사기가 가져온 특이사항(설/협) 객체
 
             const normalTeeth: number[] = [];
-            
-            // ✨ NEW: 치아들을 하나씩 검사해서 특이사항이 있으면 단독 카드로 찢어서 격리 생성
-            allTeeth.forEach(t => {
-                const outText = outMemos[String(t)];
+                
+            // ✨ NEW: 치아들을 하나씩 검사해서 특이사항이 있으면 단독 카드로 찢어서 격리 생성 (TypeScript 타입 명시)
+            allTeeth.forEach((t: number) => {
+                const outText = outMemos[String(t)];                
                 if (outText) {
                     pendingRules.push({ type: "Attachment", startStep: start, endStep: start, note: outText, teeth: [t], isActive: true, isIsolated: true, availableImages: extractedImages });
                     addedCount++;
