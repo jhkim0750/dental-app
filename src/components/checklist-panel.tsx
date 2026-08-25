@@ -2241,16 +2241,18 @@ const lowerTeeth = allTeeth.filter((t: number) => t === 0 || (t >= 30 && t < 50)
 
             const normalTeeth: number[] = [];
                 
-            // ✨ NEW: 치아들을 하나씩 검사해서 특이사항이 있으면 단독 카드로 찢어서 격리 생성 (TypeScript 타입 명시)
-            allTeeth.forEach((t: number) => {
-                const outText = outMemos[String(t)];                
-                if (outText) {
-                    pendingRules.push({ type: "Attachment", startStep: start, endStep: start, note: outText, teeth: [t], isActive: true, isIsolated: true, availableImages: extractedImages });
-                    addedCount++;
-                } else {
-                    normalTeeth.push(t);
-                }
-            });
+// ✨ NEW: 치아들을 하나씩 검사해서 특이사항이 있으면 단독 카드로 찢어서 격리 생성 (TypeScript 타입 명시)
+allTeeth.forEach((t: number) => {
+    const outText = outMemos[String(t)];
+    if (outText) {
+        // ✨ NEW: 특이사항(OUT) 메모를 먼저 적고, 일반 메모가 있다면 " / " 로 이어서 결합
+        const combinedNote = extractedNote ? `${outText} / ${extractedNote}` : outText;
+        pendingRules.push({ type: "Attachment", startStep: start, endStep: start, note: combinedNote, teeth: [t], isActive: true, isIsolated: true, availableImages: extractedImages });
+        addedCount++;
+    } else {
+        normalTeeth.push(t);
+    }
+});
 
             // 특이사항이 없는 나머지 평범한 치아들은 기존처럼 한 그룹으로 예쁘게 묶어서 생성
             if (normalTeeth.length > 0) {
