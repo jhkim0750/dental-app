@@ -2197,46 +2197,67 @@ const handleSaveAsGraph = async () => {
                 const mappedType = typeMapping[rawType] !== undefined ? typeMapping[rawType] : rawType;
                 if (mappedType === "X") { skippedCount++; continue; }
 
-                let start = defaultStartStep; let end = totalSteps; let extractedNote = "";
-                const memo = item.memo_upper || item.memo_lower || "";
-                const match = memo.match(/(\d+)단계-(끝|\d+)단계\s*:\s*(.*)/);
-                if (match) {
-                    start = parseInt(match[1], 10); end = match[2] === '끝' ? totalSteps : parseInt(match[2], 10); extractedNote = match[3].trim();
-                } else { extractedNote = memo.trim(); }
-
                 const finalType = mappedType || "기타";
-
-                // ✨ NEW: 신규 셋업(0부터)이면서 텍스트에서 1로 추출되었고, 타겟 3개 항목(BOS, BC, Bite Ramp)인 경우만 0으로 강제 변환
-                if (isNewSetup && start === 1 && ["BOS", "BC", "Bite Ramp"].includes(finalType)) {
-                    start = 0;
-                }
-
-                const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
-                                const extractedImages = item.images || [];
-
-                // ✨ NEW: 치아 배열(teeth)을 분리하지 않고 그룹으로 유지, isActive(활성화 여부) 속성 추가
-                pendingRules.push({ type: finalType, startStep: start, endStep: end, note: extractedNote, teeth: teeth, isActive: true, isIsolated: false, availableImages: extractedImages });
-                addedCount++;
-            } else if (item.category === "AT") {
-                let start = defaultStartStep;
-                const stageMatch = item.stage_step?.match(/(\d+)\s*Step/i);
-                if (stageMatch) { start = parseInt(stageMatch[1], 10); }
-                
-                // ✨ NEW: 신규 셋업(0부터)이면서 텍스트에서 1로 추출된 경우 0으로 강제 변환 (AT 전용)
-                if (isNewSetup && start === 1) {
-                    start = 0;
-                }
-
-                // ✨ NEW: 하드코딩된 기본 멘트를 제거하고, 원본 메모가 없으면 빈칸("")으로 깔끔하게 처리
-                const extractedNote = item.memo ? item.memo.trim() : "";
-                
-                const teeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
                 const extractedImages = item.images || [];
+                const allTeeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
 
-                // ✨ NEW: 그룹 유지 및 isActive 부여
-                pendingRules.push({ type: "Attachment", startStep: start, endStep: start, note: extractedNote, teeth: teeth, isActive: true, isIsolated: false, availableImages: extractedImages });
+                // ✨ NEW: 상악과 하악 치아 배열 반갈죽
+                const upperTeeth = allTeeth.filter(t => t === 0 || (t >= 10 && t < 30));
+                const lowerTeeth = allTeeth.filter(t => t === 0 || (t >= 30 && t < 50));
+
+                const processMemo = (memoStr: string, targetTeeth: number[]) => {
+                    if (targetTeeth.length === 0 || !memoStr) return;
+                    let start = defaultStartStep; let end = totalSteps; let extractedNote = "";
+                    const match = memoStr.match(/(\d+)단계-(끝|\d+)단계\s*:\s*(.*)/);
+                    if (match) {
+                        start = parseInt(match[1], 10); end = match[2] === '끝' ? totalSteps : parseInt(match[2], 10); extractedNote = match[3].trim();
+                    } else { extractedNote = memoStr.trim(); }
+                    
+                    if (isNewSetup && start === 1 && ["BOS", "BC", "Bite Ramp"].includes(finalType)) { start = 0; }
+                    
+                    pendingRules.push({ type: finalType, startStep: start, endStep: end, note: extractedNote, teeth: targetTeeth, isActive: true, isIsolated: false, availableImages: extractedImages });
+                    addedCount++;
+                };
+
+                // ✨ NEW: 상/하악 메모가 서로 다르면 각각의 카드로 찢어서 2개 생성
+                if (item.memo_upper && item.memo_lower && item.memo_upper !== item.memo_lower) {
+                    if (upperTeeth.length > 0) processMemo(item.memo_upper, upperTeeth);
+                    if (lowerTeeth.length > 0) processMemo(item.memo_lower, lowerTeeth);
+                } else {
+                    // 메모가 같거나 한쪽만 있다면 그냥 합쳐서 생성
+                    const memoToUse = item.memo_upper || item.memo_lower || "";
+                    if (allTeeth.length > 0) processMemo(memoToUse, allTeeth);
+                }
+            } else if (item.category === "AT") {            
+            let start = defaultStartStep;
+            const stageMatch = item.stage_step?.match(/(\d+)\s*Step/i);
+            if (stageMatch) { start = parseInt(stageMatch[1], 10); }
+            if (isNewSetup && start === 1) { start = 0; }
+
+            const extractedNote = item.memo ? item.memo.trim() : "";
+            const allTeeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
+            const extractedImages = item.images || [];
+            const outMemos = item.out_memos || {}; // ✨ NEW: 복사기가 가져온 특이사항(설/협) 객체
+
+            const normalTeeth: number[] = [];
+            
+            // ✨ NEW: 치아들을 하나씩 검사해서 특이사항이 있으면 단독 카드로 찢어서 격리 생성
+            allTeeth.forEach(t => {
+                const outText = outMemos[String(t)];
+                if (outText) {
+                    pendingRules.push({ type: "Attachment", startStep: start, endStep: start, note: outText, teeth: [t], isActive: true, isIsolated: true, availableImages: extractedImages });
+                    addedCount++;
+                } else {
+                    normalTeeth.push(t);
+                }
+            });
+
+            // 특이사항이 없는 나머지 평범한 치아들은 기존처럼 한 그룹으로 예쁘게 묶어서 생성
+            if (normalTeeth.length > 0) {
+                pendingRules.push({ type: "Attachment", startStep: start, endStep: start, note: extractedNote, teeth: normalTeeth, isActive: true, isIsolated: false, availableImages: extractedImages });
                 addedCount++;
             }
+        }            
         }
 
 // ✨ NEW: 첫 번째 이미지가 존재하면 기본으로 선택 상태로 세팅
