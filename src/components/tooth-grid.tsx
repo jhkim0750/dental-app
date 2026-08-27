@@ -29,20 +29,29 @@ export function ToothGrid({ selectedTeeth, onToggle }: ToothGridProps) {
   const pq3 = [85, 84, 83, 82, 81]
   const pq4 = [71, 72, 73, 74, 75]
 
-  const renderTooth = (num: number) => (
-    <button
-      key={num}
-      onClick={() => onToggle(num.toString())}
-      // ✨ 치아 크기는 선생님이 보내주신 w-[18px] 그대로 유지!
-      className={`w-[18px] h-6 text-[9px] font-bold rounded-full flex items-center justify-center transition-colors border shrink-0
-        ${selectedTeeth.includes(num.toString())
-          ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
-          : 'bg-white text-slate-400 hover:bg-blue-50 border-slate-200'}`}
-    >
-      {num}
-    </button>
-  )
+  const renderTooth = (num: number) => {
+    // ✨ NEW: 치아 번호가 50 이상이면 유치로 판별
+    const isPrimary = num >= 50;
+    const isSelected = selectedTeeth.includes(num.toString());
 
+    return (
+      <button
+        key={num}
+        onClick={() => onToggle(num.toString())}
+        // ✨ 치아 크기와 기본 디자인은 선생님이 보내주신 상태 100% 그대로 유지!
+        className={`w-[18px] h-6 text-[9px] font-bold rounded-full flex items-center justify-center transition-colors border shrink-0
+          ${isSelected
+            ? 'bg-blue-600 text-white border-blue-600 shadow-sm' // 선택됨 (기존과 동일한 파란색 유지)
+            : isPrimary 
+              ? 'bg-white text-amber-500 hover:bg-amber-50 border-amber-400' // ✨ 유치 미선택 (노란색/호박색 테두리와 폰트)
+              : 'bg-white text-slate-400 hover:bg-blue-50 border-slate-200'  // 영구치 미선택 (기존과 동일한 회색)
+          }`}
+      >
+        {num}
+      </button>
+    )
+  }
+  
   return (
     // ✨ [핵심 수정]: -mx-2 와 w-[calc(100%+16px)] 를 추가해서 회색 박스 자체를 양옆으로 8px씩 늘렸습니다! 
     // 내부 패딩을 px-1.5로 잡아주어 치아가 벽에 닿지 않고 예쁜 여백이 생깁니다.
