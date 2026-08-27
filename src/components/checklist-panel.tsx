@@ -2201,9 +2201,9 @@ const handleSaveAsGraph = async () => {
                 const extractedImages = item.images || [];
                 const allTeeth = item.teeth && item.teeth.length > 0 ? item.teeth.map(Number) : [0];
 
-// ✨ NEW: 상악과 하악 치아 배열 반갈죽 (TypeScript 타입 명시)
-const upperTeeth = allTeeth.filter((t: number) => t === 0 || (t >= 10 && t < 30));
-const lowerTeeth = allTeeth.filter((t: number) => t === 0 || (t >= 30 && t < 50));
+// ✨ NEW: 상악과 하악 치아 배열 반갈죽 (TypeScript 타입 명시) + 유치 데이터(50~80번대) 완벽 호환
+const upperTeeth = allTeeth.filter((t: number) => t === 0 || (t >= 10 && t < 30) || (t >= 50 && t < 70));
+const lowerTeeth = allTeeth.filter((t: number) => t === 0 || (t >= 30 && t < 50) || (t >= 70 && t < 90));
 
 const processMemo = (memoStr: string, targetTeeth: number[]) => {
     if (targetTeeth.length === 0 || !memoStr) return;
@@ -2512,17 +2512,18 @@ const getRulesForStep = (step: number) => (patient.rules || [])
     return a.tooth - b.tooth;
 });
   
-  const getGroupedRules = (step: number) => { 
-      const allRules = getRulesForStep(step); 
-      const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment"); 
-      return { 
-          genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)), 
-          upperRules: allRules.filter((r: Rule) => r.tooth >= 10 && r.tooth < 30 && !isAtt(r)), 
-          lowerRules: allRules.filter((r: Rule) => r.tooth >= 30 && !isAtt(r)), 
-          attRules: allRules.filter((r: Rule) => isAtt(r)) 
-      }; 
-  };
-   
+const getGroupedRules = (step: number) => { 
+    const allRules = getRulesForStep(step); 
+    const isAtt = (r: Rule) => r.type.toLowerCase().includes("attachment"); 
+    return { 
+        genRules: allRules.filter((r: Rule) => r.tooth === 0 && !isAtt(r)), 
+        // 💡 수정: 유치 번호도 완벽하게 상/하악으로 묶이도록 판별기 추가
+        upperRules: allRules.filter((r: Rule) => ((r.tooth >= 10 && r.tooth < 30) || (r.tooth >= 50 && r.tooth < 70)) && !isAtt(r)), 
+        lowerRules: allRules.filter((r: Rule) => ((r.tooth >= 30 && r.tooth < 50) || (r.tooth >= 70 && r.tooth < 90)) && !isAtt(r)), 
+        attRules: allRules.filter((r: Rule) => isAtt(r)) 
+    }; 
+};
+
 // ✨ 2번 요청 반영: 풀 체크리스트 그리드 전용 - 동일 타입+노트 병합 함수
 const mergeRules = (rules: Rule[]) => {
     const mergedMap = new Map<string, any>();
@@ -2622,13 +2623,14 @@ const renderCard = (mergedGroup: any, step: number, isTiny = false) => {
 
             {/* 2. 치식 번호 (세로 나열, 직각 네모 배지 및 상/하악 색상 적용) */}
             <div className="flex flex-col items-start gap-1 mb-1.5 pointer-events-none">
-                  {mergedGroup.tooth === 0 ? (
+            {mergedGroup.tooth === 0 ? (
                       <div className={cn("px-1.5 py-0.5 font-bold rounded-[2px] border", isTiny ? "text-[9px]" : "text-[11px]", "bg-slate-100 text-slate-600 border-slate-200")}>
                           Gen
                       </div>
                   ) : mergedGroup.teeth.map((t: number) => {
-                      const isUpper = t >= 10 && t < 30;
-                      const isMax = t === 10;
+                      // 💡 수정: 유치 50, 60번대도 파란색 뱃지가 렌더링되도록 수정
+                      const isUpper = (t >= 10 && t < 30) || (t >= 50 && t < 70);
+                      const isMax = t === 10;                      
                       const isMan = t === 30;
                       return (
                           <div 
@@ -2768,8 +2770,9 @@ const renderFullScreenGrid = () => {
   if (!store) return null;
 
   const safeRules = patient.rules || [];
-  const maxillaRules = safeRules.filter((r:Rule) => r.tooth >= 10 && r.tooth <= 28);
-  const mandibleRules = safeRules.filter((r:Rule) => r.tooth >= 30 && r.tooth <= 48);
+  // 💡 수정: 좌측 사이드바 룰 목록에도 유치가 제대로 MAXILLA / MANDIBLE 안에 표시되도록 수정
+  const maxillaRules = safeRules.filter((r:Rule) => (r.tooth >= 10 && r.tooth <= 28) || (r.tooth >= 51 && r.tooth <= 65));
+  const mandibleRules = safeRules.filter((r:Rule) => (r.tooth >= 30 && r.tooth <= 48) || (r.tooth >= 71 && r.tooth <= 85));
   const generalRules = safeRules.filter((r:Rule) => r.tooth === 0);
 
   const handleRulesDrop = (e: React.DragEvent) => {
@@ -3516,9 +3519,11 @@ const renderFullScreenGrid = () => {
                             const genRulesList = activeRules.filter((r: Rule) => r.tooth === 0);
                             const maxRulesList = activeRules.filter((r: Rule) => r.tooth === 10);
                             const manRulesList = activeRules.filter((r: Rule) => r.tooth === 30);
-
-                            const renderVerticalStack = (rules: Rule[], tooth: number, isUpper: boolean) => {
+                
+                            // 💡 수정: "55/15" 처럼 두 개의 치아가 하나의 컬럼에 예쁘게 쌓일 수 있도록 tooth를 문자열(string)도 받게끔 허용
+                            const renderVerticalStack = (rules: Rule[], tooth: number | string, isUpper: boolean) => {
                                 const InfoBlock = () => {
+
                                     const rulesToRender = isUpper ? [...rules].reverse() : rules;
                                     return (
                                         <div className={cn("flex flex-col w-12 px-0.5", isUpper ? "items-center justify-end" : "items-center justify-start")}>
@@ -3596,20 +3601,22 @@ const renderFullScreenGrid = () => {
                                         })}
                                                                                                                     </div>
 
-                                    {/* 상악 치아 배열 */}
+{/* 상악 치아 배열 */}
                                     <div className="flex w-full items-end justify-center pb-2 z-10 flex-1">
                                         <div className="w-1/2 flex items-end justify-end space-x-5 pr-3">
                                             {urTeeth.map(num => {
-                                                const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                const rules = activeRules.filter((r: Rule) => r.tooth === num || r.tooth === num + 40);
                                                 if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                return <React.Fragment key={num}>{renderVerticalStack(rules, num, true)}</React.Fragment>;
+                                                const displayTooth = rules.some(r => r.tooth > 40) && rules.some(r => r.tooth < 40) ? `${num+40}/${num}` : rules.some(r => r.tooth > 40) ? `${num+40}` : num;
+                                                return <React.Fragment key={num}>{renderVerticalStack(rules, displayTooth, true)}</React.Fragment>;
                                             })}
                                         </div>
                                         <div className="w-1/2 flex items-end justify-start space-x-5 pl-3">
                                             {ulTeeth.map(num => {
-                                                const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                const rules = activeRules.filter((r: Rule) => r.tooth === num || r.tooth === num + 40);
                                                 if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                return <React.Fragment key={num}>{renderVerticalStack(rules, num, true)}</React.Fragment>;
+                                                const displayTooth = rules.some(r => r.tooth > 40) && rules.some(r => r.tooth < 40) ? `${num+40}/${num}` : rules.some(r => r.tooth > 40) ? `${num+40}` : num;
+                                                return <React.Fragment key={num}>{renderVerticalStack(rules, displayTooth, true)}</React.Fragment>;
                                             })}
                                         </div>
                                     </div>
@@ -3621,20 +3628,22 @@ const renderFullScreenGrid = () => {
                                     <div className="flex w-full items-start justify-center pt-2 z-10 flex-1">
                                         <div className="w-1/2 flex items-start justify-end space-x-5 pr-3">
                                             {lrTeeth.map(num => {
-                                                const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                const rules = activeRules.filter((r: Rule) => r.tooth === num || r.tooth === num + 40);
                                                 if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                return <React.Fragment key={num}>{renderVerticalStack(rules, num, false)}</React.Fragment>;
+                                                const displayTooth = rules.some(r => r.tooth > 40) && rules.some(r => r.tooth < 40) ? `${num+40}/${num}` : rules.some(r => r.tooth > 40) ? `${num+40}` : num;
+                                                return <React.Fragment key={num}>{renderVerticalStack(rules, displayTooth, false)}</React.Fragment>;
                                             })}
                                         </div>
                                         <div className="w-1/2 flex items-start justify-start space-x-5 pl-3">
                                             {llTeeth.map(num => {
-                                                const rules = activeRules.filter((r: Rule) => r.tooth === num);
+                                                const rules = activeRules.filter((r: Rule) => r.tooth === num || r.tooth === num + 40);
                                                 if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                return <React.Fragment key={num}>{renderVerticalStack(rules, num, false)}</React.Fragment>;
+                                                const displayTooth = rules.some(r => r.tooth > 40) && rules.some(r => r.tooth < 40) ? `${num+40}/${num}` : rules.some(r => r.tooth > 40) ? `${num+40}` : num;
+                                                return <React.Fragment key={num}>{renderVerticalStack(rules, displayTooth, false)}</React.Fragment>;
                                             })}
                                         </div>
                                     </div>
-
+                                    
                                     {/* 하악 공통 룰 - ✨ 4번 요청 반영: label="MAN"으로 오기 수정 */}
                                     <div className="absolute bottom-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
                                         {manRulesList.map((r: Rule) => {
