@@ -3607,8 +3607,8 @@ const renderFullScreenGrid = () => {
                                             {urTeeth.map(num => {
                                                 const rules = activeRules.filter((r: Rule) => r.tooth === num || r.tooth === num + 40);
                                                 if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                // 💡 수정: r 에 (r: any) 명찰을 달아서 TypeScript 에러 원천 차단!
-                                                const displayTooth = rules.some((r: any) => r.tooth > 40) && rules.some((r: any) => r.tooth < 40) ? `${num+40}/${num}` : rules.some((r: any) => r.tooth > 40) ? `${num+40}` : num;
+                                                // 💡 수정: 유치 판별 수식 완벽 교정 ( > 40 을 >= 50 으로 / < 40 을 < 50 으로 수정 )
+                                                const displayTooth = rules.some((r: any) => r.tooth >= 50) && rules.some((r: any) => r.tooth < 50) ? `${num+40}/${num}` : rules.some((r: any) => r.tooth >= 50) ? `${num+40}` : num;
                                                 return <React.Fragment key={num}>{renderVerticalStack(rules, displayTooth, true)}</React.Fragment>;
                                             })}
                                         </div>
@@ -3616,7 +3616,7 @@ const renderFullScreenGrid = () => {
                                             {ulTeeth.map(num => {
                                                 const rules = activeRules.filter((r: Rule) => r.tooth === num || r.tooth === num + 40);
                                                 if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                const displayTooth = rules.some((r: any) => r.tooth > 40) && rules.some((r: any) => r.tooth < 40) ? `${num+40}/${num}` : rules.some((r: any) => r.tooth > 40) ? `${num+40}` : num;
+                                                const displayTooth = rules.some((r: any) => r.tooth >= 50) && rules.some((r: any) => r.tooth < 50) ? `${num+40}/${num}` : rules.some((r: any) => r.tooth >= 50) ? `${num+40}` : num;
                                                 return <React.Fragment key={num}>{renderVerticalStack(rules, displayTooth, true)}</React.Fragment>;
                                             })}
                                         </div>
@@ -3631,7 +3631,7 @@ const renderFullScreenGrid = () => {
                                             {lrTeeth.map(num => {
                                                 const rules = activeRules.filter((r: Rule) => r.tooth === num || r.tooth === num + 40);
                                                 if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                const displayTooth = rules.some((r: any) => r.tooth > 40) && rules.some((r: any) => r.tooth < 40) ? `${num+40}/${num}` : rules.some((r: any) => r.tooth > 40) ? `${num+40}` : num;
+                                                const displayTooth = rules.some((r: any) => r.tooth >= 50) && rules.some((r: any) => r.tooth < 50) ? `${num+40}/${num}` : rules.some((r: any) => r.tooth >= 50) ? `${num+40}` : num;
                                                 return <React.Fragment key={num}>{renderVerticalStack(rules, displayTooth, false)}</React.Fragment>;
                                             })}
                                         </div>
@@ -3639,12 +3639,12 @@ const renderFullScreenGrid = () => {
                                             {llTeeth.map(num => {
                                                 const rules = activeRules.filter((r: Rule) => r.tooth === num || r.tooth === num + 40);
                                                 if (rules.length === 0) return <div key={num} className="w-12 shrink-0 relative" />;
-                                                const displayTooth = rules.some((r: any) => r.tooth > 40) && rules.some((r: any) => r.tooth < 40) ? `${num+40}/${num}` : rules.some((r: any) => r.tooth > 40) ? `${num+40}` : num;
+                                                const displayTooth = rules.some((r: any) => r.tooth >= 50) && rules.some((r: any) => r.tooth < 50) ? `${num+40}/${num}` : rules.some((r: any) => r.tooth >= 50) ? `${num+40}` : num;
                                                 return <React.Fragment key={num}>{renderVerticalStack(rules, displayTooth, false)}</React.Fragment>;
                                             })}
                                         </div>
                                     </div>
-                                                                        
+                                                                                                            
                                     {/* 하악 공통 룰 - ✨ 4번 요청 반영: label="MAN"으로 오기 수정 */}
                                     <div className="absolute bottom-4 left-6 z-20 flex flex-col gap-1.5 items-start bg-white/60 p-2 rounded-lg backdrop-blur-sm">
                                         {manRulesList.map((r: Rule) => {
