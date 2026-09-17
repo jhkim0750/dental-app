@@ -499,9 +499,10 @@ else {
 
   if (uploadData.isDPAT) {
      const existingMemo = targetRow["비고"] || "";
-     const dpatRegex = /DPAT 업로드(?:\s*\(([^)]+)\))?/;
+     // ✨ NEW: 괄호 안에 괄호가 또 있는 형태(#33(Li))를 완벽하게 인식하도록 정규식 지능 업그레이드!
+     const dpatRegex = /DPAT 업로드(?:\s*\(((?:[^)(]+|\([^)(]*\))*)\))?/;
      const match = existingMemo.match(dpatRegex);
-     
+          
      // ✨ NEW: 기존 DPAT 메모가 있다면 괄호 안으로 똑똑하게 압축 병합
      if (match) {
          let teethArr = match[1] ? match[1].split(",").map((s: string) => s.trim()) : [];

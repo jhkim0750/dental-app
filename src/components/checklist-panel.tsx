@@ -2208,9 +2208,9 @@ const lowerTeeth = allTeeth.filter((t: number) => t === 0 || (t >= 30 && t < 50)
 const processMemo = (memoStr: string, targetTeeth: number[]) => {
     if (targetTeeth.length === 0 || !memoStr) return;
     let start = defaultStartStep; let end = totalSteps; let extractedNote = "";
-    // ✨ NEW: 괄호, 물결표(~), 다국어(단계/段階, 끝/終了/End) 완벽 대응 만능 정규식
-    const match = memoStr.match(/\(?(\d+)(?:단계|段階)[-~](끝|終了|End|\d+)(?:단계|段階)?\)?\s*:\s*(.*)/i);
-    if (match) {
+    // ✨ NEW: 온갖 종류의 작대기(-, –, —, ~) 및 주변 띄어쓰기까지 완벽하게 대응하는 초정밀 만능 정규식!
+    const match = memoStr.match(/\(?(\d+)(?:단계|段階)\s*[-~–—―]\s*(끝|終了|End|\d+)(?:단계|段階)?\)?\s*:\s*(.*)/i);
+    if (match) {        
         start = parseInt(match[1], 10); 
         end = ["끝", "終了", "end"].includes(match[2].toLowerCase()) ? totalSteps : parseInt(match[2], 10); 
         extractedNote = match[3].trim();

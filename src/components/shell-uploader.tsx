@@ -238,15 +238,16 @@ const extractedStep = stepMatch ? parseInt(stepMatch[1], 10) : null;
 const isRevision = fileName.includes("수정") || fileName.toUpperCase().includes("RE");
 
 if (extractedStep !== null) {
-    // ✨ NEW: DPAT일 경우 치식 번호를 추출합니다 (예: '11번', '#21' 모두 완벽 대응)
-    let dpatTeeth = "";
-    if (isDPAT) {
-        const teethMatches = fileName.match(/#\d{2}|\d{2}번/g);
-        if (teethMatches) {
-            // '11번'을 '#11'로 예쁘게 통일해서 변환합니다.
-            dpatTeeth = teethMatches.map(t => t.includes('번') ? `#${t.replace('번', '')}` : t).join(", ");
-        }
+// ✨ NEW: DPAT일 경우 치식 번호를 추출합니다 (예: '11번', '#21' 모두 완벽 대응)
+let dpatTeeth = "";
+if (isDPAT) {
+    // ✨ NEW: 33번(Li), #33(La) 처럼 치식 번호 바로 뒤에 붙은 영문 괄호까지 완벽하게 한 덩어리로 스캔!
+    const teethMatches = fileName.match(/(?:#\d{2}|\d{2}번)(?:\([a-zA-Z]+\))?/g);
+    if (teethMatches) {
+        // '11번'을 '#11'로 예쁘게 통일해서 변환합니다. (괄호가 있어도 완벽 유지)
+        dpatTeeth = teethMatches.map(t => t.includes('번') ? `#${t.replace('번', '')}` : t).join(", ");
     }
+}
     
 // 전역 Store에 만들어둔 지능형 시트 기입 함수를 호출합니다!
 execStore.insertOrUpdateRecord(execPatient.id, currentStage.name, {
