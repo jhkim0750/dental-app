@@ -300,8 +300,9 @@ if (finalSheets.length === 0) finalSheets.push("과거 기록");
       } catch (error) { console.error("데이터 로드 실패:", error); } finally { setIsLoading(false); }
     };
     loadData();
-  }, [activePatient]);
-
+    // ✨ NEW: 환자 ID가 바뀔 때만(다른 환자를 선택했을 때만) 시트를 새로고침하도록 센서 민감도 하향!
+  }, [activePatient?.id]);
+  
   const hotSettings = useMemo(() => ({
     rowHeaders: true,
     autoRowSize: true,
