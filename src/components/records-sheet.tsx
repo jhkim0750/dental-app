@@ -112,7 +112,16 @@ export default function RecordsSheet() {
       const newSheets = sheets.filter(s => s !== targetSheet);
       delete masterDataRef.current[targetSheet];
       setSheets(newSheets);
-      if (activeTab === targetSheet) handleTabChange(newSheets[0]);
+      
+      // ✨ NEW: 활성화된 탭을 지운 경우, 기존 데이터가 다시 덮어씌워지는 걸 막고 즉시 다음 탭으로 이동
+      if (activeTab === targetSheet) {
+        setActiveTab(newSheets[0]);
+        const hot = hotRef.current?.hotInstance;
+        if (hot) {
+          hot.loadData(masterDataRef.current[newSheets[0]]);
+          setTimeout(() => adjustTableToViewport(), 50);
+        }
+      }
     }
   };
 
@@ -485,18 +494,17 @@ if (finalSheets.length === 0) finalSheets.push("과거 기록");
     }
   };
   
-const handleSaveRecords = async () => {
-    if (!activePatient?.id || isSaving) return; // ✨ NEW: 이미 저장 중이면 중복 실행 차단
+  const handleSaveRecords = async () => {
+    if (!activePatient?.id || isSaving) return; 
     const hot = hotRef.current?.hotInstance;
     if (!hot) return;
   
-    // ✨ NEW: 작성 중인 셀(텍스트 에디터)이 열려있다면 강제로 입력을 완료(Commit)시킴
     const editor = hot.getActiveEditor();
     if (editor && editor.isOpened()) {
       editor.finishEditing();
     }
 
-    setIsSaving(true); // ✨ NEW: 빗장 걸기 (저장 시작)
+    setIsSaving(true); 
 
     try {
       syncCurrentTabToMaster(); 
@@ -522,23 +530,27 @@ const handleSaveRecords = async () => {
           }
         }
       });
+
+      // ✨ NEW: 현재 저장하고 있는 탭(activeTab)을 배열 맨 앞으로 끌어올려 최신순 정렬 유지!
+      const updatedSheetNames = sheets.filter(s => s !== activeTab);
+      updatedSheetNames.unshift(activeTab);
+      setSheets(updatedSheetNames); // 화면 즉시 반영
   
-      await setDoc(doc(db, "patients_records", activePatient.id), { rows: allFlattenedData, sheetNames: sheets, lastUpdated: new Date().toISOString() }, { merge: true });
+      await setDoc(doc(db, "patients_records", activePatient.id), { rows: allFlattenedData, sheetNames: updatedSheetNames, lastUpdated: new Date().toISOString() }, { merge: true });
       alert("✅ 환자 Records 데이터가 안전하게 저장되었습니다!");
-    } catch (error) { 
+    } catch (error) {       
       console.error(error); 
       alert("데이터 저장 실패!"); 
     } finally {
-      setIsSaving(false); // ✨ NEW: 성공하든 실패하든 무조건 빗장 풀기
+      setIsSaving(false); 
     }
   };
-      // ✨ NEW: 저장 함수 최신화 거울(Ref) 도입 (Ctrl+S 데이터 증발 버그 완벽 해결)
+
   const handleSaveRecordsRef = useRef(handleSaveRecords);
   useEffect(() => {
     handleSaveRecordsRef.current = handleSaveRecords;
   }, [handleSaveRecords]);
 
-  // ✨ 5번 요청: Ctrl + S 단축키 및 키보드 상태 관리
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => { 
       if (e.key === "Control" || e.metaKey) isCtrlDownRef.current = true; 
@@ -562,10 +574,10 @@ const handleSaveRecords = async () => {
     };
   }, [activePatient]);
 
-    const handleAddRow = () => {
+  const handleAddRow = () => {
     const hot = hotRef.current?.hotInstance;
     if (!hot) return;
-  
+
     const actualRowCount = hot.countSourceRows();
     const insertIndex = actualRowCount > 0 ? actualRowCount - 1 : 0;
     hot.alter("insert_row_below", insertIndex, 1);
@@ -574,12 +586,12 @@ const handleSaveRecords = async () => {
       hot.selectCell(insertIndex + 1, 0);
     }, 50);
   };
-  
+
   return (
     <div className="w-full h-full flex flex-col bg-slate-50 relative rounded-lg shadow-sm border border-slate-300 overflow-visible z-10">
       
       <div className="bg-white border-b border-slate-200 p-2 shrink-0 flex justify-between items-center transition-all z-20 shadow-sm">
-        
+
         <div className="flex items-center gap-1.5">
           <button onClick={handleAddRow} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded hover:text-blue-600 transition-colors" title="아래에 행 1개 추가"><Plus className="w-4 h-4" /></button>
           <div className="w-px h-4 bg-slate-200 mx-1"></div>
@@ -615,7 +627,7 @@ const handleSaveRecords = async () => {
 {/* ✨ [수동 시트 UI 영역] */}
 <div className="bg-slate-50 border-b border-slate-200 px-2 pt-2 flex items-center gap-1 overflow-x-auto custom-scrollbar shrink-0 z-20">
         {sheets.map((sheet, index) => (
-          <div key={index} className="flex items-center relative group" style={{ marginBottom: "-1px" }}>
+          <div key={sheet} className="flex items-center relative group" style={{ marginBottom: "-1px" }}>          
             {editingSheetIndex === index ? (
               <input
                 autoFocus
@@ -646,23 +658,23 @@ const handleSaveRecords = async () => {
               </button>
             )}
             
-            {/* 시트 삭제(X) 버튼 */}
-            {sheets.length > 1 && editingSheetIndex !== index && (
+{/* ✨ 시트 삭제(X) 버튼 - NEW: cn 에러 완벽 해결 및 항상 표시되도록 복구 */}
+{sheets.length > 1 && editingSheetIndex !== index && (
               <button
                 onClick={(e) => handleDeleteSheet(sheet, e)}
-                className={`absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full flex items-center justify-center transition-all ${
-                  activeTab === sheet ? "text-slate-400 hover:bg-red-100 hover:text-red-500 opacity-100" : "text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-300"
+                className={`absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full flex items-center justify-center transition-all opacity-100 z-20 ${
+                    activeTab === sheet ? "text-slate-400 hover:bg-red-100 hover:text-red-500" : "text-slate-300 hover:text-red-500 hover:bg-red-100"
                 }`}
                 title="시트 삭제"
               >
                 <X className="w-3 h-3" />
               </button>
-            )}
+            )}            
           </div>
         ))}
 
         {/* 시트 추가(+) 버튼 */}
-        <button
+         <button
           onClick={handleAddSheet}
           className="ml-1 px-3 py-1.5 flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors mb-1"
           title="새 시트 추가"

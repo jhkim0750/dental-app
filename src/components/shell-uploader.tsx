@@ -124,10 +124,13 @@ useEffect(() => {
       progress: 0,
     };
     
-    // 화면에 띄우고 동시에 파이어베이스(현재 셋업 방 안)에 영구 저장
-    const newLogs = [newFolder, ...(currentStage?.shellLogs || [])];
-    if (store && currentStage) {
-      store.updateStageInfo(patient.id, currentStage.id, { shellLogs: newLogs });
+    // ✨ NEW: 폴더를 만들 때도 클로저(과거의 기억)를 버리고 거울(latestDataRef)에서 가장 최신 DB를 빼옵니다!
+    const { store: latestStore, patient: latestPat } = latestDataRef.current;
+    if (latestStore && currentStage) {
+      const latestPatient = latestStore.patients?.find((p: any) => p.id === latestPat.id) || latestPat;
+      const latestStage = latestPatient.stages?.find((s: any) => s.id === currentStage.id) || currentStage;
+      const newLogs = [newFolder, ...(latestStage.shellLogs || [])];
+      latestStore.updateStageInfo(latestPat.id, currentStage.id, { shellLogs: newLogs });
     }
     
 // 💡 수정: 기존에 돌고 있던 로딩 게이지 UI 상태(prev)를 100% 보존하면서 새 폴더만 맨 앞에 추가합니다.
@@ -286,22 +289,11 @@ if (finalStore && currentStage) {
     const now = Date.now();
     const uploadedFilesWithDate = files.map(f => ({ name: f.name, date: now }));
     
-    // ✨ NEW (클로저 100% 방어): 거울(Ref)을 통해 업로드가 끝난 시점의 '가장 최신 DB'를 확실하게 꺼내옵니다.
-    const latestPatient = finalStore.patients?.find((p: any) => p.id === finalPatient.id) || finalPatient;
-    const latestStage = latestPatient.stages?.find((s: any) => s.id === currentStage.id) || currentStage;
-    const currentLogs = latestStage.shellLogs || [];
-
-    const newLogs = currentLogs.map((log: any) => {
-        if (log.id === folderId) {
-            // 기존 파일을 절대 덮어쓰지 않고 최신 상태 뒤에 안전하게 이어붙입니다(Merge).
-            return { ...log, driveFolderId, files: [...(log.files || []), ...uploadedFilesWithDate] };
-        }
-        return log;
-    });
-    await finalStore.updateStageInfo(finalPatient.id, currentStage.id, { shellLogs: newLogs });
+    // ✨ NEW: UI 화면(과거 기억)에서 직접 데이터를 조립하지 않고, 방금 새로 만든 스토어의 무적 누적 엔진을 호출합니다!
+    await finalStore.appendShellLogFiles(finalPatient.id, currentStage.id, folderId, driveFolderId, uploadedFilesWithDate);
 }
 
-    } catch (error: any) {
+    } catch (error: any) {      
       console.error("업로드 에러:", error);
       
       // ✨ NEW: 구글 드라이브 폴더 삭제 에러인 경우 명확한 맞춤형 경고창 띄우기
@@ -324,14 +316,18 @@ if (finalStore && currentStage) {
     setFolders(prev => prev.map(f => f.id === folderId ? { ...f, isUploading: false, progress: 100 } : f));
   };
   
-  // ✨ NEW: 관리자 전용 폴더 기록 삭제 함수 (화면/DB 상의 기록만 삭제)
+// ✨ NEW: 관리자 전용 폴더 기록 삭제 함수 (화면/DB 상의 기록만 삭제)
   const handleDeleteFolderLog = async (e: React.MouseEvent, folderId: string) => {
     e.stopPropagation(); // 폴더 펼침/접힘 이벤트 방지
     if (!confirm("이 폴더 업로드 기록을 삭제하시겠습니까?")) return;
 
-    if (store && currentStage) {
-      const updatedLogs = (currentStage.shellLogs || []).filter((log: any) => log.id !== folderId);
-      await store.updateStageInfo(patient.id, currentStage.id, { shellLogs: updatedLogs });
+    // ✨ NEW: 삭제할 때도 최신 DB 기준으로 필터링하여 동시 다발적 덮어쓰기를 100% 방지합니다!
+    const { store: latestStore, patient: latestPat } = latestDataRef.current;
+    if (latestStore && currentStage) {
+      const latestPatient = latestStore.patients?.find((p: any) => p.id === latestPat.id) || latestPat;
+      const latestStage = latestPatient.stages?.find((s: any) => s.id === currentStage.id) || currentStage;
+      const updatedLogs = (latestStage.shellLogs || []).filter((log: any) => log.id !== folderId);
+      await latestStore.updateStageInfo(latestPat.id, currentStage.id, { shellLogs: updatedLogs });
       // 💡 수정: 삭제 시에도 기존에 전송 중이던 다른 폴더의 로딩 게이지 UI 상태(prev)를 100% 보존합니다.
       setFolders(prev => prev.filter(f => f.id !== folderId));
     }    
@@ -375,16 +371,14 @@ if (finalStore && currentStage) {
                         {new Date(folder.createdAt).toLocaleString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
-{/* ✨ NEW: jhkim@odsresin.com 관리자 전용 삭제 버튼 (실제 로그인 유저 기준) */}
-{currentUserEmail === "jhkim@odsresin.com" && (  
-                      <button
-                        onClick={(e) => handleDeleteFolderLog(e, folder.id)}                        
-                        className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                        title="기록 삭제 (관리자 전용)"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
+{/* ✨ NEW: 모든 작업자가 사용할 수 있도록 권한 봉인 해제된 삭제 버튼 */}
+<button
+                      onClick={(e) => handleDeleteFolderLog(e, folder.id)}                        
+                      className="p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                      title="기록 삭제"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>                    
                     {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
                   </div>
                 </div>

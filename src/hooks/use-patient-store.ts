@@ -96,8 +96,11 @@ interface PatientStore {
   saveSummary: (patientId: string, summary: { image: string; memo: string }) => Promise<void>;
   
   updateStageExternalLink: (patientId: string, stageId: string, link: string) => Promise<void>; // ✨ NEW: 링크 저장 함수
+  updatePatientGlobalMemo: (patientId: string, htmlContent: string) => Promise<void>; // ✨ NEW: 글로벌 메모 저장 함수
   // ✨ NEW: 쉘 업로더가 쏜 데이터를 받아 시트에 안전하게 기입하는 지능형 엔진 (타입 등록)
   insertOrUpdateRecord: (patientId: string, sheetName: string, uploadData: any) => Promise<void>;
+  // ✨ NEW: 병렬 쉘 업로드 덮어쓰기를 원천 차단하는 원자적 누적 엔진
+  appendShellLogFiles: (patientId: string, stageId: string, folderId: string, driveFolderId: string, newFiles: any[]) => Promise<void>;
 }
 
 const saveTimeouts: Record<string, ReturnType<typeof setTimeout>> = {};
@@ -528,19 +531,20 @@ else {
      if (uploadData.isMan && targetRow["하악"] !== "O") {
          targetRow["하악"] = "O";
          if (!targetRow["상악"]) targetRow["상악"] = "X"; // 빈칸 발견 시 X로 방어
-         // ✨ NEW: 당일 업로드가 아닐 때만 촌스러운 메모 남기기 (무음 병합)
+// ✨ NEW: 당일 업로드가 아닐 때만 촌스러운 메모 남기기 (무음 병합)
          if (targetRow["날짜"] !== dateStr) {
-             targetRow["비고"] = (targetRow["비고"] ? targetRow["비고"] + " / " : "") + `하악 추가 업로드: ${dateStr}`;
+          targetRow["비고"] = (targetRow["비고"] ? targetRow["비고"] + " / " : "") + `하악 추가 업로드: ${dateStr}`;
          }
      }
   }
 }
 
-// 시트 탭 목록 갱신
-    if (!sheetNames.includes(sheetName)) sheetNames.push(sheetName);
+// 시트 탭 목록 갱신 (✨ NEW: 기록이 추가된 최신 시트를 무조건 맨 앞으로 끌어올리기!)
+    sheetNames = sheetNames.filter((name: string) => name !== sheetName);
+    sheetNames.unshift(sheetName);
 
     // ✨ NEW: [스마트 정렬 엔진] - 방금 업로드된 타겟 시트만 스텝(STEP) 순서대로 예쁘게 정렬!
-    const otherRows = rows.filter((r: any) => (r["_SHEET_NAME_"] || "과거 기록") !== sheetName);
+    const otherRows = rows.filter((r: any) => (r["_SHEET_NAME_"] || "과거 기록") !== sheetName);    
     const targetRows = rows.filter((r: any) => (r["_SHEET_NAME_"] || "과거 기록") === sheetName);
 
     targetRows.sort((a: any, b: any) => {
@@ -565,28 +569,56 @@ else {
   }
 },
 
-      updateStageInfo: async (patientId: string, stageId: string, updates: { name?: string, total_steps?: number }) => {
-          const { patients } = get();
-          const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
-          if (patientIndex === -1) return;
+updateStageInfo: async (patientId: string, stageId: string, updates: Partial<Stage>) => {
+  const { patients } = get();
+  const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
+  if (patientIndex === -1) return;
 
-          const patient = patients[patientIndex];
-          const updatedStages = patient.stages.map((s: Stage) => s.id === stageId ? { ...s, ...updates } : s);
-          
-          const patientRef = doc(db, "patients", patientId);
-          await updateDoc(patientRef, { stages: updatedStages });
+  const patient = patients[patientIndex];
+  const updatedStages = patient.stages.map((s: Stage) => s.id === stageId ? { ...s, ...updates } : s);
+  
+  const updatedPatient = { ...patient, stages: updatedStages };
+  if (patient.activeStageId === stageId) {
+      if (updates.total_steps) updatedPatient.total_steps = updates.total_steps;
+  }
 
-          const updatedPatient = { ...patient, stages: updatedStages };
-          if (patient.activeStageId === stageId) {
-              if (updates.total_steps) updatedPatient.total_steps = updates.total_steps;
-          }
+  const newPatients = [...patients];
+  newPatients[patientIndex] = updatedPatient;
+  set({ patients: newPatients });
 
-          const newPatients = [...patients];
-          newPatients[patientIndex] = updatedPatient;
-          set({ patients: newPatients });
-      },
+  const patientRef = doc(db, "patients", patientId);
+  await updateDoc(patientRef, { stages: updatedStages });
+},
 
-      softDeleteStage: async (patientId: string, stageId: string) => {
+appendShellLogFiles: async (patientId: string, stageId: string, folderId: string, driveFolderId: string, newFiles: any[]) => {
+  const { patients } = get();
+  const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
+  if (patientIndex === -1) return;
+
+  const patient = patients[patientIndex];
+  const updatedStages = patient.stages.map((s: Stage) => {
+      if (s.id === stageId) {
+          const currentLogs = s.shellLogs || [];
+          const newLogs = currentLogs.map((log: any) => {
+              if (log.id === folderId) {
+                  return { ...log, driveFolderId, files: [...(log.files || []), ...newFiles] };
+              }
+              return log;
+          });
+          return { ...s, shellLogs: newLogs };
+      }
+      return s;
+  });
+
+  const appendPatientsList = [...patients];
+  appendPatientsList[patientIndex] = { ...patient, stages: updatedStages };
+  set({ patients: appendPatientsList });
+
+  const patientRef = doc(db, "patients", patientId);
+  await updateDoc(patientRef, { stages: updatedStages });
+},
+
+softDeleteStage: async (patientId: string, stageId: string) => {      
           const { patients } = get();
           const pIdx = patients.findIndex((p: Patient) => p.id === patientId);
           if (pIdx === -1) return;
