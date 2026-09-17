@@ -290,7 +290,7 @@ if (finalStore && currentStage) {
     const uploadedFilesWithDate = files.map(f => ({ name: f.name, date: now }));
     
     // ✨ NEW: UI 화면(과거 기억)에서 직접 데이터를 조립하지 않고, 방금 새로 만든 스토어의 무적 누적 엔진을 호출합니다!
-    await finalStore.appendShellLogFiles(finalPatient.id, currentStage.id, folderId, driveFolderId, uploadedFilesWithDate);
+    await finalStore.appendShellLogFiles(finalPatient.id, currentStage.id, folderId, driveFolderId || "", uploadedFilesWithDate);
 }
 
     } catch (error: any) {      
