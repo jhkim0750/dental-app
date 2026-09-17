@@ -236,20 +236,27 @@ export default function RecordsSheet() {
 
         const newColHeaders = templateCols.map((c: any) => c.title);
 
-        // ✨ [수정] 데이터를 투명 꼬리표(_SHEET_NAME_) 기준으로 쪼개서 캐싱
-        masterDataRef.current = {};
-        const parsedSheets = new Set<string>();
+// ✨ [수정] 데이터를 투명 꼬리표(_SHEET_NAME_) 기준으로 쪼개서 캐싱
+masterDataRef.current = {};
+const parsedSheets = new Set<string>();
 
-        rawData.forEach((row: any) => {
-          // 기존 데이터(꼬리표 없음)는 무조건 Sheet1로 모음
-          const sheetName = row["_SHEET_NAME_"] || "Sheet1";
-          parsedSheets.add(sheetName);
-          if (!masterDataRef.current[sheetName]) masterDataRef.current[sheetName] = [];
-          masterDataRef.current[sheetName].push({ ...row });
-        });
+rawData.forEach((row: any) => {
+  // ✨ NEW: 기존 데이터(Sheet1)는 강제로 '과거 기록'으로 리네이밍하여 완벽히 안전하게 보존!
+  let sheetName = row["_SHEET_NAME_"] || "과거 기록";
+  if (sheetName === "Sheet1") sheetName = "과거 기록";
+  
+  parsedSheets.add(sheetName);
+  if (!masterDataRef.current[sheetName]) masterDataRef.current[sheetName] = [];
+  masterDataRef.current[sheetName].push({ ...row });
+});
 
-        // ✨ NEW: DB에 저장된 시트 목록(savedSheetNames)이 있으면 그것을 최우선으로 사용하여 빈 시트 증발을 막고, 과거 데이터인 경우에만 parsedSheets 사용
-        const finalSheets = savedSheetNames.length > 0 ? savedSheetNames : (parsedSheets.size > 0 ? Array.from(parsedSheets) : ["Sheet1"]);
+// ✨ NEW: DB에 저장된 시트 목록을 가져오되, 'Sheet1'이 껴있으면 쳐내고 현재 환자의 '실제 스테이지 이름들'을 탭 목록에 무조건 강제 병합(Union) 시킴!
+let cleanedSavedNames = savedSheetNames.map(s => s === "Sheet1" ? "과거 기록" : s);
+const realStageNames = activePatient?.stages?.map((s: any) => s.name) || [];
+const unionSet = new Set([...cleanedSavedNames, ...Array.from(parsedSheets), ...realStageNames]);
+
+const finalSheets = Array.from(unionSet);
+if (finalSheets.length === 0) finalSheets.push("과거 기록");
 
         finalSheets.forEach((sheet: string) => {
           if (!masterDataRef.current[sheet]) masterDataRef.current[sheet] = [];
@@ -679,7 +686,9 @@ const handleSaveRecords = async () => {
           .handsontable tbody th .relative, .handsontable tbody th > div { display: flex !important; align-items: center !important; justify-content: center !important; height: 100% !important; min-height: 100% !important; width: 100% !important; line-height: 1 !important; }
           .handsontable tbody tr:nth-child(even) td { background-color: #f8fafc !important; }
           .handsontable tbody tr:hover td { background-color: #fef08a !important; transition: background-color 0.2s ease; }
-          .handsontable td.stage-column { font-weight: 800 !important; color: #2563eb !important; background-color: #eff6ff !important; }
+          /* ✨ NEW: 방향키 이동 시 옅은 회색 하이라이트 완벽 지원 */
+          .handsontable .listbox .htItem.current, .handsontable .listbox .htItem:hover { background-color: #f1f5f9 !important; color: #000 !important; font-weight: bold !important; }
+          .handsontable td.stage-column { font-weight: 800 !important; color: #2563eb !important; background-color: #eff6ff !important; }          
           .handsontable th, .handsontable td { padding-left: 4px !important; padding-right: 4px !important; }
           .htAutocompleteArrow { right: 4px !important; color: #9ca3af !important; font-size: 10px !important; }
           .handsontable.listbox { margin: 0 !important; z-index: 100000 !important; }

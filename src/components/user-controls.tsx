@@ -10,6 +10,7 @@ import {
   setDoc, 
   deleteDoc, 
   addDoc, 
+  updateDoc, // ✨ NEW: 기존 데이터를 수정하기 위한 도구 추가
   onSnapshot, 
   query, 
   orderBy 
@@ -53,9 +54,11 @@ export function UserControls() {
 
   const [excelWorkers, setExcelWorkers] = useState<any[]>([]);
   const [newWorkerName, setNewWorkerName] = useState("");
+  const [newWorkerEmail, setNewWorkerEmail] = useState(""); // ✨ NEW: 닉네임과 매칭할 이메일 상태 추가
+  const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null); // ✨ NEW: 드롭다운을 켤 작업자 ID 기억용
 
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u) => setUser(u));
+    const unsub = auth.onAuthStateChanged((u) => setUser(u));    
     return () => unsub();
   }, []);
 
@@ -229,15 +232,16 @@ export function UserControls() {
     }
   };
 
-  // ==========================================
+// ==========================================
   // [2] 엑셀 작업자 이름표 관련 함수
   // ==========================================
   const handleAddWorker = async () => {
     const name = newWorkerName.trim();
-    if (!name) return;
+    const email = newWorkerEmail.trim().toLowerCase(); // ✨ NEW: 이메일 가져오기
+    if (!name || !email) return alert('작업자 이름과 연결할 이메일을 모두 입력해주세요.');
     
-    if (excelWorkers.some(w => w.name === name)) {
-      return alert('이미 등록된 이름입니다!');
+    if (excelWorkers.some(w => w.name === name || w.email === email)) {
+      return alert('이미 등록된 이름이거나 이메일입니다!');
     }
     
     try {
@@ -246,11 +250,13 @@ export function UserControls() {
       
       await addDoc(collection(db, "excel_workers"), { 
         name, 
+        email, // ✨ NEW: DB에 이메일도 같이 저장
         bgColor: selectedColor.bg, 
         textColor: selectedColor.text, 
         addedAt: new Date().toISOString() 
       });
       setNewWorkerName("");
+      setNewWorkerEmail(""); // ✨ NEW: 초기화
     } catch (error) {
       alert("이름표 추가 중 오류가 발생했습니다.");
     }
@@ -263,6 +269,16 @@ export function UserControls() {
       } catch (error) {
         alert("삭제 중 오류가 발생했습니다.");
       }
+    }
+  };
+
+  // ✨ NEW: 인라인 드롭다운에서 이메일을 선택했을 때 DB를 스윽 업데이트하는 함수
+  const handleUpdateWorkerEmail = async (workerId: string, newEmail: string) => {
+    try {
+      await updateDoc(doc(db, "excel_workers", workerId), { email: newEmail });
+      setEditingWorkerId(null); // 저장 완료 후 드롭다운 닫기
+    } catch (error) {
+      alert("이메일 연결 중 오류가 발생했습니다.");
     }
   };
 
@@ -425,18 +441,24 @@ export function UserControls() {
                 <div className="space-y-6 animate-in fade-in">
                   
                   <div>
-                    <h4 className="text-xs font-bold text-slate-500 mb-2 px-1">작업자 이름(ID) 추가</h4>
+                    <h4 className="text-xs font-bold text-slate-500 mb-2 px-1">작업자 닉네임 및 이메일 연결</h4>
                     <div className="flex gap-2">
                       <input 
-                        className="flex-1 border p-2.5 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500" 
-                        placeholder="예: 정현, 홍길동 원장" 
+                        className="w-1/3 border p-2.5 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                        placeholder="이름(예: 정현)" 
                         value={newWorkerName} 
                         onChange={e => setNewWorkerName(e.target.value)} 
+                      />
+                      <input 
+                        className="flex-1 border p-2.5 rounded-lg text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                        placeholder="구글 이메일 (예: jhkim@ods...)" 
+                        value={newWorkerEmail} 
+                        onChange={e => setNewWorkerEmail(e.target.value)} 
                         onKeyDown={e => e.key === 'Enter' && handleAddWorker()}
                       />
                       <Button 
                         onClick={handleAddWorker} 
-                        className="bg-slate-800 hover:bg-slate-900 gap-2 px-4"
+                        className="bg-slate-800 hover:bg-slate-900 gap-2 px-4 shrink-0"
                       >
                         <UserPlus className="w-4 h-4" /> 등록
                       </Button>
@@ -446,15 +468,44 @@ export function UserControls() {
                   <div>
                     <h4 className="text-xs font-bold text-slate-500 mb-2 px-1">현재 등록된 엑셀 이름표 ({excelWorkers.length}명)</h4>
                     <ul className="divide-y border rounded-lg max-h-[300px] overflow-y-auto">
-                      {excelWorkers.map(w => (
+                    {excelWorkers.map(w => (
                         <li key={w.id} className="flex justify-between p-3 text-sm group items-center hover:bg-slate-50 transition-colors">
-                          <span 
-                            className="font-bold px-2 py-1 rounded-md" 
-                            style={{ backgroundColor: w.bgColor, color: w.textColor }}
-                          >
-                            {w.name}
-                          </span> 
-                          <button 
+                          <div className="flex items-center gap-2 truncate">
+                            <span 
+                              className="font-bold px-2 py-1 rounded-md shrink-0" 
+                              style={{ backgroundColor: w.bgColor, color: w.textColor }}
+                            >
+                              {w.name}
+                            </span>
+                            {/* ✨ NEW: 클릭 시 드롭다운으로 변신하는 링킹 로직 */}
+                            {editingWorkerId === w.id ? (
+                              <select
+                                autoFocus
+                                className="text-xs border border-blue-300 rounded p-0.5 bg-white text-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer max-w-[140px]"
+                                value={w.email || ""}
+                                onChange={(e) => handleUpdateWorkerEmail(w.id, e.target.value)}
+                                onBlur={() => setEditingWorkerId(null)}
+                                onKeyDown={(e) => e.key === 'Escape' && setEditingWorkerId(null)}
+                              >
+                                <option value="" disabled>이메일 선택</option>
+                                {/* ✨ NEW: 최고 관리자(원장님) 이메일을 목록 최상단에 영구 고정! */}
+                                <option value={MASTER_EMAIL}>{MASTER_EMAIL} (최고 관리자)</option>
+                                {/* 중복 방지를 위해 allowedUsers 배열에 혹시라도 섞여 있다면 걸러내고 출력 */}
+                                {allowedUsers.filter(email => email !== MASTER_EMAIL).map(email => (
+                                  <option key={email} value={email}>{email}</option>
+                                ))}
+                              </select>                              
+                            ) : (
+                              <span 
+                                className="text-xs text-slate-400 truncate cursor-pointer hover:text-blue-500 hover:underline px-1"
+                                onClick={() => setEditingWorkerId(w.id)}
+                                title="클릭하여 이메일 연결 변경"
+                              >
+                                {w.email || "이메일 미지정"}
+                              </span>
+                            )}
+                          </div>
+                          <button                          
                             onClick={() => handleDeleteWorker(w.id, w.name)} 
                             className="p-1.5 text-slate-300 hover:text-red-500 rounded hover:bg-red-50 opacity-0 group-hover:opacity-100"
                           >

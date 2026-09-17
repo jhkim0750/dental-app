@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { useState, useEffect } from "react"; 
 import { 
-  collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc,
+  collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc, setDoc,
   query, limit, startAfter, orderBy, where 
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -96,6 +96,8 @@ interface PatientStore {
   saveSummary: (patientId: string, summary: { image: string; memo: string }) => Promise<void>;
   
   updateStageExternalLink: (patientId: string, stageId: string, link: string) => Promise<void>; // ✨ NEW: 링크 저장 함수
+  // ✨ NEW: 쉘 업로더가 쏜 데이터를 받아 시트에 안전하게 기입하는 지능형 엔진 (타입 등록)
+  insertOrUpdateRecord: (patientId: string, sheetName: string, uploadData: any) => Promise<void>;
 }
 
 const saveTimeouts: Record<string, ReturnType<typeof setTimeout>> = {};
@@ -437,6 +439,130 @@ export const usePatientStore = create<PatientStore>()(
           newPatients[patientIndex] = updatedPatient;
           set({ patients: newPatients });
       },
+
+// ✨ NEW: 쉘 업로더가 쏜 데이터를 받아 시트에 안전하게 기입하는 지능형 엔진
+insertOrUpdateRecord: async (patientId: string, sheetName: string, uploadData: any) => {
+  try {
+    const docRef = doc(db, "patients_records", patientId);
+    const snap = await getDoc(docRef);
+    let rows = snap.exists() && snap.data().rows ? snap.data().rows : [];
+    let sheetNames = snap.exists() && snap.data().sheetNames ? snap.data().sheetNames : [];
+
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}. ${String(today.getMonth() + 1).padStart(2, "0")}. ${String(today.getDate()).padStart(2, "0")}`;
+
+    // 현재 타겟 시트(해당 스테이지)에 있는 줄들만 필터링
+    const targetSheetRows = rows.filter((r: any) => (r["_SHEET_NAME_"] || "과거 기록") === sheetName);
+    
+    // 같은 STEP을 가진 줄이 있는지 맨 밑에서부터 거꾸로 찾음 (가장 최근 줄을 찾기 위함)
+    let foundIndexInTarget = -1;
+    for (let i = targetSheetRows.length - 1; i >= 0; i--) {
+      if (targetSheetRows[i]["STEP"] === uploadData.step) {
+        foundIndexInTarget = i;
+        break;
+      }
+    }
+
+// 1. "수정(Re)" 파일이거나, 아예 같은 스텝이 없는 경우 -> 맨 밑에 새 줄 추가(Append)
+if (uploadData.isRevision || foundIndexInTarget === -1) {
+  let newRow: any = {
+    "_SHEET_NAME_": sheetName,
+    "날짜": dateStr,
+    "STAGE": sheetName,
+    "STEP": uploadData.step,
+    "작업자": uploadData.workerName,
+    "비고": "",
+    "Program": "Program" // ✨ NEW: 새 줄 생성 시 우측 끝 Program 열에 무조건 'Program' 기본값 장착!
+  };
+
+// ✨ NEW: 파일명 인식 불가 시 (안전망 가동!)
+if (uploadData.fallbackMemo) {
+  newRow["비고"] = uploadData.fallbackMemo;
+  newRow["상악"] = "X";
+  newRow["하악"] = "X";
+}
+else if (uploadData.isDPAT) {
+  newRow["비고"] = `DPAT 업로드${uploadData.dpatTeeth ? ` (${uploadData.dpatTeeth})` : ''}`;
+  newRow["상악"] = "X"; // ✨ 빈칸 방지: 처음 만들어질 때 무조건 X로 초기화
+  newRow["하악"] = "X"; // ✨ 빈칸 방지: 처음 만들어질 때 무조건 X로 초기화
+} else {
+  newRow["상악"] = uploadData.isMax ? "O" : "X";
+  newRow["하악"] = uploadData.isMan ? "O" : "X";
+  if (uploadData.isRevision) newRow["비고"] = "(수정본 업로드)";
+}
+rows.push(newRow);  
+} 
+// 2. 이미 같은 스텝이 있는 경우 -> 안전하게 업데이트 (당일 무음 병합 및 DPAT 압축)
+else {
+  const originalRowIndex = rows.indexOf(targetSheetRows[foundIndexInTarget]);
+  const targetRow = rows[originalRowIndex];
+
+  if (uploadData.isDPAT) {
+     const existingMemo = targetRow["비고"] || "";
+     const dpatRegex = /DPAT 업로드(?:\s*\(([^)]+)\))?/;
+     const match = existingMemo.match(dpatRegex);
+     
+     // ✨ NEW: 기존 DPAT 메모가 있다면 괄호 안으로 똑똑하게 압축 병합
+     if (match) {
+         let teethArr = match[1] ? match[1].split(",").map((s: string) => s.trim()) : [];
+         let newTeeth = uploadData.dpatTeeth ? uploadData.dpatTeeth.split(",").map((s: string) => s.trim()) : [];
+         newTeeth.forEach((t: string) => { if (t && !teethArr.includes(t)) teethArr.push(t); });
+         
+         const combinedTeeth = teethArr.length > 0 ? ` (${teethArr.join(", ")})` : "";
+         const newDPATStr = `DPAT 업로드${combinedTeeth}`;
+         targetRow["비고"] = existingMemo.replace(match[0], newDPATStr);
+     } else {
+         const newMemo = `DPAT 업로드${uploadData.dpatTeeth ? ` (${uploadData.dpatTeeth})` : ''}`;
+         targetRow["비고"] = existingMemo ? `${existingMemo} / ${newMemo}` : newMemo;
+     }
+  } else {
+     if (uploadData.isMax && targetRow["상악"] !== "O") {
+         targetRow["상악"] = "O";
+         if (!targetRow["하악"]) targetRow["하악"] = "X"; // 빈칸 발견 시 X로 방어
+         // ✨ NEW: 당일 업로드가 아닐 때만 촌스러운 메모 남기기 (무음 병합)
+         if (targetRow["날짜"] !== dateStr) {
+             targetRow["비고"] = (targetRow["비고"] ? targetRow["비고"] + " / " : "") + `상악 추가 업로드: ${dateStr}`;
+         }
+     }
+     if (uploadData.isMan && targetRow["하악"] !== "O") {
+         targetRow["하악"] = "O";
+         if (!targetRow["상악"]) targetRow["상악"] = "X"; // 빈칸 발견 시 X로 방어
+         // ✨ NEW: 당일 업로드가 아닐 때만 촌스러운 메모 남기기 (무음 병합)
+         if (targetRow["날짜"] !== dateStr) {
+             targetRow["비고"] = (targetRow["비고"] ? targetRow["비고"] + " / " : "") + `하악 추가 업로드: ${dateStr}`;
+         }
+     }
+  }
+}
+
+// 시트 탭 목록 갱신
+    if (!sheetNames.includes(sheetName)) sheetNames.push(sheetName);
+
+    // ✨ NEW: [스마트 정렬 엔진] - 방금 업로드된 타겟 시트만 스텝(STEP) 순서대로 예쁘게 정렬!
+    const otherRows = rows.filter((r: any) => (r["_SHEET_NAME_"] || "과거 기록") !== sheetName);
+    const targetRows = rows.filter((r: any) => (r["_SHEET_NAME_"] || "과거 기록") === sheetName);
+
+    targetRows.sort((a: any, b: any) => {
+      const stepA = typeof a["STEP"] === 'number' ? a["STEP"] : parseInt(a["STEP"], 10);
+      const stepB = typeof b["STEP"] === 'number' ? b["STEP"] : parseInt(b["STEP"], 10);
+      const isAValid = !isNaN(stepA);
+      const isBValid = !isNaN(stepB);
+
+      if (isAValid && isBValid) return stepA - stepB; // 둘 다 숫자면 1, 2, 3... 오름차순
+      if (isAValid && !isBValid) return -1; // 숫자가 있는 정상 스텝을 무조건 위로
+      if (!isAValid && isBValid) return 1;  // 숫자가 없는 빈칸(수동 추가)은 무조건 아래로
+      return 0;
+    });
+
+    // 다른 시트(과거 기록 등) 데이터와 정렬된 타겟 시트 데이터를 안전하게 하나로 합침
+    const finalSortedRows = [...otherRows, ...targetRows];
+
+    await setDoc(docRef, { rows: finalSortedRows, sheetNames, lastUpdated: new Date().toISOString() }, { merge: true });
+
+  } catch (e) {
+    console.error("Auto Record Insert Failed:", e);
+  }
+},
 
       updateStageInfo: async (patientId: string, stageId: string, updates: { name?: string, total_steps?: number }) => {
           const { patients } = get();

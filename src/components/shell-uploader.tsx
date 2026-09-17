@@ -34,15 +34,33 @@ export function ShellUploader({ patient }: ShellUploaderProps) {
   }, [store, patient]);
 
   const [folders, setFolders] = useState<ShellFolder[]>([]);  
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null); // ✨ NEW: 현재 로그인한 이메일
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [workerName, setWorkerName] = useState<string>("알수없음"); // ✨ NEW: 닉네임 상태 추가
 
-  // ✨ NEW: 화면이 켜질 때 파이어베이스에서 로그인된 이메일을 가져옵니다
+  // ✨ NEW: 켜질 때 DB(excel_workers)를 스캔하여 로그인된 이메일을 닉네임으로 변환합니다!
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((user) => {
-      setCurrentUserEmail(user?.email || null);
+    const unsub = auth.onAuthStateChanged(async (user) => {
+      const email = user?.email || null;
+      setCurrentUserEmail(email);
+      if (email) {
+        try {
+          const { collection, getDocs } = await import("firebase/firestore");
+          const { db } = await import("@/lib/firebase");
+          const snap = await getDocs(collection(db, "excel_workers"));
+          let matchedName = email.split('@')[0]; // DB에 없으면 이메일 앞부분 사용
+          snap.forEach(doc => {
+            const data = doc.data();
+            if (data.email === email || data.id === email) matchedName = data.name;
+          });
+          setWorkerName(matchedName);
+        } catch (e) {
+          setWorkerName(email.split('@')[0]);
+        }
+      }
     });
     return () => unsub();
-  }, []);  
+  }, []);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [expandedFolderId, setExpandedFolderId] = useState<string | null>(null);
@@ -201,8 +219,59 @@ for (let i = 0; i < files.length; i++) {
           body: formData,
         });
         
-        // ✨ NEW: 구글에서 폴더를 못 찾거나 실패하면 즉시 에러 발생! (가짜 박제 방지)
-        if (!uploadRes.ok) throw new Error("구글 드라이브 업로드 실패 (폴더가 삭제되었을 수 있습니다)");
+// ✨ NEW: 구글에서 폴더를 못 찾거나 실패하면 즉시 에러 발생! (가짜 박제 방지)
+if (!uploadRes.ok) throw new Error("구글 드라이브 업로드 실패 (폴더가 삭제되었을 수 있습니다)");
+
+// ✨ NEW: [스마트 파서 & 시트 발사대 엔진] - 업로드가 정상 완료된 파일의 이름을 0.1초 만에 해체합니다!
+const { store: execStore, patient: execPatient } = latestDataRef.current;
+if (execStore && execPatient && currentStage) {
+    const fileName = file.name;
+    const isDPAT = fileName.toUpperCase().includes("DPAT");
+    const isMax = fileName.toUpperCase().includes("MAX") || fileName.toUpperCase().includes("UPPER");
+    const isMan = fileName.toUpperCase().includes("MAN") || fileName.toUpperCase().includes("LOWER");
+    
+// ✨ NEW: 띄어쓰기('STAGE 1-1') 완벽 대응! 스텝 숫자만 매의 눈으로 발라냅니다.
+const stepMatch = fileName.match(/STAGE\s*\d*\s*-\s*(\d+)/i) || fileName.match(/(\d+)스텝/i) || fileName.match(/-(\d+)/);
+const extractedStep = stepMatch ? parseInt(stepMatch[1], 10) : null;
+
+// '수정' 또는 'Re' 같은 단어가 있는지 감지합니다.
+const isRevision = fileName.includes("수정") || fileName.toUpperCase().includes("RE");
+
+if (extractedStep !== null) {
+    // ✨ NEW: DPAT일 경우 치식 번호를 추출합니다 (예: '11번', '#21' 모두 완벽 대응)
+    let dpatTeeth = "";
+    if (isDPAT) {
+        const teethMatches = fileName.match(/#\d{2}|\d{2}번/g);
+        if (teethMatches) {
+            // '11번'을 '#11'로 예쁘게 통일해서 변환합니다.
+            dpatTeeth = teethMatches.map(t => t.includes('번') ? `#${t.replace('번', '')}` : t).join(", ");
+        }
+    }
+    
+// 전역 Store에 만들어둔 지능형 시트 기입 함수를 호출합니다!
+execStore.insertOrUpdateRecord(execPatient.id, currentStage.name, {
+  step: extractedStep,
+  isMax,
+  isMan,
+  isDPAT,
+  dpatTeeth,
+  isRevision,
+  workerName: workerName // ✨ 이메일 대신 DB에서 찾은 닉네임으로 쏴줍니다!
+});        
+} else {
+// ✨ NEW (안전망): 숫자가 없는 이상한 파일명이라도 절대 버리지 않고 무조건 기록!
+execStore.insertOrUpdateRecord(execPatient.id, currentStage.name, {
+  step: "", // 빈칸으로 넘겨 무조건 새 줄로 추가되도록 유도
+  isMax: false,
+  isMan: false,
+  isDPAT: false,
+  dpatTeeth: "",
+  isRevision: true, // true를 주어 기존 줄과 겹치지 않고 무조건 Append 되게 함
+  workerName: workerName,
+  fallbackMemo: `파일명 인식 불가: ${fileName}` // ✨ 원본 파일명을 비고란에 영구 박제
+});
+}
+}
 
 // [변경]
 const currentProgress = Math.round(((i + 1) / files.length) * 100);
