@@ -1048,8 +1048,8 @@ const RecordsMemoEditor = ({ patient, store }: { patient: any, store: any }) => 
 
     return (
         <div className="flex flex-col border border-slate-200 rounded-lg shadow-sm bg-white overflow-hidden w-full h-full min-h-[300px] flex-1">
-            <style>{`.memo-editor:empty:before { content: attr(placeholder); color: #94a3b8; font-style: italic; pointer-events: none; }`}</style>
-            
+              <style>{`.memo-editor:empty:before { content: attr(data-placeholder); color: #94a3b8; font-style: italic; pointer-events: none; }`}</style>
+
             <div 
                 className="flex items-center gap-2 p-2.5 bg-slate-50 border-b border-slate-200 shrink-0 shadow-[inset_0_-1px_2px_rgba(0,0,0,0.02)]"
                 onMouseDown={(e) => {
@@ -1115,9 +1115,9 @@ const RecordsMemoEditor = ({ patient, store }: { patient: any, store: any }) => 
                 onCompositionEnd={() => { isComposingRef.current = false; saveSelection(); updateToolbarState(); }}
                 onMouseUp={() => { saveSelection(); updateToolbarState(); }} 
                 onKeyUp={() => { saveSelection(); updateToolbarState(); }} 
-                placeholder="환자 특이사항 및 메모를 입력하세요 (단축키: Ctrl + S 저장)..." 
+                data-placeholder="환자 특이사항 및 메모를 입력하세요 (단축키: Ctrl + S 저장)..." 
                 className="memo-editor flex-1 p-4 overflow-y-auto text-[18px] text-slate-700 outline-none focus:bg-[#fafafa] transition-colors custom-scrollbar leading-relaxed" 
-            />
+            />            
         </div>
     );
 };
