@@ -203,7 +203,7 @@ export default function RecordsSheet() {
 
     const loadData = async () => {
       try {
-        const stages = activePatient?.stages?.map((s: any) => s.name) || [];
+        const stages = activePatient?.stages?.filter((s: any) => !s.isDeleted).map((s: any) => s.name) || [];        
         const firebaseStages = stages.length > 0 ? stages : ["STAGE 1", "STAGE 2"];
 
         const workerSnap = await getDocs(query(collection(db, "excel_workers"), orderBy("addedAt", "asc")));
@@ -261,7 +261,7 @@ rawData.forEach((row: any) => {
 
 // ✨ NEW: DB에 저장된 시트 목록을 가져오되, 'Sheet1'이 껴있으면 쳐내고 현재 환자의 '실제 스테이지 이름들'을 탭 목록에 무조건 강제 병합(Union) 시킴!
 let cleanedSavedNames = savedSheetNames.map(s => s === "Sheet1" ? "과거 기록" : s);
-const realStageNames = activePatient?.stages?.map((s: any) => s.name) || [];
+const realStageNames = activePatient?.stages?.filter((s: any) => !s.isDeleted).map((s: any) => s.name) || [];
 const unionSet = new Set([...cleanedSavedNames, ...Array.from(parsedSheets), ...realStageNames]);
 
 const finalSheets = Array.from(unionSet);
