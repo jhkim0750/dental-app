@@ -9,7 +9,7 @@ import {
     Image as ImageIcon, MousePointer2, BringToFront, SendToBack, Highlighter,
     Loader2, Square, Circle, Triangle, Copy, Clipboard, ChevronDown,
     Crop, RotateCcw, Check, X, Table, LayoutDashboard, ListTree, TrendingUp,
-    Link as LinkIcon, CloudUpload // ✨ 여기에 추가됨
+    Link as LinkIcon, CloudUpload, RefreshCw // ✨ 여기에 RefreshCw 추가!
   } from "lucide-react";
   import { ShellUploader } from "./shell-uploader"; // ✨ 새로운 파일 불러오기
   import { Button } from "@/components/ui/button";
@@ -908,7 +908,8 @@ const RecordsMemoEditor = ({ patient, store }: { patient: any, store: any }) => 
     const editorRef = React.useRef<HTMLDivElement>(null);
 
     const [isBold, setIsBold] = React.useState(false);
-    const [activeColor, setActiveColor] = React.useState<string | null>(null);
+    const [isStrikethrough, setIsStrikethrough] = React.useState(false); // ✨ NEW: 취소선 상태 추가
+    const [activeColor, setActiveColor] = React.useState<string | null>(null);    
     const [saveState, setSaveState] = React.useState<'idle' | 'saving' | 'error'>('idle'); 
     
     const savedRangeRef = React.useRef<Range | null>(null);
@@ -1000,8 +1001,9 @@ const RecordsMemoEditor = ({ patient, store }: { patient: any, store: any }) => 
         const sel = window.getSelection();
         if (sel && sel.rangeCount > 0 && editorRef.current.contains(sel.anchorNode)) {
             setIsBold(document.queryCommandState('bold'));
+            setIsStrikethrough(document.queryCommandState('strikeThrough')); // ✨ NEW: 취소선 감지 추가
             
-            const currentColor = document.queryCommandValue('foreColor');
+            const currentColor = document.queryCommandValue('foreColor');            
             if (currentColor) {
                 setActiveColor(rgbToHex(currentColor));
             }
@@ -1023,7 +1025,23 @@ const RecordsMemoEditor = ({ patient, store }: { patient: any, store: any }) => 
         setIsBold(document.queryCommandState('bold'));
     };
 
-    const applyColor = (hexColor: string) => {
+    // ✨ NEW: 커서 꼬임 방어가 완벽히 적용된 취소선 실행 함수
+    const applyStrikethrough = () => {
+        if (isComposingRef.current) return; 
+
+        if (editorRef.current && document.activeElement !== editorRef.current) {
+            editorRef.current.focus();
+        }
+        restoreSelection();
+
+        document.execCommand('styleWithCSS', false, 'true');
+        document.execCommand('strikeThrough', false);
+        
+        saveSelection();
+        setIsStrikethrough(document.queryCommandState('strikeThrough'));
+    };
+
+    const applyColor = (hexColor: string) => {        
         setActiveColor(hexColor); 
         if (isComposingRef.current) return; 
 
@@ -1059,22 +1077,33 @@ const RecordsMemoEditor = ({ patient, store }: { patient: any, store: any }) => 
                     }
                 }}
             >
-                <div className="flex items-center gap-2 shrink-0">
-                    <button 
-                        onClick={applyBold} 
-                        onMouseDown={(e) => e.preventDefault()} 
-                        className={`w-8 h-8 flex items-center justify-center rounded transition-all ${isBold ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-400 font-extrabold shadow-sm' : 'text-slate-600 hover:bg-slate-200 font-bold'}`} 
-                        title="진하게 (Bold)"
-                    >
-                        B
-                    </button>
-                    <div className="w-px h-5 bg-slate-300 mx-1"></div>
+<div className="flex items-center gap-1.5 shrink-0">
+                    {/* B와 S 버튼을 각각 완전히 분리하여 위아래로 배치한 블록 */}
+                    <div className="flex flex-col items-center justify-center gap-1 shrink-0">
+                        <button 
+                            onClick={applyBold} 
+                            onMouseDown={(e) => e.preventDefault()} 
+                            className={`w-8 h-6 text-[14px] leading-none flex items-center justify-center rounded border border-slate-200 transition-all ${isBold ? 'bg-blue-100 text-blue-700 border-blue-300 font-extrabold shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-100 font-bold'}`} 
+                            title="진하게 (Bold)"
+                        >
+                            B
+                        </button>
+                        <button 
+                            onClick={applyStrikethrough} 
+                            onMouseDown={(e) => e.preventDefault()} 
+                            className={`w-8 h-6 text-[14px] leading-none flex items-center justify-center rounded border border-slate-200 transition-all ${isStrikethrough ? 'bg-blue-100 text-blue-700 border-blue-300 font-extrabold shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-100 font-bold'}`} 
+                            title="취소선 (Strikethrough)"
+                        >
+                            <span style={{ textDecoration: 'line-through' }}>S</span>
+                        </button>
+                    </div>
+                    <div className="w-px h-5 bg-slate-300 mx-1 shrink-0"></div>
                 </div>
-                
+
                 <div className="flex items-center gap-2 px-1 flex-1" title="선택 영역에 적용 및 다음 입력 색상 변경">
                     <span className="text-[11px] font-bold text-slate-500 shrink-0">Color</span>
-                    <div className="grid grid-cols-5 gap-1.5">
-                        {STANDARD_COLORS.map(c => (
+                    <div className="grid grid-cols-5 gap-1.5 shrink-0">
+                        {STANDARD_COLORS.map(c => (                            
                             <button
                                 key={c}
                                 onClick={() => applyColor(c)}
@@ -1128,6 +1157,7 @@ export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const [pageStartStep, setPageStartStep] = useState(0);
   const [isImageUploading, setIsImageUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<'summary' | 'records' | 'shell'>('summary');
+  const [sidebarMode, setSidebarMode] = useState<'memo' | 'rule'>('memo'); // ✨ NEW: 사이드바 스위칭 상태 (기본값 메모장)
 
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [editingGroupRules, setEditingGroupRules] = useState<any[]>([]); // ✨ NEW: 그룹 수정 상태
@@ -3008,221 +3038,170 @@ const renderFullScreenGrid = () => {
       <div className="flex min-h-screen">
         
       <div className="w-[360px] border-r bg-white flex flex-col h-screen sticky top-0 overflow-y-auto shrink-0 relative z-0">
-           {activeTab === 'summary' && (
-               <>
-{/* ✨ NEW: Rule Definition 텍스트 우측에 이질감 없이 임포트 버튼 핀셋 추가 */}
-<div ref={ruleFormRef} className={cn("p-4 border-b shrink-0 transition-colors duration-500 flex justify-between items-center", editingRuleId ? "bg-orange-50 border-orange-200" : "bg-slate-50")}>
-               <h2 className="font-bold flex items-center gap-2">{editingRuleId ? <><Pencil className="w-4 h-4 text-orange-500"/> Editing Rule</> : "Rule Definition"}</h2>
-               {!editingRuleId && (
-                   <Button variant="outline" size="sm" onClick={handleImportData} className="h-7 text-xs flex items-center gap-1.5 border-slate-300 text-slate-600 hover:bg-slate-100 shadow-sm" title="클립보드 데이터 임포트">
-                       <Clipboard className="w-3.5 h-3.5"/> 데이터 붙여넣기
-                   </Button>
-               )}
-           </div>
+{/* ✨ NEW: Summary & Records 통합 사이드바 (Shell이 아닐 때만 렌더링) */}
+        {activeTab !== 'shell' && (
+            <div className="flex flex-col h-full w-full">
+                {/* 1. 고정 높이 헤더 (스위칭 시 덜컹거림 방지용 h-[64px] 고정) */}
+                <div ref={ruleFormRef} className={cn("px-4 border-b shrink-0 transition-colors duration-500 flex justify-between items-center h-[64px]", (sidebarMode === 'rule' && editingRuleId) ? "bg-orange-50 border-orange-200" : "bg-slate-50")}>
+                    <div className="flex items-center gap-2">
+                        <h2 className="font-bold flex items-center gap-2 text-slate-800 text-[15px] min-w-[135px]">
+                            {sidebarMode === 'rule' ? (
+                                editingRuleId ? <><Pencil className="w-4 h-4 text-orange-500"/> Editing Rule</> : "Rule Definition"
+                            ) : (
+                                <><Table className="w-4 h-4 text-slate-700"/> Records Tools</>
+                            )}
+                        </h2>
+                        {/* 🔄 초록색 스위치 버튼 */}
+                        <button
+                            onClick={() => setSidebarMode(prev => prev === 'memo' ? 'rule' : 'memo')}
+                            className="p-1 rounded text-green-500 hover:bg-green-100 transition-colors outline-none"
+                            title="메모장 / 룰 세팅 뷰 스위칭"
+                        >
+                            <RefreshCw className="w-[18px] h-[18px] font-bold" strokeWidth={3} />
+                        </button>
+                    </div>
 
-           <div ref={scrollContainerRef} className="p-4 space-y-4 overflow-y-auto flex-1 scroll-smooth">
-           <div className="space-y-1">
-                 <div className="flex items-center justify-between">
-                     <Label className="text-xs font-bold text-slate-500">Item Type</Label>
-                     {/* ✨ NEW: Item Type 우측 단일 아이템 체크박스 추가 */}
-                     <label className="flex items-center gap-1.5 cursor-pointer group">
-                         <input 
-                             type="checkbox" 
-                             checked={isIsolated} 
-                             onChange={(e) => setIsIsolated(e.target.checked)}
-                             className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                         />
-                         <span className="text-[10px] font-bold text-slate-500 group-hover:text-blue-600 transition-colors">단일 아이템</span>
-                     </label>
-                 </div>
-                 <select className="w-full border p-2 rounded" value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
-                    {PRESET_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                 </select>
-                 {selectedType === "기타" && <input className="w-full border p-2 rounded mt-1 text-sm bg-yellow-50" placeholder="직접 입력하세요..." value={customType} onChange={(e) => setCustomType(e.target.value)} />}
-              </div>
-                            <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Select Teeth</Label><ToothGrid selectedTeeth={selectedTeeth} onToggle={toggleTooth} /></div>
-              <div className="flex gap-2">
-                 <div className="flex-1"><Label className="text-xs font-bold text-slate-500">Start</Label><input type="number" className="w-full border p-2 rounded" value={startStep} onChange={(e) => setStartStep(Number(e.target.value))} onWheel={(e) => e.preventDefault()} /></div>
-                 <div className="flex-1"><Label className="text-xs font-bold text-slate-500">End</Label><div className="flex gap-1"><input type="number" className="w-full border p-2 rounded" value={endStep} onChange={(e) => setEndStep(Number(e.target.value))} onWheel={(e) => e.preventDefault()} /><Button variant="outline" className="px-2 text-xs" onClick={() => setEndStep(totalSteps)}>End</Button></div></div>
-              </div>              
-              <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Note</Label><input className="w-full border p-2 rounded" placeholder="e.g. Mesial" value={note} onChange={(e) => setNote(e.target.value)} /></div>
-              
-{/* ✨ NEW: 레퍼런스 사진 업로드 영역 (드래그, 복붙 지원 - rule-image-dropzone 클래스 추가됨) */}
-              <div 
-                  className="space-y-2 p-3 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50 transition-all focus-within:border-blue-400 focus-within:bg-blue-50/50 hover:bg-slate-100 outline-none rule-image-dropzone"
-                  tabIndex={0}
-                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                  onDrop={(e) => {
-                      e.preventDefault(); e.stopPropagation();
-                      const file = e.dataTransfer.files?.[0];
-                      if (file) processRuleImageFile(file);
-                  }}
-                  onPaste={(e) => {
-                      const file = e.clipboardData.files?.[0];
-                      if (file && file.type.startsWith('image/')) {
-                          e.preventDefault(); e.stopPropagation();
-                          processRuleImageFile(file);
-                      }
-                  }}
-              >
-                  <div className="flex justify-between items-center">
-                      <Label className="text-xs font-bold text-slate-500">Reference Image</Label>
-                      <span className="text-[9px] font-bold text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded">Ctrl+V / Drop</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                      <input type="file" accept="image/*" className="hidden" ref={ruleFileInputRef} onChange={handleRuleImageUpload} />
-                      <Button variant="outline" size="sm" onClick={() => !isRuleImageUploading && ruleFileInputRef.current?.click()} disabled={isRuleImageUploading} className="flex-1 bg-white text-slate-500 hover:text-slate-700 h-9 border-slate-300">
-                          {isRuleImageUploading ? <Loader2 className="w-4 h-4 animate-spin mr-1"/> : <ImageIcon className="w-4 h-4 mr-1"/>}
-                          {ruleImage ? "사진 변경" : "클릭하여 첨부"}
-                      </Button>
-                      {ruleImage && (
-                          <div className="relative w-9 h-9 shrink-0 border border-slate-200 rounded-md group overflow-hidden shadow-sm">
-                              <img src={ruleImage} className="w-full h-full object-cover" alt="Rule Ref" />
-                              <button onClick={() => setRuleImage(null)} className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X className="w-4 h-4"/></button>
-                          </div>
-                      )}
-                  </div>
-              </div>
-
-              <div className="flex gap-2 mt-2">                                
-                {editingRuleId && <Button variant="outline" onClick={cancelEdit} className="flex-1">Cancel</Button>}
-                <Button onClick={handleSaveRules} className={cn("flex-1 gap-2", editingRuleId ? "bg-orange-500 hover:bg-orange-600" : "")}>{editingRuleId ? <><Save className="w-4 h-4"/> Update</> : <><Plus className="w-4 h-4"/> Add Rule</>}</Button>
-              </div>
-              
-              <hr className="my-4"/>
-              
-              <div className="space-y-4 pb-10">
-                 <div className="flex items-center justify-between">
-                     <h3 className="text-xs font-bold text-slate-500 uppercase">Existing Rules ({safeRules.length})</h3>
-                     <div className="flex gap-1.5 flex-wrap">
-                         {selectedRuleIds.length > 0 && !isQuickEdit && (
-                             <>
-                                 <Button size="sm" variant="outline" className="h-7 text-xs px-2 border-slate-300 text-slate-600 hover:bg-slate-100" onClick={() => setSelectedRuleIds([])}>
-                                     <X className="w-3 h-3 mr-1"/> 선택 해제
-                                 </Button>
-                                 <Button size="sm" variant="destructive" className="h-7 text-[10px] px-2" onClick={handleDeleteMultiRules}>
-                                     <Trash2 className="w-3 h-3 mr-0.5"/> 선택 삭제
-                                 </Button>
-                             </>
-                         )}
-                         {isQuickEdit ? (
-                             <Button size="sm" variant="default" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={handleSaveQuickEdit}><Check className="w-3 h-3 mr-1"/> 완료</Button>
-                         ) : (
-                             selectedRuleIds.length === 0 && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setIsQuickEdit(true)}><Pencil className="w-3 h-3 mr-1"/> 빠른 편집</Button>
-                         )}
-                     </div>
-                 </div>
-
-                 {([
-                     { title: "GENERAL", data: generalRules, color: "text-slate-400" },
-                     { title: "MAXILLA (상악)", data: maxillaRules, color: "text-blue-500" },
-                     { title: "MANDIBLE (하악)", data: mandibleRules, color: "text-red-500" }
-                 ]).map(group => group.data.length > 0 && (
-                     <div key={group.title} className="bg-slate-50 rounded-lg p-2 border shadow-sm">
-                         <div className={cn("text-[10px] font-bold px-1 mb-2", group.color)}>{group.title}</div>
-                         <div className="space-y-1.5">
-                             {group.data.map((rule: Rule) => {
-                                 const isSelected = selectedRuleIds.includes(rule.id);
-                                 return (
-                                     <div key={rule.id} 
-                                          draggable={!isQuickEdit} 
-                                          onDragStart={(e) => { 
-                                              if(!isSelected) setSelectedRuleIds([rule.id]); 
-                                              e.dataTransfer.setData("action", "delete_rules");
-                                          }}
-                                          onClick={() => {
-                                            if(!isQuickEdit) {
-                                                setSelectedRuleIds(p => p.includes(rule.id) ? p.filter(id=>id!==rule.id) : [...p, rule.id]);
-                                                setSelectedIds([]); // ✨ NEW: 룰을 클릭하면 캔버스 아이템 선택은 자동 해제 (충돌 방지)
-                                            }
-                                        }}
-                                                                                  className={cn("text-xs border p-2 rounded flex items-center group transition-colors", isSelected ? "bg-blue-50 border-blue-300 ring-1 ring-blue-500" : "bg-white", !isQuickEdit && "cursor-pointer")}>
-                                         
-                                         {!isQuickEdit && (
-                                             <input type="checkbox" className="mr-2 pointer-events-none w-3.5 h-3.5" checked={isSelected} readOnly />
-                                         )}
-
-<div className="flex-1 overflow-hidden pointer-events-none">
-                                         <div className="flex items-center gap-1 relative pr-4">
-                    <span className={cn("font-bold", getTypeColor(rule.type))}>
-                        {rule.tooth === 0 ? "Gen" : rule.tooth === 10 ? "MAX" : rule.tooth === 30 ? "MAN" : `#${rule.tooth}`} {rule.type}
-                    </span>
-
-{/* ✨ NEW: 그룹 표시 뱃지 (동일한 타입/메모/스텝이 모두 완벽히 같은 룰이 2개 이상일 때만 표시) */}
-{(!(rule as any).isIsolated && safeRules.filter((r: Rule) => 
-                        !(r as any).isIsolated && 
-                        r.type === rule.type && 
-                        (r.note || "") === (rule.note || "") && 
-                        r.startStep === rule.startStep && 
-                        r.endStep === rule.endStep
-                    ).length > 1) && (
-                        <span className="ml-1 px-1 py-0.5 bg-slate-100 text-slate-400 text-[8px] rounded border border-slate-200 font-bold uppercase tracking-tighter">Group</span>
+                    {/* 데이터 붙여넣기 버튼 (Rule 모드일 때만 우측에 노출) */}
+                    {sidebarMode === 'rule' && !editingRuleId && (
+                        <Button variant="outline" size="sm" onClick={handleImportData} className="h-7 text-xs flex items-center gap-1.5 border-slate-300 text-slate-600 hover:bg-slate-100 shadow-sm" title="클립보드 데이터 임포트">
+                            <Clipboard className="w-3.5 h-3.5"/> 데이터 붙여넣기
+                        </Button>
                     )}
-                                        
-                    {/* ✨ NEW: 리스트용 빨간 별표 (이미지가 있을 때만 노출) */}
-                    {rule.imageUrl && (
-                                                <div className="absolute top-0 right-0 drop-shadow-md" title="Reference Image">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444" stroke="#991b1b" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
-                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                            </svg>
+                </div>
+
+                {/* 2. Rule Definition 컨텐츠 영역 (display: none 으로 데이터 보존) */}
+                <div className={cn("flex-col flex-1 overflow-hidden", sidebarMode === 'rule' ? "flex" : "hidden")}>
+                    <div ref={scrollContainerRef} className="p-4 space-y-4 overflow-y-auto flex-1 scroll-smooth custom-scrollbar">
+                        
+                        {/* ▼▼▼ 기존 Rule Form 코드 (수정 없이 그대로 유지) ▼▼▼ */}
+                        <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                                <Label className="text-xs font-bold text-slate-500">Item Type</Label>
+                                <label className="flex items-center gap-1.5 cursor-pointer group">
+                                    <input type="checkbox" checked={isIsolated} onChange={(e) => setIsIsolated(e.target.checked)} className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
+                                    <span className="text-[10px] font-bold text-slate-500 group-hover:text-blue-600 transition-colors">단일 아이템</span>
+                                </label>
+                            </div>
+                            <select className="w-full border p-2 rounded" value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
+                                {PRESET_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                            {selectedType === "기타" && <input className="w-full border p-2 rounded mt-1 text-sm bg-yellow-50" placeholder="직접 입력하세요..." value={customType} onChange={(e) => setCustomType(e.target.value)} />}
                         </div>
-                    )}                                                 
-                    <span className="text-slate-400 text-[10px]">({rule.startStep}-{rule.endStep})</span>
-                                             </div>
-                                             {isQuickEdit ? (
-    <input className="w-full mt-1 border-b border-dashed outline-none focus:border-blue-500 bg-transparent text-[11px] pointer-events-auto" 
-           defaultValue={rule.note} 
-           onClick={(e) => e.stopPropagation()} 
-           onChange={(e) => setEditBuffer(p => ({...p, [rule.id]: {note: e.target.value}}))} 
-           placeholder="Note..." />
-) : (
-    rule.note ? (
-        <div className="text-[10px] text-slate-500 truncate mt-0.5" title={rule.note}>
-            {rule.note.split('\n').join(' ')}
-        </div>
-    ) : null
-)} 
-</div>                                        
-                                         {!isQuickEdit && (
-                                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
-                                                 <button onClick={(e) => handleEditClick(e, rule)} className="text-slate-400 hover:text-blue-500 p-1"><Pencil className="w-3 h-3"/></button>
-                                                 <button onClick={(e) => { 
-                                                    e.stopPropagation(); 
-                                                    if (window.confirm("이 규칙을 삭제하시겠습니까?")) {
-                                                        store?.deleteRule(patient.id, rule.id); 
-                                                    }
-                                                }} className="text-slate-400 hover:text-red-500 p-1"><Trash2 className="w-3 h-3"/></button>                                             </div>
-                                         )}
-                                     </div>
-                                 )
-                             })}
-                         </div>
-                     </div>
-                 ))}
+                        <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Select Teeth</Label><ToothGrid selectedTeeth={selectedTeeth} onToggle={toggleTooth} /></div>
+                        <div className="flex gap-2">
+                            <div className="flex-1"><Label className="text-xs font-bold text-slate-500">Start</Label><input type="number" className="w-full border p-2 rounded" value={startStep} onChange={(e) => setStartStep(Number(e.target.value))} onWheel={(e) => e.preventDefault()} /></div>
+                            <div className="flex-1"><Label className="text-xs font-bold text-slate-500">End</Label><div className="flex gap-1"><input type="number" className="w-full border p-2 rounded" value={endStep} onChange={(e) => setEndStep(Number(e.target.value))} onWheel={(e) => e.preventDefault()} /><Button variant="outline" className="px-2 text-xs" onClick={() => setEndStep(totalSteps)}>End</Button></div></div>
+                        </div>
+                        <div className="space-y-1"><Label className="text-xs font-bold text-slate-500">Note</Label><input className="w-full border p-2 rounded" placeholder="e.g. Mesial" value={note} onChange={(e) => setNote(e.target.value)} /></div>
+                        <div className="space-y-2 p-3 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50 transition-all focus-within:border-blue-400 focus-within:bg-blue-50/50 hover:bg-slate-100 outline-none rule-image-dropzone" tabIndex={0} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const file = e.dataTransfer.files?.[0]; if (file) processRuleImageFile(file); }} onPaste={(e) => { const file = e.clipboardData.files?.[0]; if (file && file.type.startsWith('image/')) { e.preventDefault(); e.stopPropagation(); processRuleImageFile(file); } }}>
+                            <div className="flex justify-between items-center">
+                                <Label className="text-xs font-bold text-slate-500">Reference Image</Label>
+                                <span className="text-[9px] font-bold text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded">Ctrl+V / Drop</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <input type="file" accept="image/*" className="hidden" ref={ruleFileInputRef} onChange={handleRuleImageUpload} />
+                                <Button variant="outline" size="sm" onClick={() => !isRuleImageUploading && ruleFileInputRef.current?.click()} disabled={isRuleImageUploading} className="flex-1 bg-white text-slate-500 hover:text-slate-700 h-9 border-slate-300">
+                                    {isRuleImageUploading ? <Loader2 className="w-4 h-4 animate-spin mr-1"/> : <ImageIcon className="w-4 h-4 mr-1"/>}
+                                    {ruleImage ? "사진 변경" : "클릭하여 첨부"}
+                                </Button>
+                                {ruleImage && (
+                                    <div className="relative w-9 h-9 shrink-0 border border-slate-200 rounded-md group overflow-hidden shadow-sm">
+                                        <img src={ruleImage} className="w-full h-full object-cover" alt="Rule Ref" />
+                                        <button onClick={() => setRuleImage(null)} className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X className="w-4 h-4"/></button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                            {editingRuleId && <Button variant="outline" onClick={cancelEdit} className="flex-1">Cancel</Button>}
+                            <Button onClick={handleSaveRules} className={cn("flex-1 gap-2", editingRuleId ? "bg-orange-500 hover:bg-orange-600" : "")}>{editingRuleId ? <><Save className="w-4 h-4"/> Update</> : <><Plus className="w-4 h-4"/> Add Rule</>}</Button>
+                        </div>
+                        <hr className="my-4"/>
+                        <div className="space-y-4 pb-10">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-xs font-bold text-slate-500 uppercase">Existing Rules ({safeRules.length})</h3>
+                                <div className="flex gap-1.5 flex-wrap">
+                                    {selectedRuleIds.length > 0 && !isQuickEdit && (
+                                        <>
+                                            <Button size="sm" variant="outline" className="h-7 text-xs px-2 border-slate-300 text-slate-600 hover:bg-slate-100" onClick={() => setSelectedRuleIds([])}><X className="w-3 h-3 mr-1"/> 선택 해제</Button>
+                                            <Button size="sm" variant="destructive" className="h-7 text-[10px] px-2" onClick={handleDeleteMultiRules}><Trash2 className="w-3 h-3 mr-0.5"/> 선택 삭제</Button>
+                                        </>
+                                    )}
+                                    {isQuickEdit ? (
+                                        <Button size="sm" variant="default" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={handleSaveQuickEdit}><Check className="w-3 h-3 mr-1"/> 완료</Button>
+                                    ) : (
+                                        selectedRuleIds.length === 0 && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setIsQuickEdit(true)}><Pencil className="w-3 h-3 mr-1"/> 빠른 편집</Button>
+                                    )}
+                                </div>
+                            </div>
+                            {([
+                                { title: "GENERAL", data: generalRules, color: "text-slate-400" },
+                                { title: "MAXILLA (상악)", data: maxillaRules, color: "text-blue-500" },
+                                { title: "MANDIBLE (하악)", data: mandibleRules, color: "text-red-500" }
+                            ]).map(group => group.data.length > 0 && (
+                                <div key={group.title} className="bg-slate-50 rounded-lg p-2 border shadow-sm">
+                                    <div className={cn("text-[10px] font-bold px-1 mb-2", group.color)}>{group.title}</div>
+                                    <div className="space-y-1.5">
+                                        {group.data.map((rule: Rule) => {
+                                            const isSelected = selectedRuleIds.includes(rule.id);
+                                            return (
+                                                <div key={rule.id} draggable={!isQuickEdit} onDragStart={(e) => { if(!isSelected) setSelectedRuleIds([rule.id]); e.dataTransfer.setData("action", "delete_rules"); }} onClick={() => { if(!isQuickEdit) { setSelectedRuleIds(p => p.includes(rule.id) ? p.filter(id=>id!==rule.id) : [...p, rule.id]); setSelectedIds([]); } }} className={cn("text-xs border p-2 rounded flex items-center group transition-colors", isSelected ? "bg-blue-50 border-blue-300 ring-1 ring-blue-500" : "bg-white", !isQuickEdit && "cursor-pointer")}>
+                                                    {!isQuickEdit && (<input type="checkbox" className="mr-2 pointer-events-none w-3.5 h-3.5" checked={isSelected} readOnly />)}
+                                                    <div className="flex-1 overflow-hidden pointer-events-none">
+                                                        <div className="flex items-center gap-1 relative pr-4">
+                                                            <span className={cn("font-bold", getTypeColor(rule.type))}>
+                                                                {rule.tooth === 0 ? "Gen" : rule.tooth === 10 ? "MAX" : rule.tooth === 30 ? "MAN" : `#${rule.tooth}`} {rule.type}
+                                                            </span>
+                                                            {(!(rule as any).isIsolated && safeRules.filter((r: Rule) => !(r as any).isIsolated && r.type === rule.type && (r.note || "") === (rule.note || "") && r.startStep === rule.startStep && r.endStep === rule.endStep).length > 1) && (
+                                                                <span className="ml-1 px-1 py-0.5 bg-slate-100 text-slate-400 text-[8px] rounded border border-slate-200 font-bold uppercase tracking-tighter">Group</span>
+                                                            )}
+                                                            {rule.imageUrl && (
+                                                                <div className="absolute top-0 right-0 drop-shadow-md" title="Reference Image">
+                                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444" stroke="#991b1b" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
+                                                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                                                    </svg>
+                                                                </div>
+                                                            )}
+                                                            <span className="text-slate-400 text-[10px]">({rule.startStep}-{rule.endStep})</span>
+                                                        </div>
+                                                        {isQuickEdit ? (
+                                                            <input className="w-full mt-1 border-b border-dashed outline-none focus:border-blue-500 bg-transparent text-[11px] pointer-events-auto" defaultValue={rule.note} onClick={(e) => e.stopPropagation()} onChange={(e) => setEditBuffer(p => ({...p, [rule.id]: {note: e.target.value}}))} placeholder="Note..." />
+                                                        ) : (
+                                                            rule.note ? <div className="text-[10px] text-slate-500 truncate mt-0.5" title={rule.note}>{rule.note.split('\n').join(' ')}</div> : null
+                                                        )}
+                                                    </div>
+                                                    {!isQuickEdit && (
+                                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                                                            <button onClick={(e) => handleEditClick(e, rule)} className="text-slate-400 hover:text-blue-500 p-1"><Pencil className="w-3 h-3"/></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); if (window.confirm("이 규칙을 삭제하시겠습니까?")) { store?.deleteRule(patient.id, rule.id); } }} className="text-slate-400 hover:text-red-500 p-1"><Trash2 className="w-3 h-3"/></button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                            {!isQuickEdit && (
+                                <div onDragOver={(e)=>e.preventDefault()} onDrop={handleRulesDrop} className="mt-6 border-2 border-dashed border-red-200 rounded-lg p-4 flex flex-col items-center justify-center text-red-400 hover:bg-red-50 transition-colors">
+                                    <Trash2 className="w-6 h-6 mb-1 opacity-50"/>
+                                    <span className="text-[10px] font-bold">Drag 단어를 여기에 삭제</span>
+                                </div>
+                            )}
+                        </div>
+                        {/* ▲▲▲ 기존 Rule Form 코드 끝 ▲▲▲ */}
 
-                 {!isQuickEdit && (
-                     <div onDragOver={(e)=>e.preventDefault()} onDrop={handleRulesDrop} className="mt-6 border-2 border-dashed border-red-200 rounded-lg p-4 flex flex-col items-center justify-center text-red-400 hover:bg-red-50 transition-colors">
-                         <Trash2 className="w-6 h-6 mb-1 opacity-50"/>
-                         <span className="text-[10px] font-bold">Drag 단어를 여기에 삭제</span>
-                     </div>
-                 )}
-</div>
-           </div>
-           </>
-)}
+                    </div>
+                </div>
 
-{activeTab === 'records' && (
-    <div className="p-5 flex flex-col gap-4 h-full">
-        <h2 className="font-bold text-slate-700 flex items-center gap-2 text-lg border-b pb-3 tracking-tight shrink-0">
-            <Table className="w-5 h-5 text-slate-700"/> Records Tools
-        </h2>
-        {/* ✨ NEW: 이질감 없이 장착된 파워포인트 스타일 메모장 */}
-        <div className="flex-1 flex flex-col w-full relative">
-            <RecordsMemoEditor patient={patient} store={store} />
-        </div>
-    </div>
-)}
+                {/* 3. Records 메모장 컨텐츠 영역 (display: none 으로 데이터 보존) */}
+                <div className={cn("flex-col flex-1 overflow-hidden", sidebarMode === 'memo' ? "flex" : "hidden")}>
+                    <div className="p-4 flex flex-col h-full w-full relative">
+                        <RecordsMemoEditor patient={patient} store={store} />
+                    </div>
+                </div>
+            </div>
+        )}
 
 {/* ✨ NEW: B안 - Shell Upload 선택 시 좌측에 뜨는 전용 안내 패널 */}
 {activeTab === 'shell' && (
