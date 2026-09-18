@@ -903,6 +903,225 @@ const CornerRuleItem = ({ rule, label, isChecked, onToggleCheck, showMemo = true
     );
 };
 
+// ✨ FINAL: 수동저장 전용 + Ctrl+S 탑재 + 레코드 시트와 완벽 분리된 '메모장 전용 저장' 명시
+const RecordsMemoEditor = ({ patient, store }: { patient: any, store: any }) => {
+    const editorRef = React.useRef<HTMLDivElement>(null);
+
+    const [isBold, setIsBold] = React.useState(false);
+    const [activeColor, setActiveColor] = React.useState<string | null>(null);
+    const [saveState, setSaveState] = React.useState<'idle' | 'saving' | 'error'>('idle'); 
+    
+    const savedRangeRef = React.useRef<Range | null>(null);
+    const isComposingRef = React.useRef(false); 
+    const isMountedRef = React.useRef(false); 
+    
+    const pendingSaveRef = React.useRef<{ patientId: string, html: string } | null>(null);
+    const isSavingRef = React.useRef(false); 
+
+    const STANDARD_COLORS = [
+        '#000000', '#ef4444', '#f97316', '#eab308', '#84cc16', 
+        '#22c55e', '#06b6d4', '#3b82f6', '#1e3a8a', '#9333ea'
+    ];
+
+    React.useEffect(() => {
+        isMountedRef.current = true;
+        
+        if (editorRef.current && patient) {
+            editorRef.current.innerHTML = patient.globalMemo || "";
+        }
+        
+        return () => {
+            isMountedRef.current = false;
+        };
+    }, [patient?.id, patient?.globalMemo]);
+
+    const processQueue = async () => {
+        if (isSavingRef.current || !pendingSaveRef.current) return;
+
+        isSavingRef.current = true;
+        if (isMountedRef.current) setSaveState('saving');
+        
+        const task = pendingSaveRef.current;
+        pendingSaveRef.current = null; 
+
+        try {
+            await store.updatePatientGlobalMemo(task.patientId, task.html);
+            if (isMountedRef.current) {
+                setSaveState('idle');
+            }
+        } catch (error) {
+            console.error("Memo save failed:", error);
+            if (isMountedRef.current) {
+                setSaveState('error');
+                if (!pendingSaveRef.current) {
+                    pendingSaveRef.current = task;
+                }
+            }
+        } finally {
+            isSavingRef.current = false;
+            if (pendingSaveRef.current && isMountedRef.current) {
+                processQueue();
+            }
+        }
+    };
+
+    // ✨ 수동 저장 큐 진입 함수
+    const enqueueSave = (html: string) => {
+        pendingSaveRef.current = { patientId: patient.id, html };
+        processQueue();
+    };
+
+    const saveSelection = () => {
+        if (isComposingRef.current) return; 
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
+            savedRangeRef.current = sel.getRangeAt(0).cloneRange();
+        }
+    };
+
+    const restoreSelection = () => {
+        if (isComposingRef.current) return; 
+        const sel = window.getSelection();
+        if (savedRangeRef.current && sel) {
+            sel.removeAllRanges();
+            sel.addRange(savedRangeRef.current);
+        }
+    };
+
+    const rgbToHex = (color: string) => {
+        if (color.startsWith('#')) return color.toLowerCase();
+        const match = color.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+        if (!match) return color;
+        return '#' + match.slice(1).map(x => parseInt(x).toString(16).padStart(2, '0')).join('').toLowerCase();
+    };
+
+    const updateToolbarState = () => {
+        if (!editorRef.current || isComposingRef.current) return;
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && editorRef.current.contains(sel.anchorNode)) {
+            setIsBold(document.queryCommandState('bold'));
+            
+            const currentColor = document.queryCommandValue('foreColor');
+            if (currentColor) {
+                setActiveColor(rgbToHex(currentColor));
+            }
+        }
+    };
+
+    const applyBold = () => {
+        if (isComposingRef.current) return; 
+
+        if (editorRef.current && document.activeElement !== editorRef.current) {
+            editorRef.current.focus();
+        }
+        restoreSelection();
+
+        document.execCommand('styleWithCSS', false, 'true');
+        document.execCommand('bold', false);
+        
+        saveSelection();
+        setIsBold(document.queryCommandState('bold'));
+    };
+
+    const applyColor = (hexColor: string) => {
+        setActiveColor(hexColor); 
+        if (isComposingRef.current) return; 
+
+        if (editorRef.current && document.activeElement !== editorRef.current) {
+            editorRef.current.focus();
+        }
+        restoreSelection();
+
+        document.execCommand('styleWithCSS', false, 'true');
+        document.execCommand('foreColor', false, hexColor);
+        saveSelection();
+    };
+
+    // ✨ NEW: 단축키 감지 엔진 (Ctrl + S)
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        e.stopPropagation(); // 외부 컴포넌트 단축키 간섭 방어
+        if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+            e.preventDefault(); // 브라우저 기본 웹페이지 저장 방지
+            if (editorRef.current) enqueueSave(editorRef.current.innerHTML);
+        }
+    };
+
+    return (
+        <div className="flex flex-col border border-slate-200 rounded-lg shadow-sm bg-white overflow-hidden w-full h-full min-h-[300px] flex-1">
+            <style>{`.memo-editor:empty:before { content: attr(placeholder); color: #94a3b8; font-style: italic; pointer-events: none; }`}</style>
+            
+            <div 
+                className="flex items-center gap-2 p-2.5 bg-slate-50 border-b border-slate-200 shrink-0 shadow-[inset_0_-1px_2px_rgba(0,0,0,0.02)]"
+                onMouseDown={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (target.tagName.toLowerCase() !== 'button') {
+                        e.preventDefault();
+                    }
+                }}
+            >
+                <div className="flex items-center gap-2 shrink-0">
+                    <button 
+                        onClick={applyBold} 
+                        onMouseDown={(e) => e.preventDefault()} 
+                        className={`w-8 h-8 flex items-center justify-center rounded transition-all ${isBold ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-400 font-extrabold shadow-sm' : 'text-slate-600 hover:bg-slate-200 font-bold'}`} 
+                        title="진하게 (Bold)"
+                    >
+                        B
+                    </button>
+                    <div className="w-px h-5 bg-slate-300 mx-1"></div>
+                </div>
+                
+                <div className="flex items-center gap-2 px-1 flex-1" title="선택 영역에 적용 및 다음 입력 색상 변경">
+                    <span className="text-[11px] font-bold text-slate-500 shrink-0">Color</span>
+                    <div className="grid grid-cols-5 gap-1.5">
+                        {STANDARD_COLORS.map(c => (
+                            <button
+                                key={c}
+                                onClick={() => applyColor(c)}
+                                onMouseDown={(e) => e.preventDefault()} 
+                                className={`w-4 h-4 rounded-[2px] border shadow-sm transition-all focus:outline-none ${activeColor === c ? 'scale-125 ring-2 ring-offset-1 ring-blue-400 z-10' : 'hover:scale-110 hover:shadow-md'}`}
+                                style={{ backgroundColor: c, borderColor: c === '#000000' ? '#e2e8f0' : 'rgba(0,0,0,0.1)' }}
+                                title="드래그 후 클릭하여 색상 변경"
+                            />
+                        ))}
+                    </div>
+                </div>
+
+                {/* ✨ 버튼 텍스트 변경: "메모 저장" 명시로 레코드 탭 저장과 완전한 차별화 */}
+                <div className="ml-auto flex items-center shrink-0">
+                    <button
+                        onClick={() => {
+                            if (editorRef.current) enqueueSave(editorRef.current.innerHTML);
+                        }}
+                        className={`save-btn flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all border shadow-sm shrink-0 whitespace-nowrap min-w-[84px] ${
+                            saveState === 'saving' 
+                                ? 'bg-blue-50 border-blue-200 text-blue-600' 
+                                : saveState === 'error'
+                                ? 'bg-red-50 border-red-200 text-red-600'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+                        }`}
+                        title="단축키: Ctrl + S"
+                    >
+                        {saveState === 'saving' ? "메모 저장 중..." : saveState === 'error' ? "메모 저장 실패" : "메모 저장"}
+                    </button>
+                </div>
+            </div>
+
+            <div 
+                ref={editorRef} 
+                contentEditable 
+                onKeyDown={handleKeyDown} 
+                onCompositionStart={() => { isComposingRef.current = true; }}
+                onCompositionEnd={() => { isComposingRef.current = false; saveSelection(); updateToolbarState(); }}
+                onMouseUp={() => { saveSelection(); updateToolbarState(); }} 
+                onKeyUp={() => { saveSelection(); updateToolbarState(); }} 
+                placeholder="환자 특이사항 및 메모를 입력하세요 (단축키: Ctrl + S 저장)..." 
+                className="memo-editor flex-1 p-4 overflow-y-auto text-[18px] text-slate-700 outline-none focus:bg-[#fafafa] transition-colors custom-scrollbar leading-relaxed" 
+            />
+        </div>
+    );
+};
+
 export function ChecklistPanel({ patient }: ChecklistPanelProps) {
   const store = usePatientStoreHydrated();
   const [isGridOpen, setIsGridOpen] = useState(false);
@@ -2994,12 +3213,13 @@ const renderFullScreenGrid = () => {
 )}
 
 {activeTab === 'records' && (
-    <div className="p-5 flex flex-col gap-4">
-        <h2 className="font-bold text-slate-700 flex items-center gap-2 text-lg border-b pb-3 tracking-tight">
+    <div className="p-5 flex flex-col gap-4 h-full">
+        <h2 className="font-bold text-slate-700 flex items-center gap-2 text-lg border-b pb-3 tracking-tight shrink-0">
             <Table className="w-5 h-5 text-slate-700"/> Records Tools
         </h2>
-        <div className="p-4 bg-slate-50 rounded border border-slate-200 text-sm text-slate-500 shadow-inner">
-            Admin conditional formatting, quick format buttons, and data filters will be placed here.
+        {/* ✨ NEW: 이질감 없이 장착된 파워포인트 스타일 메모장 */}
+        <div className="flex-1 flex flex-col w-full relative">
+            <RecordsMemoEditor patient={patient} store={store} />
         </div>
     </div>
 )}

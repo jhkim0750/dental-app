@@ -57,6 +57,7 @@ export interface Patient {
   checklist_status?: ChecklistStatus[];
   
   createdAt: any; 
+  globalMemo?: string; // ✨ NEW: 환자별 통합 메모장 (HTML 텍스트 저장용)
 }
 
 interface PatientStore {
@@ -213,7 +214,8 @@ export const usePatientStore = create<PatientStore>()(
                       stages: stages, activeStageId: currentStage?.id || activeStageId, 
                       total_steps: currentStage.total_steps, rules: currentStage.rules,
                       checklist_status: currentStage.checklist_status, summary: currentStage.summary,
-                      createdAt: parsedCreatedAt, isDeleted: !!data.isDeleted
+                      createdAt: parsedCreatedAt, isDeleted: !!data.isDeleted,
+                      globalMemo: data.globalMemo || "" // ✨ NEW: 새로고침 시 메모 데이터 끌고 오기
                     } as Patient;
                 } catch (err) { return null; }
             });
@@ -285,13 +287,14 @@ export const usePatientStore = create<PatientStore>()(
                 const currentStage = stages.find((s: Stage) => s.id === activeStageId) || stages.find((s: Stage) => !s.isDeleted) || stages[0];
                 
                 const loadedPatient = {
-                    id: docSnap.id, name: data.name, hospital: data.hospital || data.clinic_name || "", case_number: data.case_number,
-                    stages: stages, activeStageId: currentStage?.id || activeStageId, 
-                    total_steps: currentStage.total_steps, rules: currentStage.rules,
-                    checklist_status: currentStage.checklist_status, summary: currentStage.summary,
-                    createdAt: parsedCreatedAt, isDeleted: !!data.isDeleted
-                } as Patient;
-
+                  id: docSnap.id, name: data.name, hospital: data.hospital || data.clinic_name || "", case_number: data.case_number,
+                  stages: stages, activeStageId: currentStage?.id || activeStageId, 
+                  total_steps: currentStage.total_steps, rules: currentStage.rules,
+                  checklist_status: currentStage.checklist_status, summary: currentStage.summary,
+                  createdAt: parsedCreatedAt, isDeleted: !!data.isDeleted,
+                  globalMemo: data.globalMemo || "" // ✨ NEW: 개별 환자 로드 시 메모 데이터 끌고 오기
+              } as Patient;
+              
                 set((state: PatientStore) => {
                     const newPatients = [loadedPatient, ...state.patients];
                     const uniquePatients = Array.from(new Map(newPatients.map(p => [p.id, p])).values());
@@ -898,8 +901,22 @@ softDeleteStage: async (patientId: string, stageId: string) => {
         newPatients[patientIndex] = { ...patient, stages: updatedStages };
         set({ patients: newPatients });
       },
+
+      // ✨ NEW: 환자별 통합 메모장 저장 함수 (기존 데이터 손상 0%)
+      updatePatientGlobalMemo: async (patientId: string, htmlContent: string) => {
+        const { patients } = get();
+        const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
+        if (patientIndex === -1) return;
+
+        const patientRef = doc(db, "patients", patientId);
+        await updateDoc(patientRef, { globalMemo: htmlContent });
+
+        const newPatients = [...patients];
+        newPatients[patientIndex] = { ...newPatients[patientIndex], globalMemo: htmlContent } as Patient;
+        set({ patients: newPatients });
+      },
     }),
-    {
+    {      
       name: "dental-patient-storage-v2", 
       storage: createJSONStorage(() => localStorage),
       partialize: (state: any) => ({}), 
