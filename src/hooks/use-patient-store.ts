@@ -58,9 +58,10 @@ export interface Patient {
   
   createdAt: any; 
   globalMemo?: string; // ✨ NEW: 환자별 통합 메모장 (HTML 텍스트 저장용)
+  memoCards?: { id: string; title: string; content: string }[]; // ✨ NEW: 카드형 메모장 데이터
 }
 
-interface PatientStore {
+interface PatientStore {  
   patients: Patient[];
   selectedPatientId: string | null;
   isLoading: boolean;
@@ -98,7 +99,8 @@ interface PatientStore {
   
   updateStageExternalLink: (patientId: string, stageId: string, link: string) => Promise<void>; // ✨ NEW: 링크 저장 함수
   updatePatientGlobalMemo: (patientId: string, htmlContent: string) => Promise<void>; // ✨ NEW: 글로벌 메모 저장 함수
-  // ✨ NEW: 쉘 업로더가 쏜 데이터를 받아 시트에 안전하게 기입하는 지능형 엔진 (타입 등록)
+  updatePatientMemoCards: (patientId: string, cards: any[]) => Promise<void>; // ✨ NEW: 다중 카드 배열 저장 함수
+  // ✨ NEW: 쉘 업로더가 쏜 데이터를 받아 시트에 안전하게 기입하는 지능형 엔진 (타입 등록)  
   insertOrUpdateRecord: (patientId: string, sheetName: string, uploadData: any) => Promise<void>;
   // ✨ NEW: 병렬 쉘 업로드 덮어쓰기를 원천 차단하는 원자적 누적 엔진
   appendShellLogFiles: (patientId: string, stageId: string, folderId: string, driveFolderId: string, newFiles: any[]) => Promise<void>;
@@ -215,8 +217,9 @@ export const usePatientStore = create<PatientStore>()(
                       total_steps: currentStage.total_steps, rules: currentStage.rules,
                       checklist_status: currentStage.checklist_status, summary: currentStage.summary,
                       createdAt: parsedCreatedAt, isDeleted: !!data.isDeleted,
-                      globalMemo: data.globalMemo || "" // ✨ NEW: 새로고침 시 메모 데이터 끌고 오기
-                    } as Patient;
+                      globalMemo: data.globalMemo || "", // ✨ NEW: 새로고침 시 메모 데이터 끌고 오기
+                      memoCards: Array.isArray(data.memoCards) ? data.memoCards : [] // ✨ FIX: 다중 카드 데이터 불러오기 복구 (데이터 증발 방지!)
+                    } as Patient;                    
                 } catch (err) { return null; }
             });
 
@@ -292,9 +295,10 @@ export const usePatientStore = create<PatientStore>()(
                   total_steps: currentStage.total_steps, rules: currentStage.rules,
                   checklist_status: currentStage.checklist_status, summary: currentStage.summary,
                   createdAt: parsedCreatedAt, isDeleted: !!data.isDeleted,
-                  globalMemo: data.globalMemo || "" // ✨ NEW: 개별 환자 로드 시 메모 데이터 끌고 오기
+                  globalMemo: data.globalMemo || "", // ✨ NEW: 개별 환자 로드 시 메모 데이터 끌고 오기
+                  memoCards: Array.isArray(data.memoCards) ? data.memoCards : [] // ✨ FIX: 다중 카드 데이터 불러오기 복구 (데이터 증발 방지!)
               } as Patient;
-              
+                            
                 set((state: PatientStore) => {
                     const newPatients = [loadedPatient, ...state.patients];
                     const uniquePatients = Array.from(new Map(newPatients.map(p => [p.id, p])).values());
@@ -902,9 +906,8 @@ softDeleteStage: async (patientId: string, stageId: string) => {
         set({ patients: newPatients });
       },
 
-      // ✨ NEW: 환자별 통합 메모장 저장 함수 (기존 데이터 손상 0%)
-      updatePatientGlobalMemo: async (patientId: string, htmlContent: string) => {
-        const { patients } = get();
+// ✨ NEW: 환자별 통합 메모장 저장 함수 (기존 데이터 손상 0%)
+      updatePatientGlobalMemo: async (patientId: string, htmlContent: string) => {        const { patients } = get();
         const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
         if (patientIndex === -1) return;
 
@@ -915,7 +918,20 @@ softDeleteStage: async (patientId: string, stageId: string) => {
         newPatients[patientIndex] = { ...newPatients[patientIndex], globalMemo: htmlContent } as Patient;
         set({ patients: newPatients });
       },
-    }),
+// ✨ NEW: 카드형 메모장 저장 함수 (순서 변경 등 배열 데이터 실시간 동기화)
+      updatePatientMemoCards: async (patientId: string, cards: any[]) => {
+        const { patients } = get();
+        const patientIndex = patients.findIndex((p: Patient) => p.id === patientId);
+        if (patientIndex === -1) return;
+
+        const patientRef = doc(db, "patients", patientId);
+        await updateDoc(patientRef, { memoCards: cards });
+
+        const newPatients = [...patients];
+        newPatients[patientIndex] = { ...newPatients[patientIndex], memoCards: cards } as Patient;
+        set({ patients: newPatients });
+      },
+      }),    
     {      
       name: "dental-patient-storage-v2", 
       storage: createJSONStorage(() => localStorage),
