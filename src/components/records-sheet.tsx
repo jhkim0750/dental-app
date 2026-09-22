@@ -537,10 +537,10 @@ if (finalSheets.length === 0) finalSheets.push("과거 기록");
       setSheets(updatedSheetNames); // 화면 즉시 반영
   
       await setDoc(doc(db, "patients_records", activePatient.id), { rows: allFlattenedData, sheetNames: updatedSheetNames, lastUpdated: new Date().toISOString() }, { merge: true });
-      alert("✅ 환자 Records 데이터가 안전하게 저장되었습니다!");
+      alert("📕 [차트 저장] 환자 Records 데이터가 안전하게 저장되었습니다!");
     } catch (error) {       
       console.error(error); 
-      alert("데이터 저장 실패!"); 
+      alert("🚨 [저장 실패] Records 데이터 저장 중 문제가 발생했습니다."); 
     } finally {
       setIsSaving(false); 
     }

@@ -962,16 +962,19 @@ const RecordsMemoEditor = ({ patient, store }: { patient: any, store: any }) => 
             await store.updatePatientMemoCards(task.patientId, task.cards);
             if (isMountedRef.current) {
                 setSaveState('idle');
-                // ✨ NEW: 데이터베이스 저장 성공 시 명확한 알림창 피드백 복구
-                alert("메모가 안전하게 저장되었습니다!");
+                // ✨ FIX: 노란색 공책 이모지(📒)로 Records(✅) 저장과 완벽하게 시각적 분리!
+                alert("📒 [메모 저장] 메모가 안전하게 저장되었습니다!");
             }
         } catch (error) {
             console.error("Memo save failed:", error);
             if (isMountedRef.current) {
                 setSaveState('error');
                 if (!pendingSaveRef.current) pendingSaveRef.current = task;
+                // ✨ NEW: 무음 실패(Silent Failure) 방지용 명시적 에러 알림창 추가
+                alert("🚨 [저장 실패] 메모 저장에 문제가 발생했습니다.");
             }
         } finally {
+            // ✨ FIX: 누락되었던 락(Lock) 해제 로직 및 닫는 괄호 완벽 복구
             isSavingRef.current = false;
             if (pendingSaveRef.current && isMountedRef.current) processQueue();
         }
@@ -2514,11 +2517,11 @@ const handleSaveAsGraph = async () => {
                   image: imageUrl, 
                   memo: JSON.stringify({ slides }) 
               }); 
-              alert("Saved!"); 
+              alert("📘 [Summary 저장] Work Summary가 안전하게 저장되었습니다!"); 
 
           } catch (error) {
               console.error("Summary save error:", error);
-              alert("저장 중 문제가 발생했습니다.");
+              alert("🚨 [저장 실패] 요약본 저장 중 문제가 발생했습니다.");
           }
       }, 'image/png');
       };
