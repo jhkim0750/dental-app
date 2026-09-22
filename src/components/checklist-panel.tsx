@@ -916,6 +916,10 @@ const RecordsMemoEditor = ({ patient, store }: { patient: any, store: any }) => 
     const savedRangesRef = React.useRef<Record<string, Range | null>>({});
     const [focusedCardId, setFocusedCardId] = React.useState<string | null>(null);
     
+    // ✨ NEW: 카드 제목 인라인 편집 상태
+    const [editingCardId, setEditingCardId] = React.useState<string | null>(null);
+    const [editingTitle, setEditingTitle] = React.useState("");
+
     const isComposingRef = React.useRef(false); 
     const isMountedRef = React.useRef(false); 
     
@@ -1167,23 +1171,23 @@ const RecordsMemoEditor = ({ patient, store }: { patient: any, store: any }) => 
 
 {/* ✨ NEW: +카드 및 메모 저장 버튼 그린 톤통일 & 가독성 톤다운(text-green-600) 적용 */}
 <div className="ml-auto flex items-center gap-1.5 shrink-0">
-                    <select 
-                        onChange={(e) => {
-                            if(e.target.value) {
-                                addNewCard(e.target.value);
-                                e.target.value = "";
-                            }
-                        }}
-                        className="h-9 px-1.5 text-[12px] font-black text-green-600 border-[1.5px] border-green-400 rounded outline-none bg-[#f8fafc] cursor-pointer hover:bg-green-50 transition-all shadow-[0_2px_8px_rgba(0,0,0,0.08)] active:scale-[0.96] active:shadow-none shrink-0 appearance-none"
-                        title="클릭하여 새 카드 추가"
-                        style={{ textAlignLast: 'center' }}
-                    >
-                        <option value="">+카드</option>
-                        <option value="전체">전체 메모</option>
-                        {patient.stages?.map((s: any) => (
-                            <option key={s.id} value={s.name}>{s.name}</option>
-                        ))}
-                    </select>
+<select 
+    onChange={(e) => {
+        if(e.target.value) {
+            addNewCard(e.target.value);
+            e.target.value = "";
+        }
+    }}
+    className="h-9 w-[70px] px-1.5 text-[12px] font-black text-green-600 border-[1.5px] border-green-400 rounded outline-none bg-[#f8fafc] cursor-pointer hover:bg-green-50 transition-all shadow-[0_2px_8px_rgba(0,0,0,0.08)] active:scale-[0.96] active:shadow-none shrink-0 appearance-none truncate"
+    title="클릭하여 새 카드 추가"
+    style={{ textAlignLast: 'center' }}
+>
+    <option value="">+카드</option>
+    <option value="전체">전체 메모</option>
+    {patient.stages?.filter((s: any) => !s.isDeleted).map((s: any) => (
+        <option key={s.id} value={s.name}>{s.name}</option>
+    ))}
+</select>
 
                     <button
                         onClick={enqueueSave}
@@ -1220,27 +1224,57 @@ const RecordsMemoEditor = ({ patient, store }: { patient: any, store: any }) => 
                         <div className="flex bg-transparent">
                             {/* ✨ FIX: 칙칙한 회색 톤을 제거하고 원래의 투명한 블루 파스텔 톤으로 완벽히 롤백 */}
                             <div 
-                                className={cn(
-                                    "border border-b-transparent rounded-t-lg px-1 py-1 flex items-center min-w-[120px] max-w-[200px] cursor-grab relative top-[1px] z-10 transition-all duration-300",
-                                    focusedCardId === card.id 
-                                        ? "bg-[#eff6ff] border-blue-400 shadow-[0_-4px_10px_rgba(96,165,250,0.25)] text-blue-700" 
-                                        : "bg-[#bfdbfe]/40 border-[#93c5fd] hover:bg-[#bfdbfe]/70 text-[#1e40af] shadow-sm"
-                                )}
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, idx)}
-                                onDragEnd={() => setDraggedIdx(null)}
-                                title="드래그하여 순서 변경"
-                            >
-                                <GripHorizontal className="w-10 h-3.5 opacity-40 pointer-events-none shrink-0"/>
-                                <span className="flex-1 text-center truncate px-2 text-[11px] font-extrabold pointer-events-none tracking-tight">
-                                    {card.title}
-                                </span>
-                                <button 
-                                    onClick={() => deleteCard(card.id)} 
-                                    className="text-blue-400 hover:text-red-500 transition-colors shrink-0"
-                                    title="카드 삭제"
-                                ><X className="w-3 h-3"/></button>
-                            </div>
+    className={cn(
+        "border border-b-transparent rounded-t-lg px-1 py-1 flex items-center min-w-[120px] max-w-[200px] relative top-[1px] z-10 transition-all duration-300",
+        focusedCardId === card.id 
+            ? "bg-[#eff6ff] border-blue-400 shadow-[0_-4px_10px_rgba(96,165,250,0.25)] text-blue-700" 
+            : "bg-[#bfdbfe]/40 border-[#93c5fd] hover:bg-[#bfdbfe]/70 text-[#1e40af] shadow-sm",
+        editingCardId === card.id ? "cursor-default" : "cursor-grab"
+    )}
+    draggable={editingCardId !== card.id}
+    onDragStart={(e) => { if(editingCardId !== card.id) handleDragStart(e, idx); }}
+    onDragEnd={() => setDraggedIdx(null)}
+    onDoubleClick={() => {
+        setEditingCardId(card.id);
+        setEditingTitle(card.title);
+    }}
+    title="드래그: 순서 변경 / 더블클릭: 이름 편집"
+>
+    <GripHorizontal className="w-10 h-3.5 opacity-40 pointer-events-none shrink-0"/>
+    
+    {editingCardId === card.id ? (
+        <input
+            autoFocus
+            value={editingTitle}
+            onChange={(e) => setEditingTitle(e.target.value)}
+            onMouseDown={(e) => e.stopPropagation()} 
+            onBlur={() => {
+                if(editingTitle.trim() && editingTitle !== card.title) {
+                    const updatedCards = syncDOMToState().map(c => c.id === card.id ? { ...c, title: editingTitle.trim() } : c);
+                    setCards(updatedCards);
+                    store.updatePatientMemoCards(patient.id, updatedCards);
+                }
+                setEditingCardId(null);
+            }}
+            onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') e.currentTarget.blur();
+                else if (e.key === 'Escape') setEditingCardId(null);
+            }}
+            className="flex-1 min-w-0 mx-1 px-1 bg-white border border-blue-300 rounded text-[11px] font-extrabold text-blue-700 outline-none focus:ring-1 focus:ring-blue-500 text-center shadow-inner"
+        />
+    ) : (
+        <span className="flex-1 text-center truncate px-2 text-[11px] font-extrabold pointer-events-none tracking-tight">
+            {card.title}
+        </span>
+    )}
+
+    <button 
+        onClick={() => deleteCard(card.id)} 
+        className="text-blue-400 hover:text-red-500 transition-colors shrink-0"
+        title="카드 삭제"
+    ><X className="w-3 h-3"/></button>
+</div>                            
                         </div>
                         
                         {/* 📝 글씨 입력 영역 (Auto-resize) */}
